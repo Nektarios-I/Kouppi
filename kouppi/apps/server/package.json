@@ -1,0 +1,32 @@
+{
+  "name": "@kouppi/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "pretest": "pnpm --filter @kouppi/protocol build",
+    "test": "vitest run",
+    "dev:test": "vitest"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "socket.io": "^4.7.5",
+    "zod": "^3.23.8",
+    "@kouppi/game-core": "workspace:*",
+    "@kouppi/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.7.5",
+    "tsx": "^4.19.0",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5",
+    "@types/node": "^20.12.12",
+    "@types/express": "^4.17.21",
+    "@types/cors": "^2.8.17"
+  }
+}
