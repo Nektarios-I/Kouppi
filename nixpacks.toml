@@ -10,7 +10,8 @@ cmds = ["pnpm install"]
 [phases.build]
 cmds = [
   "pnpm --filter @kouppi/game-core build",
-  "pnpm --filter @kouppi/protocol build", 
+  "pnpm --filter @kouppi/protocol build",
+  "pnpm --filter @kouppi/database build",
   "pnpm --filter @kouppi/server build",
   "pnpm --filter @kouppi/web build"
 ]
