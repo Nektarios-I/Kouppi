@@ -10,7 +10,12 @@
 import { create } from "zustand";
 import { io, Socket } from "socket.io-client";
 
-const API_URL = process.env.NEXT_PUBLIC_SERVER_URL || "http://localhost:4000";
+// Get API URL dynamically at runtime (not module load time)
+function getApiUrl() {
+  return typeof window !== 'undefined' 
+    ? (process.env.NEXT_PUBLIC_SERVER_URL || window.location.origin.replace(':3000', ':4000'))
+    : (process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:4000');
+}
 
 export interface AnteOption {
   id: string;
@@ -120,7 +125,7 @@ export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
     
     set({ isConnecting: true, error: null });
     
-    const newSocket = io(API_URL, {
+    const newSocket = io(getApiUrl(), {
       transports: ["websocket", "polling"],
       autoConnect: true,
     });

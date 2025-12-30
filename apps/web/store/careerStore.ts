@@ -5,7 +5,12 @@
 import { create } from "zustand";
 import { useAuthStore, UserProfile } from "./authStore";
 
-const API_URL = process.env.NEXT_PUBLIC_SERVER_URL || "http://localhost:4000";
+// Get API URL dynamically at runtime (not module load time)
+function getApiUrl() {
+  return typeof window !== 'undefined' 
+    ? (process.env.NEXT_PUBLIC_SERVER_URL || window.location.origin.replace(':3000', ':4000'))
+    : (process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:4000');
+}
 
 /**
  * Leaderboard entry
@@ -114,7 +119,7 @@ export const useCareerStore = create<CareerState>((set, get) => ({
     set({ isLoadingLeaderboard: true });
     
     try {
-      const response = await fetch(`${API_URL}/api/leaderboard`);
+      const response = await fetch(`${getApiUrl()}/api/leaderboard`);
       const data = await response.json();
       
       if (data.success && data.players) {
@@ -148,8 +153,8 @@ export const useCareerStore = create<CareerState>((set, get) => ({
       }
       
       const url = userId 
-        ? `${API_URL}/api/matches/${userId}`
-        : `${API_URL}/api/matches`;
+        ? `${getApiUrl()}/api/matches/${userId}`
+        : `${getApiUrl()}/api/matches`;
         
       const response = await fetch(url, { headers });
       const data = await response.json();
@@ -166,7 +171,7 @@ export const useCareerStore = create<CareerState>((set, get) => ({
   
   fetchProfile: async (userId: string) => {
     try {
-      const response = await fetch(`${API_URL}/api/profile/${userId}`);
+      const response = await fetch(`${getApiUrl()}/api/profile/${userId}`);
       const data = await response.json();
       
       if (data.success && data.profile) {

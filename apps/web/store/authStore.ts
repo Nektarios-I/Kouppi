@@ -5,7 +5,12 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-const API_URL = process.env.NEXT_PUBLIC_SERVER_URL || "http://localhost:4000";
+// Get API URL dynamically at runtime (not module load time)
+function getApiUrl() {
+  return typeof window !== 'undefined' 
+    ? (process.env.NEXT_PUBLIC_SERVER_URL || window.location.origin.replace(':3000', ':4000'))
+    : (process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:4000');
+}
 
 /**
  * Avatar configuration
@@ -73,7 +78,7 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true, error: null });
         
         try {
-          const response = await fetch(`${API_URL}/api/auth/login`, {
+          const response = await fetch(`${getApiUrl()}/api/auth/login`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ username, password }),
@@ -110,7 +115,7 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true, error: null });
         
         try {
-          const response = await fetch(`${API_URL}/api/auth/register`, {
+          const response = await fetch(`${getApiUrl()}/api/auth/register`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ username, password, avatar }),
@@ -152,7 +157,7 @@ export const useAuthStore = create<AuthState>()(
         if (!token) return;
         
         try {
-          const response = await fetch(`${API_URL}/api/auth/me`, {
+          const response = await fetch(`${getApiUrl()}/api/auth/me`, {
             headers: { 
               "Authorization": `Bearer ${token}`,
             },
