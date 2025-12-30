@@ -115,15 +115,12 @@ export function applyAction(s: GameState, action: Action): GameState {
     case "ante": {
       const ante = state.config.ante;
       state.players.forEach(p => {
-        if (!p.active) return;
         const pay = Math.min(p.bankroll, ante);
         p.bankroll -= pay;
         state.round.pot += pay;
-        if (p.bankroll <= 0) {
-          p.active = false; // no dealing this round
-        }
+        // Player may hit zero, but stays in rotation; no inactive flag
       });
-      log(`Ante collected: +${ante} per active player`);
+      log(`Ante collected: +${ante} per player (zero bankroll stays)`);
       return state;
     }
 
@@ -169,13 +166,7 @@ export function applyAction(s: GameState, action: Action): GameState {
     case "startTurn": {
       const p = state.players[state.currentIndex];
 
-      // Skip bankrupt/inactive players
-      if (!p.active || p.bankroll <= 0) {
-        log(`${p.name} is bankrupt or inactive; skipping`);
-        return applyAction(state, { type: "nextPlayer" });
-      }
-
-      // Deal two upcards
+      // Deal two upcards (even if bankrupt)
       ensureDraw(state, 2);
       const d = draw(state.deck, 2);
       state.deck = d.deck;
@@ -187,6 +178,12 @@ export function applyAction(s: GameState, action: Action): GameState {
       // but we let the player decide to pass or bet anyway (they'll likely lose)
       if (isPair(up) || isConsecutive(up)) {
         log(`Bad hand (pair or consecutive) - player can still act`);
+      }
+
+      // If bankrupt, auto-pass immediately (cards dealt but not actionable)
+      if (p.bankroll <= 0) {
+        log(`${p.name} has zero bankroll; auto-pass`);
+        return applyAction(state, { type: "pass" });
       }
 
       return state;
@@ -301,7 +298,7 @@ case "shistri": {
     // Loss: add bet to pot
     state.round.pot += amount;
     p.bankroll -= amount;
-    if (p.bankroll <= 0) p.active = false;
+    // If bankroll hits zero, player remains in rotation and will auto-pass next turn
     log(`${p.name} LOSS ${amount} (${kind.toUpperCase()}) (reveal ${cardStr(reveal)}) pot=${state.round.pot}`);
   }
 

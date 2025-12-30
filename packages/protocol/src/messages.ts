@@ -1,9 +1,18 @@
 import { z } from "zod";
 
+// Avatar configuration
+export const AvatarConfig = z.object({
+  emoji: z.string().min(1),
+  color: z.string().min(1),
+  borderColor: z.string().min(1),
+});
+export type AvatarConfig = z.infer<typeof AvatarConfig>;
+
 // Player identity
 export const PlayerIdentity = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
+  avatar: AvatarConfig.optional(),
 });
 export type PlayerIdentity = z.infer<typeof PlayerIdentity>;
 
@@ -27,12 +36,14 @@ export const CreateRoomPayload = z.object({
   roomId: z.string().min(3),
   creator: PlayerIdentity,
   config: RoomConfig.partial().default({}),
+  password: z.string().optional(), // Optional password for private rooms
 });
 export type CreateRoomPayload = z.infer<typeof CreateRoomPayload>;
 
 export const JoinRoomPayload = z.object({
   roomId: z.string().min(3),
   player: PlayerIdentity,
+  password: z.string().optional(), // Password required if room is private
 });
 export type JoinRoomPayload = z.infer<typeof JoinRoomPayload>;
 

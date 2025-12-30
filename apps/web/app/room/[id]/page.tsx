@@ -1,12 +1,19 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { useRemoteGameStore } from "@/store/remoteGameStore";
+import { useRemoteGameStore, type AvatarConfig } from "@/store/remoteGameStore";
+import { useAuthStore } from "@/store/authStore";
 import dynamic from "next/dynamic";
+import Chat from "../../../components/Chat";
+import SoundControl from "../../../components/SoundControl";
+import EmotePanel from "../../../components/EmotePanel";
+import EmoteDisplay from "../../../components/EmoteDisplay";
+import AvatarPicker, { Avatar } from "../../../components/AvatarPicker";
+import { getDefaultAvatar } from "@/lib/avatars";
 
-// Dynamic import to avoid SSR issues
+// Dynamic import to avoid SSR issues - Use new graphics version
 const MultiplayerTable = dynamic(
-  () => import("../../../components/MultiplayerTable"),
+  () => import("../../../components/MultiplayerTableGraphics"),
   { ssr: false }
 );
 
@@ -20,13 +27,20 @@ export default function RoomPage() {
     connected,
     roomId,
     isHost,
+    isSpectator,
     playersInRoom,
+    spectatorsInRoom,
     gameStarted,
     state,
     playerId,
     playerName,
+    playerAvatar,
     setIdentity,
+    setAvatar,
     joinRoom,
+    subscribeToCareerRoom,
+    joinAsSpectator,
+    leaveSpectator,
     startGame,
     leaveRoom,
     listRooms,
@@ -37,28 +51,88 @@ export default function RoomPage() {
 
   const [starting, setStarting] = useState(false);
   const [localName, setLocalName] = useState("");
+  const [joinFailed, setJoinFailed] = useState(false);
+  const [showSpectatorOption, setShowSpectatorOption] = useState(false);
+  // Check if this is a career game room
+  const isCareerGame = roomIdParam?.startsWith("career-game-");
+  
+  // Get auth store for career mode
+  const { user, isLoggedIn } = useAuthStore();
 
   // Connect on mount
   useEffect(() => {
     connect();
   }, [connect]);
 
-  // Load identity from sessionStorage (per-tab, so multiple tabs can be different players)
+  // Reset join state when room changes (e.g., navigating to a different room)
   useEffect(() => {
-    const savedId = sessionStorage.getItem("kouppi_player_id");
-    const savedName = sessionStorage.getItem("kouppi_player_name");
-    if (savedId && savedName) {
-      setIdentity(savedId, savedName);
-      setLocalName(savedName);
+    setJoinFailed(false);
+    setShowSpectatorOption(false);
+  }, [roomIdParam]);
+
+  // Load identity from auth store for career games, or sessionStorage for multiplayer
+  useEffect(() => {
+    if (isCareerGame && isLoggedIn() && user) {
+      // Career mode: use auth store identity
+      setIdentity(user.id, user.username);
+      setLocalName(user.username);
+      // Set avatar from user profile
+      const avatar: AvatarConfig = {
+        emoji: user.avatarEmoji || "🎮",
+        color: user.avatarColor || "#4f46e5",
+        borderColor: user.avatarBorder || "#818cf8",
+      };
+      setAvatar(avatar);
+    } else {
+      // Multiplayer: load from sessionStorage (per-tab, so multiple tabs can be different players)
+      const savedId = sessionStorage.getItem("kouppi_player_id");
+      const savedName = sessionStorage.getItem("kouppi_player_name");
+      const savedAvatar = sessionStorage.getItem("kouppi_player_avatar");
+      if (savedId && savedName) {
+        setIdentity(savedId, savedName);
+        setLocalName(savedName);
+      }
+      if (savedAvatar) {
+        try {
+          const avatar = JSON.parse(savedAvatar) as AvatarConfig;
+          setAvatar(avatar);
+        } catch {
+          // Invalid avatar JSON, ignore
+        }
+      }
     }
-  }, [setIdentity]);
+  }, [isCareerGame, isLoggedIn, user, setIdentity, setAvatar]);
 
   // Join room if we have identity but not in the room yet
+  // For career games, players are already added server-side, so we just need to subscribe to the room
   useEffect(() => {
-    if (connected && playerId && playerName && !roomId && roomIdParam) {
-      joinRoom(decodeURIComponent(roomIdParam));
+    if (connected && playerId && playerName && !roomId && roomIdParam && !joinFailed) {
+      const tryJoin = async () => {
+        const decodedRoomId = decodeURIComponent(roomIdParam);
+        
+        // For career games, use subscribe (player already added server-side)
+        if (isCareerGame) {
+          const result = await subscribeToCareerRoom(decodedRoomId);
+          if (!result.success) {
+            console.error("[Career] Subscribe failed:", result.error);
+            setJoinFailed(true);
+          }
+          return;
+        }
+        
+        // For regular multiplayer, join normally
+        const result = await joinRoom(decodedRoomId);
+        if (!result.success) {
+          setJoinFailed(true);
+          // If room is full or game in progress, offer spectator mode
+          if (result.error?.includes("full") || result.error?.includes("started") || result.error?.includes("progress")) {
+            setShowSpectatorOption(true);
+          }
+        }
+      };
+      tryJoin();
     }
-  }, [connected, playerId, playerName, roomId, roomIdParam, joinRoom]);
+  }, [connected, playerId, playerName, roomId, roomIdParam, joinRoom, joinFailed]);
 
   // Redirect to lobby if room is closed (roomId becomes null while we had a room)
   useEffect(() => {
@@ -82,6 +156,18 @@ export default function RoomPage() {
     setIdentity(id, localName.trim());
     sessionStorage.setItem("kouppi_player_id", id);
     sessionStorage.setItem("kouppi_player_name", localName.trim());
+    
+    // Set a random avatar if none exists
+    if (!playerAvatar) {
+      const newAvatar = getDefaultAvatar();
+      setAvatar(newAvatar);
+      sessionStorage.setItem("kouppi_player_avatar", JSON.stringify(newAvatar));
+    }
+  };
+  
+  const handleAvatarChange = (newAvatar: AvatarConfig) => {
+    setAvatar(newAvatar);
+    sessionStorage.setItem("kouppi_player_avatar", JSON.stringify(newAvatar));
   };
 
   const handleStartGame = async () => {
@@ -95,12 +181,24 @@ export default function RoomPage() {
   };
 
   const handleLeave = () => {
-    leaveRoom();
+    if (isSpectator) {
+      leaveSpectator();
+    } else {
+      leaveRoom();
+    }
     router.push("/lobby");
   };
 
-  // Need to set name first
-  if (!playerName) {
+  const handleJoinAsSpectator = async () => {
+    clearError();
+    const result = await joinAsSpectator(decodeURIComponent(roomIdParam));
+    if (!result.success) {
+      alert(`Failed to join as spectator: ${result.error}`);
+    }
+  };
+
+  // Need to set name first (only for non-career multiplayer games)
+  if (!playerName && !isCareerGame) {
     return (
       <main className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 text-white p-6 flex items-center justify-center">
         <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full">
@@ -129,9 +227,80 @@ export default function RoomPage() {
     );
   }
 
-  // Game started - show multiplayer game UI
+  // Career game: Show loading while waiting to connect and receive state
+  if (isCareerGame && (!connected || !state)) {
+    return (
+      <main className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 text-white p-6 flex items-center justify-center">
+        <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full text-center">
+          <div className="w-12 h-12 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mx-auto mb-4" />
+          <h2 className="text-xl font-semibold mb-2">Joining Career Game...</h2>
+          <p className="text-gray-400">Connecting to game room</p>
+          {lastError && (
+            <p className="mt-4 text-red-400 text-sm">{lastError}</p>
+          )}
+        </div>
+      </main>
+    );
+  }
+
+  // Game started - show multiplayer game UI (players and spectators)
   if (gameStarted && state) {
-    return <MultiplayerTable />;
+    return (
+      <>
+        <MultiplayerTable />
+        <Chat />
+        <SoundControl />
+        {!isSpectator && <EmotePanel />}
+        <EmoteDisplay />
+        {/* Spectator badge */}
+        {isSpectator && (
+          <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50">
+            <div className="bg-purple-600/90 px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2 shadow-lg">
+              👁️ Spectating
+              <button
+                onClick={handleLeave}
+                className="ml-2 bg-purple-800 hover:bg-purple-700 px-2 py-0.5 rounded text-xs"
+              >
+                Leave
+              </button>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  // Show spectator option if join failed and spectating is available
+  if (showSpectatorOption && !roomId) {
+    return (
+      <main className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 text-white p-6 flex items-center justify-center">
+        <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full text-center">
+          <h2 className="text-xl font-semibold mb-4">Game in Progress</h2>
+          <p className="text-gray-400 mb-6">
+            This game has already started. Would you like to watch as a spectator?
+          </p>
+          <div className="flex flex-col gap-3">
+            <button
+              className="btn bg-purple-600 hover:bg-purple-700 px-6 py-3 rounded-lg text-lg font-semibold"
+              onClick={handleJoinAsSpectator}
+            >
+              👁️ Watch as Spectator
+            </button>
+            <button
+              className="btn bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded"
+              onClick={() => router.push("/lobby")}
+            >
+              Back to Lobby
+            </button>
+          </div>
+          {lastError && (
+            <div className="mt-4 text-sm text-red-400">
+              {lastError}
+            </div>
+          )}
+        </div>
+      </main>
+    );
   }
 
   // Waiting room
@@ -185,7 +354,7 @@ export default function RoomPage() {
                     className="flex items-center justify-between bg-gray-700 rounded px-4 py-3"
                   >
                     <div className="flex items-center gap-3">
-                      <span className="text-gray-400">#{index + 1}</span>
+                      <Avatar avatar={player.avatar} size="sm" />
                       <span className="font-medium">{player.name}</span>
                       {player.id === playerId && (
                         <span className="text-xs text-green-400">(you)</span>
@@ -200,12 +369,48 @@ export default function RoomPage() {
             </div>
           </div>
 
+          {/* Spectators */}
+          <div className="mb-4">
+            <h3 className="text-sm font-medium text-gray-400 mb-2">
+              Spectators ({spectatorsInRoom.length})
+            </h3>
+            {spectatorsInRoom.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {spectatorsInRoom.map((spectator) => (
+                  <div
+                    key={spectator.id}
+                    className="flex items-center gap-2 bg-purple-900/30 border border-purple-500/30 rounded px-3 py-1.5"
+                  >
+                    <span className="text-purple-400">👁️</span>
+                    <span className="text-sm text-gray-300">{spectator.name}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-gray-500 text-sm">No spectators</div>
+            )}
+          </div>
+
           {/* Minimum players notice */}
           {playersInRoom.length < 2 && (
             <div className="bg-blue-600/20 border border-blue-500 rounded p-3 mb-4 text-sm">
               ℹ️ At least 2 players are required to start the game
             </div>
           )}
+          
+          {/* Your Avatar - Customization */}
+          <div className="bg-gray-700/50 rounded-lg p-4 mb-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium text-gray-300 mb-1">Your Avatar</h3>
+                <p className="text-xs text-gray-500">Click to customize</p>
+              </div>
+              <AvatarPicker
+                currentAvatar={playerAvatar}
+                onSelect={handleAvatarChange}
+              />
+            </div>
+          </div>
 
           {/* Actions */}
           <div className="flex items-center gap-4">
@@ -262,6 +467,9 @@ export default function RoomPage() {
           </a>
         </div>
       </div>
+      
+      {/* Chat */}
+      <Chat />
     </main>
   );
 }

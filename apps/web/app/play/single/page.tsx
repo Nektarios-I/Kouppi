@@ -2,8 +2,10 @@
 import dynamic from "next/dynamic";
 import SettingsDialog, { TableSettings } from "@/components/SettingsDialog";
 import { useGameStore } from "@/store/gameStore";
+import SoundControl from "@/components/SoundControl";
 
-const Table = dynamic(() => import("@/components/Table"), { ssr: false });
+// Use new graphics version
+const Table = dynamic(() => import("@/components/TableGraphics"), { ssr: false });
 
 export default function Page() {
   const ready = useGameStore(s => s.ready);
@@ -17,6 +19,7 @@ export default function Page() {
     <>
       <SettingsDialog open={!ready} onStart={handleStart} />
       <Table />
+      <SoundControl />
     </>
   );
 }

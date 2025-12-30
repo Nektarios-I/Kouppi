@@ -21,3 +21,220 @@ body {
 .btn {
   @apply px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 transition;
 }
+
+/* Emote animations */
+@keyframes emote-float {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-20px) scale(1.1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-60px) scale(0.8);
+  }
+}
+
+@keyframes emote-bounce {
+  0% {
+    transform: translateX(-50%) scale(0) translateY(20px);
+  }
+  50% {
+    transform: translateX(-50%) scale(1.2) translateY(-5px);
+  }
+  100% {
+    transform: translateX(-50%) scale(1) translateY(0);
+  }
+}
+
+.animate-emote-float {
+  animation: emote-float 3s ease-out forwards;
+}
+
+.animate-emote-bounce {
+  animation: emote-bounce 0.5s ease-out;
+}
+
+/* Card flip animation */
+.card-flip-container {
+  perspective: 1000px;
+}
+
+.card-flip-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-style: preserve-3d;
+}
+
+.card-flip-inner.flipped {
+  transform: rotateY(180deg);
+}
+
+.card-flip-front,
+.card-flip-back {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.card-flip-back {
+  transform: rotateY(180deg);
+}
+
+/* Card deal animation */
+@keyframes card-deal {
+  0% {
+    opacity: 0;
+    transform: translateY(-100px) scale(0.5) rotate(-10deg);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(10px) scale(1.05) rotate(2deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(0deg);
+  }
+}
+
+.animate-card-deal {
+  animation: card-deal 0.5s ease-out forwards;
+}
+
+/* Card reveal glow */
+@keyframes card-glow {
+  0% {
+    box-shadow: 0 0 5px rgba(255, 215, 0, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(255, 215, 0, 0.8), 0 0 60px rgba(255, 215, 0, 0.4);
+  }
+  100% {
+    box-shadow: 0 0 10px rgba(255, 215, 0, 0.6);
+  }
+}
+
+.animate-card-glow {
+  animation: card-glow 0.8s ease-out;
+}
+
+/* Chip bet animation */
+@keyframes chip-fly {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-40px) scale(1.2);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-80px) scale(0.8);
+  }
+}
+
+.animate-chip-fly {
+  animation: chip-fly 0.6s ease-out forwards;
+}
+
+/* Chip stack animation */
+@keyframes chip-stack {
+  0% {
+    opacity: 0;
+    transform: translateY(-30px) scale(0);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(5px) scale(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-chip-stack {
+  animation: chip-stack 0.4s ease-out forwards;
+}
+
+/* Confetti particle animation */
+@keyframes confetti-fall {
+  0% {
+    opacity: 1;
+    transform: translateY(0) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(100vh) rotate(720deg);
+  }
+}
+
+@keyframes confetti-sway {
+  0%, 100% {
+    transform: translateX(-20px);
+  }
+  50% {
+    transform: translateX(20px);
+  }
+}
+
+.animate-confetti {
+  animation: confetti-fall 3s ease-out forwards;
+}
+
+/* Win celebration burst */
+@keyframes win-burst {
+  0% {
+    opacity: 0;
+    transform: scale(0);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.3);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-win-burst {
+  animation: win-burst 0.5s ease-out;
+}
+
+/* Pot increase animation */
+@keyframes pot-pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+    text-shadow: 0 0 20px rgba(255, 215, 0, 0.8);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.animate-pot-pulse {
+  animation: pot-pulse 0.4s ease-out;
+}
+
+/* Shake animation for lose */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+  20%, 40%, 60%, 80% { transform: translateX(5px); }
+}
+
+.animate-shake {
+  animation: shake 0.5s ease-out;
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { useRemoteGameStore } from "@/store/remoteGameStore";
 import type { GameState } from "@kouppi/game-core";
 
@@ -57,16 +58,20 @@ function TurnTimer({ remaining, total }: { remaining: number; total: number }) {
 }
 
 export default function MultiplayerTable() {
+  const router = useRouter();
   const {
     state,
     playerId,
     isHost,
     turnTimer,
     roundEnded,
+    roundDecision,
     playerTimeout,
     sendIntent,
     requestNewRound,
     leaveRoom,
+    decideStay,
+    decideLeave,
   } = useRemoteGameStore();
   
   const [bet, setBet] = useState<number>(10);
@@ -79,6 +84,7 @@ export default function MultiplayerTable() {
   const currentPlayer = gameState.players[gameState.currentIndex];
   const isMyTurn = currentPlayer?.id === playerId;
   const me = gameState.players.find(p => p.id === playerId);
+  const currentBankrupt = (currentPlayer?.bankroll ?? 0) <= 0;
   
   const up = gameState.turn?.upcards;
   const reveal = gameState.turn?.reveal;
@@ -119,9 +125,58 @@ export default function MultiplayerTable() {
 
   const handleLeave = () => {
     leaveRoom();
+    router.push("/lobby");
   };
 
-  // Round End Modal
+  // Round Decision Modal (takes precedence at round end)
+  if ((roundEnded || gameState.phase === "RoundEnd") && roundDecision?.active) {
+    const myChoice = roundDecision.choices[playerId || ""] || null;
+    return (
+      <div className="fixed inset-0 bg-black/60 grid place-items-center z-50">
+        <div className="w-full max-w-md bg-gray-800 rounded-xl p-6 text-white">
+          <h2 className="text-2xl font-semibold mb-2">🎉 Round Complete</h2>
+          <p className="text-gray-300 mb-1">The pot is empty. Decide to stay or leave.</p>
+          <p className="text-gray-400 mb-4">Starting next game after all players decide or in {roundDecision.remaining}s.</p>
+
+          <div className="bg-gray-700 rounded-lg p-3 mb-4">
+            <h3 className="font-semibold mb-2">Players</h3>
+            <div className="space-y-2">
+              {gameState.players.map((p) => {
+                const c = roundDecision.choices[p.id];
+                return (
+                  <div key={p.id} className="flex items-center justify-between text-sm">
+                    <span>{p.name}{p.id === playerId && " (you)"}</span>
+                    <span className={c === "stay" ? "text-green-400" : c === "leave" ? "text-red-400" : "text-gray-400"}>
+                      {c === "stay" ? "Stay" : c === "leave" ? "Leave" : "Pending"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              className="flex-1 bg-green-600 hover:bg-green-700 px-4 py-3 rounded-lg font-semibold disabled:opacity-50"
+              onClick={decideStay}
+              disabled={myChoice !== null}
+            >
+              ✅ Stay
+            </button>
+            <button
+              className="flex-1 bg-red-600 hover:bg-red-700 px-4 py-3 rounded-lg font-semibold disabled:opacity-50"
+              onClick={decideLeave}
+              disabled={myChoice !== null}
+            >
+              🚪 Leave
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback Round End Modal (no decision phase received)
   if (roundEnded || gameState.phase === "RoundEnd") {
     return (
       <div className="fixed inset-0 bg-black/60 grid place-items-center z-50">
@@ -151,19 +206,9 @@ export default function MultiplayerTable() {
           </div>
           
           <div className="flex gap-3">
-            {isHost ? (
-              <button
-                className="flex-1 bg-green-600 hover:bg-green-700 px-4 py-3 rounded-lg font-semibold disabled:opacity-50"
-                onClick={handleNewRound}
-                disabled={startingNewRound}
-              >
-                {startingNewRound ? "Starting..." : "🔄 New Round (Refill & Continue)"}
-              </button>
-            ) : (
-              <div className="flex-1 text-center text-gray-400 py-3">
-                Waiting for host to start new round...
-              </div>
-            )}
+            <div className="flex-1 text-center text-gray-400 py-3">
+              Waiting for next round...
+            </div>
             <button
               className="bg-red-600 hover:bg-red-700 px-4 py-3 rounded-lg"
               onClick={handleLeave}
@@ -291,7 +336,7 @@ export default function MultiplayerTable() {
                 )
               ) : up ? (
                 <>
-                  <CardView rank={up.a.rank} suit={up.a.suit} />
+                  {!currentBankrupt && <CardView rank={up.a.rank} suit={up.a.suit} />}
                   {reveal ? (
                     <CardView rank={reveal.rank} suit={reveal.suit} highlight />
                   ) : (
@@ -299,7 +344,7 @@ export default function MultiplayerTable() {
                       <span className="text-xs text-gray-500">?</span>
                     </div>
                   )}
-                  <CardView rank={up.b.rank} suit={up.b.suit} />
+                  {!currentBankrupt && <CardView rank={up.b.rank} suit={up.b.suit} />}
                 </>
               ) : (
                 <div className="text-gray-500 py-8">Waiting for cards...</div>
@@ -331,7 +376,7 @@ export default function MultiplayerTable() {
         </div>
 
         {/* Actions (only for current player with cards) */}
-        {isMyTurn && up && !awaitingNext && gameState.phase === "Round" && (
+        {isMyTurn && up && !awaitingNext && gameState.phase === "Round" && !currentBankrupt && (
           <div className="bg-gray-800 rounded-lg p-4">
             <h3 className="font-semibold mb-3">Your Actions</h3>
             
@@ -401,9 +446,15 @@ export default function MultiplayerTable() {
         {/* Waiting for cards to be dealt (edge case guard) */}
         {isMyTurn && !up && !awaitingNext && gameState.phase === "Round" && (
           <div className="bg-gray-800 rounded-lg p-4 text-center">
-            <div className="text-yellow-400 animate-pulse">
-              ⏳ Dealing cards...
-            </div>
+            {currentBankrupt ? (
+              <div className="text-yellow-400">
+                💸 You have zero bankroll — auto-passing this turn.
+              </div>
+            ) : (
+              <div className="text-yellow-400 animate-pulse">
+                ⏳ Dealing cards...
+              </div>
+            )}
           </div>
         )}
 
