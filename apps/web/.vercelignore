@@ -1,0 +1,21 @@
+# Build and dependency artifacts
+node_modules
+.next
+coverage
+
+# Test artifacts
+playwright-report
+test-results
+.vitest
+
+# Logs and archives
+*.log
+*.zip
+*.7z
+*.tar
+*.tar.gz
+*.tgz
+
+# Local env artifacts
+.env.local
+.env.*.local

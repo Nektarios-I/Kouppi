@@ -30,6 +30,27 @@ pnpm-debug.log*
 
 # Test coverage
 coverage/
+playwright-report/
+test-results/
+.vitest/
+
+# Vercel local metadata
+.vercel/
 
 # Misc
 *.zip
+*.7z
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.iso
+*.bin
+
+# Common heavy design/media source files
+*.psd
+*.ai
+*.sketch
+*.blend
+*.mov
+*.mkv
