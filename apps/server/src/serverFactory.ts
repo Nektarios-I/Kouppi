@@ -23,22 +23,26 @@ import { isCareerGame, handleCareerGameEnd, getCareerRoomByGameId } from "./care
 export function createKouppiServer(opts?: {
   corsOrigin?: string;
   config?: TableConfig;
+  /** Skip career database init (used in tests). */
+  skipCareerDatabase?: boolean;
 }) {
   // Initialize database for Career Mode
-  try {
-    getDatabase();
-    console.log("[Career Mode] Database initialized");
-    
-    // Cleanup expired sessions periodically (every hour)
-    setInterval(() => {
-      const cleaned = cleanupExpiredSessions();
-      if (cleaned > 0) {
-        console.log(`[Career Mode] Cleaned ${cleaned} expired session(s)`);
-      }
-    }, 60 * 60 * 1000);
-  } catch (error) {
-    console.error("[Career Mode] Failed to initialize database:", error);
-    // Continue without Career Mode if DB fails
+  if (!opts?.skipCareerDatabase) {
+    try {
+      getDatabase();
+      console.log("[Career Mode] Database initialized");
+
+      // Cleanup expired sessions periodically (every hour)
+      setInterval(() => {
+        const cleaned = cleanupExpiredSessions();
+        if (cleaned > 0) {
+          console.log(`[Career Mode] Cleaned ${cleaned} expired session(s)`);
+        }
+      }, 60 * 60 * 1000);
+    } catch (error) {
+      console.error("[Career Mode] Failed to initialize database:", error);
+      // Continue without Career Mode if DB fails
+    }
   }
 
   const app = express();
@@ -366,6 +370,7 @@ export function createKouppiServer(opts?: {
           resetAfkCount(roomId, playerId);
           clearTurnTimer(roomId);
           clearTimerInterval(roomId);
+          clearFlowTimer(roomId);
         }
 
         handleClientIntent(roomId, playerId, i);

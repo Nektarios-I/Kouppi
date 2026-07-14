@@ -29,7 +29,7 @@ import {
 } from "./careerRoomManager.js";
 import { getUserById } from "@kouppi/database";
 import { verifyToken } from "../auth/jwt.js";
-import { createRoomWithCreator, snapshot, getRoom, closeRoom, startRoom, handleIntent } from "../rooms.js";
+import { createRoomWithCreator, snapshot, getRoom, closeRoom, startRoom } from "../rooms.js";
 import type { TableConfig } from "@kouppi/game-core";
 
 // Store socket -> userId mapping for authenticated sockets

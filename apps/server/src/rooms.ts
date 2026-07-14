@@ -64,6 +64,13 @@ export function getRoom(id: string): Room | undefined {
   return rooms.get(id);
 }
 
+/** Clear all rooms and timers — for integration tests only. */
+export function resetAllRoomsForTests(): void {
+  for (const id of Array.from(rooms.keys())) {
+    closeRoom(id);
+  }
+}
+
 export function joinRoom(id: string, player: PlayerSession): Room {
   const room = rooms.get(id);
   if (!room) throw new Error("room_not_found");

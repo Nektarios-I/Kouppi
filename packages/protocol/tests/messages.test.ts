@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { BetIntent, Intent, CreateRoomPayload, JoinRoomPayload, StartRoomPayload, RoomsListItem } from "../src/messages";
+import { BetIntent, Intent, ClientIntent, CreateRoomPayload, JoinRoomPayload, StartRoomPayload, RoomsListItem } from "../src/messages";
 
 describe("protocol schemas", () => {
   it("validates BetIntent", () => {
@@ -14,6 +14,12 @@ describe("protocol schemas", () => {
   it("validates Intent union", () => {
     const parsed = Intent.parse({ type: "pass" });
     expect(parsed.type).toBe("pass");
+  });
+
+  it("ClientIntent rejects system-only intents", () => {
+    expect(() => ClientIntent.parse({ type: "nextPlayer" })).toThrow();
+    expect(() => ClientIntent.parse({ type: "startTurn" })).toThrow();
+    expect(ClientIntent.parse({ type: "pass" }).type).toBe("pass");
   });
 
   it("validates room create/join/start payloads", () => {

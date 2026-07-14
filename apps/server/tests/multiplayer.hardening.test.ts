@@ -7,7 +7,7 @@ let ioServer: any;
 const port = 4300;
 
 beforeAll(async () => {
-  const created = createKouppiServer({ corsOrigin: "*" });
+  const created = createKouppiServer({ corsOrigin: "*", skipCareerDatabase: true });
   httpServer = created.httpServer;
   ioServer = created.io;
   await new Promise<void>((resolve) => httpServer.listen(port, () => resolve()));

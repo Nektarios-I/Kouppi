@@ -111,4 +111,35 @@ describe("remoteGameStore fixes", () => {
     const player = useRemoteGameStore.getState().playersInRoom[0];
     expect(player.avatar?.emoji).toBe("😎");
   });
+
+  it("shows no_decision message when kicked for missing round choice", () => {
+    useRemoteGameStore.setState({ playerId: "p1", roomId: "room-1" });
+    useRemoteGameStore.getState().connect();
+    socketHandlers.playerKicked?.({ playerId: "p1", reason: "no_decision" });
+    expect(useRemoteGameStore.getState().lastError).toMatch(/not choosing stay or leave/i);
+    expect(useRemoteGameStore.getState().roomId).toBeNull();
+  });
+
+  it("retries rejoin on slot_taken during reconnect", async () => {
+    vi.useFakeTimers();
+    useRemoteGameStore.setState({
+      roomId: "room-1",
+      playerId: "p1",
+      playerName: "Alice",
+      isSpectator: false,
+    });
+
+    const joinRoomSpy = vi
+      .spyOn(useRemoteGameStore.getState(), "joinRoom")
+      .mockResolvedValueOnce({ success: false, error: "Slot taken", code: "slot_taken" })
+      .mockResolvedValueOnce({ success: true });
+
+    useRemoteGameStore.getState().connect();
+    ioHandlers.reconnect?.();
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(joinRoomSpy).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
 });

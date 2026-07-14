@@ -191,11 +191,23 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     s.io.on("reconnect", () => {
       const { roomId, playerId, playerName, isSpectator } = get();
       if (!roomId || !playerId || !playerName) return;
-      if (isSpectator) {
-        void get().joinAsSpectator(roomId);
-      } else {
-        void get().joinRoom(roomId);
-      }
+
+      const attemptRejoin = async (tryCount = 0): Promise<void> => {
+        const result = isSpectator
+          ? await get().joinAsSpectator(roomId)
+          : await get().joinRoom(roomId);
+
+        if (result.success) return;
+
+        if (result.code === "slot_taken" && tryCount < 8) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          return attemptRejoin(tryCount + 1);
+        }
+
+        set({ lastError: result.error || "Failed to rejoin room after reconnect" });
+      };
+
+      void attemptRejoin();
     });
     
     s.on("disconnect", () => set({ connected: false }));
@@ -261,8 +273,11 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     });
     
     s.on("roomClosed", (data: { reason: string }) => {
-      console.log("Room closed:", data.reason);
-      // Reset ALL room-related state
+      const reasonMessages: Record<string, string> = {
+        empty: "Room closed — no players left",
+        host_left: "The host has left the room",
+        no_eligible_players: "Room closed — no eligible players remain",
+      };
       set({
         roomId: null,
         isHost: false,
@@ -279,7 +294,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
         playerTimeout: null,
         chatMessages: [],
         activeEmotes: [],
-        lastError: data.reason === "host_left" ? "The host has left the room" : "Room closed",
+        lastError: reasonMessages[data.reason] || "Room closed",
       });
     });
     
@@ -313,26 +328,31 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     // Player kicked notification
     s.on("playerKicked", (data: { playerId: string; reason: string }) => {
       const currentPlayerId = get().playerId;
-      if (data.playerId === currentPlayerId) {
-        // We were kicked - reset ALL room-related state
-        set({
-          roomId: null,
-          isHost: false,
-          isSpectator: false,
-          state: null,
-          playersInRoom: [],
-          spectatorsInRoom: [],
-          gameStarted: false,
-          roomConfig: null,
-          turnTimer: null,
-          roundEnded: false,
-          roundDecision: null,
-          playerTimeout: null,
-          chatMessages: [],
-          activeEmotes: [],
-          lastError: `You were kicked for being AFK`,
-        });
-      }
+      if (data.playerId !== currentPlayerId) return;
+
+      const kickMessages: Record<string, string> = {
+        afk: "You were kicked for being AFK",
+        no_decision: "You were removed for not choosing stay or leave",
+      };
+
+      set({
+        roomId: null,
+        isHost: false,
+        hostId: null,
+        isSpectator: false,
+        state: null,
+        playersInRoom: [],
+        spectatorsInRoom: [],
+        gameStarted: false,
+        roomConfig: null,
+        turnTimer: null,
+        roundEnded: false,
+        roundDecision: null,
+        playerTimeout: null,
+        chatMessages: [],
+        activeEmotes: [],
+        lastError: kickMessages[data.reason] || "You were removed from the room",
+      });
     });
     
     s.on("rooms", (rooms: RoomInfo[]) => set({ rooms: rooms || [] }));
@@ -564,8 +584,6 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
   leaveRoom: () => {
     const { socket, roomId } = get();
     if (socket && roomId) {
-      // The server doesn't have an explicit leave - we just disconnect from the room
-      // For now, just reset local state. A proper leaveRoom event could be added to the server.
       socket.emit("leaveRoom", { roomId });
     }
     // Reset ALL room-related state to prevent leaking into next session

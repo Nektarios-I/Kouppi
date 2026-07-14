@@ -7,7 +7,7 @@ let ioServer: any;
 const port = 4310;
 
 beforeAll(async () => {
-  const created = createKouppiServer({ corsOrigin: "*" });
+  const created = createKouppiServer({ corsOrigin: "*", skipCareerDatabase: true });
   httpServer = created.httpServer;
   ioServer = created.io;
   await new Promise<void>((resolve) => httpServer.listen(port, () => resolve()));
@@ -141,5 +141,40 @@ describe("multiplayer security fixes", () => {
     c1.close();
     c2.close();
     outsider.close();
+  }, 20000);
+
+  it("allows same player to rejoin after disconnect grace via joinRoom", async () => {
+    const host = await connectClient();
+    const player = await connectClient();
+    const roomId = "sec-reconnect-grace";
+
+    await new Promise<void>((resolve, reject) => {
+      host.emit(
+        "createRoom",
+        { roomId, creator: { id: "p1", name: "Alice" }, config: { maxPlayers: 4 } },
+        (err: any) => (err ? reject(err) : resolve())
+      );
+    });
+
+    await new Promise<void>((resolve) => {
+      player.emit("joinRoom", { roomId, player: { id: "p2", name: "Bob" } }, () => resolve());
+    });
+
+    player.disconnect();
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const reconnected = await connectClient();
+    const rejoinErr = await new Promise<any>((resolve) => {
+      reconnected.emit(
+        "joinRoom",
+        { roomId, player: { id: "p2", name: "Bob" } },
+        (err: any) => resolve(err)
+      );
+    });
+    expect(rejoinErr).toBeNull();
+
+    host.close();
+    reconnected.close();
   }, 20000);
 });
