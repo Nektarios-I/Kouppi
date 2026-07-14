@@ -62,6 +62,16 @@ export const StartTurnIntent = z.object({ type: z.literal("startTurn") });
 export const NextPlayerIntent = z.object({ type: z.literal("nextPlayer") });
 export const NextRoundIntent = z.object({ type: z.literal("nextRound") });
 
+/** Gameplay intents clients may send */
+export const ClientIntent = z.union([
+  BetIntent,
+  KouppiIntent,
+  ShistriIntent,
+  PassIntent,
+]);
+export type ClientIntent = z.infer<typeof ClientIntent>;
+
+/** Full intent union (includes server-only system intents) */
 export const Intent = z.union([
   BetIntent,
   KouppiIntent,
@@ -76,6 +86,13 @@ export const Intent = z.union([
 ]);
 export type Intent = z.infer<typeof Intent>;
 
+export const JoinAsSpectatorPayload = z.object({
+  roomId: z.string().min(3),
+  spectator: PlayerIdentity,
+  password: z.string().optional(),
+});
+export type JoinAsSpectatorPayload = z.infer<typeof JoinAsSpectatorPayload>;
+
 // Socket events
 export const ServerEvents = {
   state: z.any(), // opaque snapshot from server using @kouppi/game-core types
@@ -85,8 +102,9 @@ export const ServerEvents = {
 export const ClientEvents = {
   createRoom: CreateRoomPayload,
   joinRoom: JoinRoomPayload,
-  intent: z.object({ roomId: z.string(), playerId: z.string(), intent: Intent }),
+  intent: z.object({ roomId: z.string(), playerId: z.string().optional(), intent: ClientIntent }),
   startRoom: StartRoomPayload,
+  joinAsSpectator: JoinAsSpectatorPayload,
 };
 
 export const RoomsListItem = z.object({
