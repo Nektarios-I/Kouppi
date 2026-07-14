@@ -116,10 +116,6 @@ describe("multiplayer hardening", () => {
       c2.emit("joinRoom", { roomId, player: { id: "p2", name: "Bob" } }, () => resolve());
     });
 
-    await new Promise<void>((resolve, reject) => {
-      c1.emit("startRoom", { roomId, by: "p1" }, (err: any) => (err ? reject(err) : resolve()));
-    });
-
     const snapStarted = await new Promise<any>((resolve, reject) => {
       c1.emit("startRoom", { roomId, by: "p1" }, (err: any, snap: any) => {
         if (err) reject(err);

@@ -185,16 +185,31 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     
     s.on("connect", () => {
       set({ socket: s, connected: true, lastError: null });
-      // Auto-refresh rooms on connect
       get().listRooms();
+    });
+
+    s.io.on("reconnect", () => {
+      const { roomId, playerId, playerName, isSpectator } = get();
+      if (!roomId || !playerId || !playerName) return;
+      if (isSpectator) {
+        void get().joinAsSpectator(roomId);
+      } else {
+        void get().joinRoom(roomId);
+      }
     });
     
     s.on("disconnect", () => set({ connected: false }));
     
     s.on("state", (snapshot: any) => {
       if (snapshot) {
-        // Extract player list from game state if available
-        const players: PlayerInfo[] = snapshot.players?.map((p: any) => ({ id: p.id, name: p.name })) || [];
+        const existingPlayers = get().playersInRoom;
+        const avatarById = new Map(existingPlayers.map((p) => [p.id, p.avatar]));
+        const players: PlayerInfo[] =
+          snapshot.players?.map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            avatar: avatarById.get(p.id),
+          })) || [];
         set({ 
           state: snapshot, 
           playersInRoom: players,
@@ -392,10 +407,13 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
   
   // Clear all room-related state - call before creating or joining a new room
   clearRoomState: () => {
-    const { socket, roomId } = get();
-    // If we're in a room, emit leave first
+    const { socket, roomId, isSpectator } = get();
     if (socket && roomId) {
-      socket.emit("leaveRoom", { roomId });
+      if (isSpectator) {
+        socket.emit("leaveSpectator", { roomId });
+      } else {
+        socket.emit("leaveRoom", { roomId });
+      }
     }
     set({
       roomId: null,
@@ -594,9 +612,9 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
   },
 
   sendIntent: (intent) => {
-    const { socket, roomId, playerId } = get();
-    if (!socket || !roomId || !playerId) return;
-    socket.emit("intent", { roomId, playerId, intent });
+    const { socket, roomId } = get();
+    if (!socket || !roomId) return;
+    socket.emit("intent", { roomId, intent });
   },
   
   requestNewRound: async () => {
@@ -605,7 +623,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     if (!isHost) return { success: false, error: "Only the host can start a new round" };
     
     return new Promise((resolve) => {
-      socket.emit("newRound", { roomId, playerId }, (err: any, snap: any) => {
+      socket.emit("newRound", { roomId }, (err: any, snap: any) => {
         if (err) {
           set({ lastError: err.message || "New round failed" });
           resolve({ success: false, error: err.message || err.code });
@@ -623,14 +641,14 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
   },
 
   decideStay: () => {
-    const { socket, roomId, playerId } = get();
-    if (!socket || !roomId || !playerId) return;
-    socket.emit("roundDecision", { roomId, playerId, decision: "stay" });
+    const { socket, roomId } = get();
+    if (!socket || !roomId) return;
+    socket.emit("roundDecision", { roomId, decision: "stay" });
   },
   decideLeave: () => {
-    const { socket, roomId, playerId } = get();
-    if (!socket || !roomId || !playerId) return;
-    socket.emit("roundDecision", { roomId, playerId, decision: "leave" });
+    const { socket, roomId } = get();
+    if (!socket || !roomId) return;
+    socket.emit("roundDecision", { roomId, decision: "leave" });
   },
 
   listRooms: () => {

@@ -169,6 +169,10 @@ export function createKouppiServer(opts?: {
         } catch {}
       }
 
+      if (room.state?.phase === "RoundEnd" && !room.decision?.active) {
+        handleRoundEnd(roomId);
+      }
+
       try {
         if (room.state && room.state.phase === "Round" && !room.state.turn && !room.state.awaitNext && room.state.players.length > 1) {
           startEligibleTurn(roomId);
@@ -255,6 +259,7 @@ export function createKouppiServer(opts?: {
             msg === "room_full" ? "room_full"
             : msg === "game_in_progress" ? "game_in_progress"
             : msg === "room_not_found" ? "room_not_found"
+            : msg === "slot_taken" ? "slot_taken"
             : "bad_request";
           const e2 = { code, message: msg };
           cb ? cb(e2) : socket.emit("error", e2);
@@ -385,18 +390,17 @@ export function createKouppiServer(opts?: {
         
         // If awaiting next turn (after pass/bet), continue to next player after a short delay
         if (r.state.awaitNext) {
-          // Show result for 1.5 seconds, then continue
-          setTimeout(() => {
+          scheduleFlowStep(roomId, 1500, () => {
             try {
               const room2 = getRoom(roomId);
               if (!room2 || !room2.state) return;
-              
+
               room2.state = applySystemIntent(roomId, { type: "nextPlayer" }).state;
               startEligibleTurn(roomId);
             } catch (e) {
               console.error("Error in intent flow:", e);
             }
-          }, 1500);
+          });
           return;
         }
         
@@ -416,11 +420,14 @@ export function createKouppiServer(opts?: {
     });
     
     // Request new round (host only, after round end)
-    socket.on("newRound", ({ roomId, playerId }, cb?: (err: any|null, snapshot?: any) => void) => {
+    socket.on("newRound", ({ roomId }, cb?: (err: any|null, snapshot?: any) => void) => {
       try {
         const room = getRoom(roomId);
         if (!room) throw new Error("room_not_found");
-        if (room.hostId !== playerId) throw new Error("not_host");
+
+        const sessionPlayer = findPlayerBySocket(room, socket.id);
+        if (!sessionPlayer) throw new Error("not_in_room");
+        if (room.hostId !== sessionPlayer.id) throw new Error("not_host");
         if (!room.state || room.state.phase !== "RoundEnd") throw new Error("game_not_ended");
         
         // Start new round
@@ -447,7 +454,26 @@ export function createKouppiServer(opts?: {
     socket.on("startRoom", (payload, cb?: (err: any|null, snapshot?: any) => void) => {
       try {
         const data = StartRoomPayload.parse(payload);
-        const r = startRoom(data.roomId, data.by);
+        const room = getRoom(data.roomId);
+        if (!room) {
+          const err = { code: "room_not_found", message: "Room not found" };
+          cb ? cb(err) : socket.emit("error", err);
+          return;
+        }
+
+        const sessionPlayer = findPlayerBySocket(room, socket.id);
+        if (!sessionPlayer) {
+          const err = { code: "not_in_room", message: "Not a player in this room" };
+          cb ? cb(err) : socket.emit("error", err);
+          return;
+        }
+        if (room.hostId !== sessionPlayer.id) {
+          const err = { code: "not_host", message: "not_host" };
+          cb ? cb(err) : socket.emit("error", err);
+          return;
+        }
+
+        const r = startRoom(data.roomId, sessionPlayer.id);
         
         // Start the first turn with eligibility
         startEligibleTurn(data.roomId);
@@ -469,7 +495,8 @@ export function createKouppiServer(opts?: {
     function startTurnTimerForRoom(roomId: string) {
       const room = getRoom(roomId);
       if (!room || !room.state) return;
-      
+
+      clearTimerInterval(roomId);
       // Broadcast timer start
       const timerInfo = { 
         total: room.turnTimeout || 30, 
@@ -500,17 +527,33 @@ export function createKouppiServer(opts?: {
       }, 1000);
       
       // Store interval ID so we can clear it later
-      if (room) {
-        (room as any).timerIntervalId = intervalId;
-      }
+      room.timerIntervalId = intervalId;
     }
     
+    function clearFlowTimer(roomId: string) {
+      const room = getRoom(roomId);
+      if (room?.flowTimer) {
+        clearTimeout(room.flowTimer);
+        room.flowTimer = undefined;
+      }
+    }
+
+    function scheduleFlowStep(roomId: string, delayMs: number, fn: () => void) {
+      clearFlowTimer(roomId);
+      const room = getRoom(roomId);
+      if (!room) return;
+      room.flowTimer = setTimeout(() => {
+        room.flowTimer = undefined;
+        fn();
+      }, delayMs);
+    }
+
     // Helper function to clear timer interval
     function clearTimerInterval(roomId: string) {
       const room = getRoom(roomId);
-      if (room && (room as any).timerIntervalId) {
-        clearInterval((room as any).timerIntervalId);
-        (room as any).timerIntervalId = null;
+      if (room?.timerIntervalId) {
+        clearInterval(room.timerIntervalId);
+        room.timerIntervalId = undefined;
       }
     }
 
@@ -540,7 +583,7 @@ export function createKouppiServer(opts?: {
 
       // If awaitNext became true (e.g., due to bankrupt auto-pass), advance automatically without starting timer
       if (room.state.awaitNext) {
-        setTimeout(() => {
+        scheduleFlowStep(roomId, 800, () => {
           try {
             const r2 = getRoom(roomId);
             if (!r2 || !r2.state) return;
@@ -549,7 +592,7 @@ export function createKouppiServer(opts?: {
           } catch (e) {
             console.error("Error advancing after auto-pass:", e);
           }
-        }, 800);
+        });
         return;
       }
 
@@ -650,10 +693,15 @@ export function createKouppiServer(opts?: {
     }
 
     // Record player decision and resolve early if all decided
-    socket.on("roundDecision", ({ roomId, playerId, decision }: { roomId: string; playerId: string; decision: "stay"|"leave" }, cb?: (err: any|null) => void) => {
+    socket.on("roundDecision", ({ roomId, decision }: { roomId: string; decision: "stay"|"leave" }, cb?: (err: any|null) => void) => {
       try {
         const room = getRoom(roomId);
         if (!room || !room.decision?.active) return cb ? cb({ code: "no_decision_phase", message: "No active decision phase" }) : undefined;
+
+        const sessionPlayer = findPlayerBySocket(room, socket.id);
+        if (!sessionPlayer) return cb ? cb({ code: "not_in_room", message: "Not a player in this room" }) : undefined;
+
+        const playerId = sessionPlayer.id;
         if (!(playerId in room.decision.choices)) return cb ? cb({ code: "not_in_room", message: "Player not in room" }) : undefined;
         // Ignore duplicate
         if (room.decision.choices[playerId] !== null) return cb ? cb(null) : undefined;

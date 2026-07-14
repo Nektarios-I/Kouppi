@@ -75,6 +75,11 @@ export function joinRoom(id: string, player: PlayerSession): Room {
   if (!exists) {
     room.players.push({ ...player, afkCount: 0 });
   } else {
+    const hasActiveSocket =
+      !!exists.socketId && exists.socketId !== player.socketId && !exists.disconnectedAt;
+    if (hasActiveSocket) {
+      throw new Error("slot_taken");
+    }
     cancelDisconnectGrace(exists);
     exists.socketId = player.socketId;
     if (player.name) exists.name = player.name;
@@ -198,6 +203,8 @@ export function closeRoom(id: string): void {
   const room = rooms.get(id);
   if (!room) return;
   if (room.turnTimer) clearTimeout(room.turnTimer);
+  if (room.flowTimer) clearTimeout(room.flowTimer);
+  if (room.timerIntervalId) clearInterval(room.timerIntervalId);
   if (room.decision?.timer) clearTimeout(room.decision.timer);
   if (room.decision?.interval) clearInterval(room.decision.interval);
   for (const p of room.players) cancelDisconnectGrace(p);

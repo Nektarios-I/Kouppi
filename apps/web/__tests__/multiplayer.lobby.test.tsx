@@ -23,30 +23,40 @@ vi.mock("@/components/game/LobbyUI", async (importOriginal) => {
   };
 });
 
-vi.mock("@/store/remoteGameStore", () => {
-  const rooms = [
-    { id: "lobby-1", playerCount: 1, maxPlayers: 2, started: false },
-    { id: "lobby-2", playerCount: 2, maxPlayers: 2, started: true },
-  ];
-  return {
-    useRemoteGameStore: () => ({
-      connect,
-      joinRoom,
-      listRooms,
-      joinAsSpectator: vi.fn(),
-      clearRoomState,
-      setIdentity,
-      clearError,
-      connected: true,
-      rooms,
-      playerId: "you",
-      playerName: "Tester",
-      lastError: null,
-    }),
-  };
-});
+const joinAsSpectator = vi.fn().mockResolvedValue({ success: true });
+
+let mockStore: Record<string, unknown>;
+
+vi.mock("@/store/remoteGameStore", () => ({
+  useRemoteGameStore: () => mockStore,
+}));
 
 import LobbyPage from "@/app/lobby/page";
+
+function defaultRooms() {
+  return [
+    { id: "lobby-1", playerCount: 1, maxPlayers: 2, started: false },
+    { id: "lobby-2", playerCount: 2, maxPlayers: 2, started: true, spectatorsAllowed: true },
+  ];
+}
+
+function baseStore(overrides: Record<string, unknown> = {}) {
+  return {
+    connect,
+    joinRoom,
+    listRooms,
+    joinAsSpectator,
+    clearRoomState,
+    setIdentity,
+    clearError,
+    connected: true,
+    rooms: defaultRooms(),
+    playerId: "you",
+    playerName: "Tester",
+    lastError: null,
+    ...overrides,
+  };
+}
 
 function renderLobby() {
   return render(
@@ -60,6 +70,7 @@ describe("Multiplayer lobby UI", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
+    mockStore = baseStore();
   });
 
   it("shows connection status", async () => {
@@ -88,10 +99,33 @@ describe("Multiplayer lobby UI", () => {
   it("clears sessionStorage when changing name", async () => {
     sessionStorage.setItem("kouppi_player_id", "old-id");
     sessionStorage.setItem("kouppi_player_name", "OldName");
+    sessionStorage.setItem("kouppi_player_avatar", '{"emoji":"🎮","color":"#000","borderColor":"#111"}');
     const user = userEvent.setup();
     renderLobby();
     await user.click(await screen.findByRole("button", { name: /Change Name/i }));
     expect(sessionStorage.getItem("kouppi_player_id")).toBeNull();
     expect(sessionStorage.getItem("kouppi_player_name")).toBeNull();
+    expect(sessionStorage.getItem("kouppi_player_avatar")).toBeNull();
+  });
+
+  it("opens password modal when spectating a private room", async () => {
+    mockStore = baseStore({
+      rooms: [
+        {
+          id: "private-live",
+          playerCount: 2,
+          maxPlayers: 4,
+          started: true,
+          spectatorsAllowed: true,
+          isPrivate: true,
+        },
+      ],
+    });
+
+    const user = userEvent.setup();
+    renderLobby();
+    await user.click(await screen.findByRole("button", { name: /^Watch$/i }));
+    expect(await screen.findByText(/Enter the password to watch/i)).toBeInTheDocument();
+    expect(joinAsSpectator).not.toHaveBeenCalled();
   });
 });

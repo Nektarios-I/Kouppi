@@ -58,6 +58,8 @@ export type Room = {
   turnStartTime?: number; // timestamp when current turn started
   turnTimeout?: number; // configurable turn timeout in seconds (default 30)
   turnTimer?: any; // NodeJS.Timeout for auto-pass
+  timerIntervalId?: ReturnType<typeof setInterval>;
+  flowTimer?: ReturnType<typeof setTimeout>;
   // Round decision phase (after pot is emptied)
   decision?: {
     active: boolean;

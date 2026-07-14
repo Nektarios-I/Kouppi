@@ -46,6 +46,7 @@ export default function LobbyPage() {
 
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [passwordModalRoomId, setPasswordModalRoomId] = useState("");
+  const [passwordModalMode, setPasswordModalMode] = useState<"join" | "spectate">("join");
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordError, setPasswordError] = useState<string | null>(null);
 
@@ -86,6 +87,7 @@ export default function LobbyPage() {
 
     const targetRoom = rooms.find((r) => r.id === roomId);
     if (targetRoom?.isPrivate && !password) {
+      setPasswordModalMode("join");
       setPasswordModalRoomId(roomId);
       setPasswordInput("");
       setPasswordError(null);
@@ -125,7 +127,11 @@ export default function LobbyPage() {
       setPasswordError("Please enter a password");
       return;
     }
-    handleJoinRoom(passwordModalRoomId, passwordInput.trim());
+    if (passwordModalMode === "spectate") {
+      handleSpectateRoom(passwordModalRoomId, passwordInput.trim());
+    } else {
+      handleJoinRoom(passwordModalRoomId, passwordInput.trim());
+    }
   };
 
   const handleCreateRoom = () => {
@@ -136,19 +142,41 @@ export default function LobbyPage() {
     setShowCreateDialog(true);
   };
 
-  const handleSpectateRoom = async (roomId: string) => {
+  const handleSpectateRoom = async (roomId: string, password?: string) => {
     if (!playerId || !playerName) {
       showToast("Please set your name first", "warning");
       return;
     }
+
+    const targetRoom = rooms.find((r) => r.id === roomId);
+    if (targetRoom?.isPrivate && !password) {
+      setPasswordModalMode("spectate");
+      setPasswordModalRoomId(roomId);
+      setPasswordInput("");
+      setPasswordError(null);
+      setPasswordModalOpen(true);
+      return;
+    }
+
     setSpectating(true);
     clearError();
-    const result = await joinAsSpectator(roomId);
+    const result = await joinAsSpectator(roomId, password);
     setSpectating(false);
     if (result.success) {
+      setPasswordModalOpen(false);
       router.push(`/room/${encodeURIComponent(roomId)}`);
     } else {
-      showToast(`Failed to spectate: ${result.error}`, "error");
+      if (
+        result.code === "wrong_password" ||
+        result.error?.toLowerCase().includes("password")
+      ) {
+        setPasswordModalMode("spectate");
+        setPasswordModalRoomId(roomId);
+        setPasswordError("Incorrect password");
+        setPasswordModalOpen(true);
+      } else {
+        showToast(`Failed to spectate: ${result.error}`, "error");
+      }
     }
   };
 
@@ -188,6 +216,7 @@ export default function LobbyPage() {
               onClick={() => {
                 sessionStorage.removeItem("kouppi_player_id");
                 sessionStorage.removeItem("kouppi_player_name");
+                sessionStorage.removeItem("kouppi_player_avatar");
                 setIdentity("", "");
                 setLocalName("");
               }}
@@ -343,7 +372,14 @@ export default function LobbyPage() {
 
       {passwordModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm grid place-items-center z-50 p-4">
-          <PreGameCard title="Private Room" subtitle={`Room ${passwordModalRoomId} is password protected.`}>
+          <PreGameCard
+            title="Private Room"
+            subtitle={
+              passwordModalMode === "spectate"
+                ? `Enter the password to watch ${passwordModalRoomId}.`
+                : `Room ${passwordModalRoomId} is password protected.`
+            }
+          >
             {passwordError && (
               <LobbyAlert variant="error">{passwordError}</LobbyAlert>
             )}
@@ -375,9 +411,15 @@ export default function LobbyPage() {
               <HudButton
                 variant="bet"
                 onClick={handlePasswordSubmit}
-                disabled={joining || !passwordInput.trim()}
+                disabled={joining || spectating || !passwordInput.trim()}
               >
-                {joining ? "Joining…" : "Join Room"}
+                {passwordModalMode === "spectate"
+                  ? spectating
+                    ? "Joining…"
+                    : "Watch"
+                  : joining
+                    ? "Joining…"
+                    : "Join Room"}
               </HudButton>
             </div>
           </PreGameCard>

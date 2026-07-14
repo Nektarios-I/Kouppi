@@ -54,12 +54,21 @@ describe("rooms", () => {
     expect(() => joinRoom("r3", { id: "p3", name: "Cara", socketId: "s3" })).toThrow("game_in_progress");
   });
 
-  it("allows reconnect for existing player after start", () => {
+  it("allows reconnect for existing player during disconnect grace", () => {
     createRoomWithCreator("r4", { id: "p1", name: "Alice", socketId: "s1" }, cfg, 7777);
     joinRoom("r4", { id: "p2", name: "Bob", socketId: "s2" });
     startRoom("r4", "p1");
-    const room = joinRoom("r4", { id: "p2", name: "Bob", socketId: "s-new" });
-    expect(room.players.find((p) => p.id === "p2")?.socketId).toBe("s-new");
+    const room = getRoom("r4")!;
+    beginDisconnectGrace(room, "p2", RECONNECT_GRACE_MS, () => {});
+    const updated = joinRoom("r4", { id: "p2", name: "Bob", socketId: "s-new" });
+    expect(updated.players.find((p) => p.id === "p2")?.socketId).toBe("s-new");
+  });
+
+  it("rejects join hijack when player slot is actively connected", () => {
+    createRoomWithCreator("r7", { id: "p1", name: "Alice", socketId: "s1" }, cfg, 3333);
+    expect(() =>
+      joinRoom("r7", { id: "p1", name: "Attacker", socketId: "s-attacker" })
+    ).toThrow("slot_taken");
   });
 
   it("rejects forbidden client intents", () => {
