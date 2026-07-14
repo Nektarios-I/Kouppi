@@ -1,5 +1,18 @@
 import "./globals.css";
 import type { Metadata } from "next";
+import { Oswald, Inter } from "next/font/google";
+import Providers from "@/components/Providers";
+
+const fontDisplay = Oswald({
+  subsets: ["latin"],
+  variable: "--font-display",
+  weight: ["400", "500", "600", "700"],
+});
+
+const fontUi = Inter({
+  subsets: ["latin"],
+  variable: "--font-ui",
+});
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://kouppi-web.vercel.app";
 
@@ -21,8 +34,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang="en" className={`${fontDisplay.variable} ${fontUi.variable}`}>
+      <body className="font-ui antialiased">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

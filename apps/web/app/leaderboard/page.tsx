@@ -5,9 +5,11 @@ import Link from "next/link";
 import { useAuthStore } from "@/store/authStore";
 import { useCareerStore } from "@/store/careerStore";
 import TrophyBadge from "@/components/TrophyBadge";
+import { LobbyShell, LobbyCard, LobbyEmpty } from "@/components/game/LobbyUI";
+import { HudButton } from "@/components/game/HudButton";
 
 const ARENAS = [
-  { id: 0, name: "All Arenas", minTrophies: 0, color: "#6366f1" },
+  { id: 0, name: "All Arenas", minTrophies: 0, color: "#d4af37" },
   { id: 1, name: "Bronze Arena", minTrophies: 0, color: "#CD7F32" },
   { id: 2, name: "Silver Arena", minTrophies: 400, color: "#C0C0C0" },
   { id: 3, name: "Gold Arena", minTrophies: 800, color: "#FFD700" },
@@ -35,30 +37,32 @@ type LeaderboardEntry = {
 };
 
 export default function LeaderboardPage() {
-  const { user, isLoggedIn } = useAuthStore();
+  const { user } = useAuthStore();
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedArena, setSelectedArena] = useState(0);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(false);
-  
+
   const limit = 25;
-  
+
   useEffect(() => {
     fetchLeaderboard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedArena, page]);
-  
+
   const fetchLeaderboard = async () => {
     setIsLoading(true);
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
-      const endpoint = selectedArena === 0 
-        ? `/api/leaderboard?limit=${limit}&offset=${page * limit}`
-        : `/api/leaderboard/arena/${selectedArena}?limit=${limit}&offset=${page * limit}`;
-      
+      const endpoint =
+        selectedArena === 0
+          ? `/api/leaderboard?limit=${limit}&offset=${page * limit}`
+          : `/api/leaderboard/arena/${selectedArena}?limit=${limit}&offset=${page * limit}`;
+
       const res = await fetch(`${baseUrl}${endpoint}`);
       const data = await res.json();
-      
+
       if (data.entries) {
         setLeaderboard(data.entries);
         setHasMore(data.hasMore);
@@ -69,190 +73,155 @@ export default function LeaderboardPage() {
       setIsLoading(false);
     }
   };
-  
+
   return (
-    <main className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-950 text-white">
-      {/* Header */}
-      <header className="border-b border-gray-800 bg-gray-900/50 backdrop-blur sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
-          <Link href="/" className="text-2xl font-bold text-indigo-400">
+    <LobbyShell>
+      <header className="career-page-header -mx-4 sm:-mx-6 px-4 sm:px-6 py-4 mb-6 sm:mb-8">
+        <div className="flex items-center justify-between gap-4">
+          <Link href="/" className="font-display text-xl font-bold text-gold-light tracking-widest no-underline">
             KOUPPI
           </Link>
-          <Link 
-            href="/career"
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-colors"
-          >
-            ← Back to Career
+          <Link href="/career" className="no-underline">
+            <HudButton variant="ghost" size="sm">
+              ← Career
+            </HudButton>
           </Link>
         </div>
       </header>
-      
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        {/* Title */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold mb-2">🏆 Leaderboard</h1>
-          <p className="text-gray-400">
-            Top players ranked by trophies
-          </p>
-        </div>
-        
-        {/* Arena Filter */}
-        <div className="flex flex-wrap justify-center gap-2 mb-6">
-          {ARENAS.map((arena) => (
-            <button
-              key={arena.id}
-              onClick={() => {
-                setSelectedArena(arena.id);
-                setPage(0);
-              }}
-              className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
-                selectedArena === arena.id
-                  ? "text-white shadow-lg"
-                  : "bg-gray-800/50 text-gray-400 hover:text-white"
-              }`}
-              style={selectedArena === arena.id ? { backgroundColor: arena.color } : {}}
-            >
-              {arena.name}
-            </button>
-          ))}
-        </div>
-        
-        {/* Leaderboard Table */}
-        <div className="bg-gray-800/50 rounded-2xl border border-gray-700 overflow-hidden">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-20">
-              <div className="w-10 h-10 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
+
+      <div className="text-center mb-8">
+        <h1 className="font-display text-3xl sm:text-4xl font-bold text-gold-light tracking-wide mb-2">
+          Leaderboard
+        </h1>
+        <p className="text-gray-400 font-ui">Top players ranked by trophies</p>
+      </div>
+
+      <div className="flex flex-wrap justify-center gap-2 mb-6">
+        {ARENAS.map((arena) => (
+          <button
+            key={arena.id}
+            type="button"
+            onClick={() => {
+              setSelectedArena(arena.id);
+              setPage(0);
+            }}
+            className={`emote-tab ${selectedArena === arena.id ? "emote-tab-active" : ""}`}
+            style={
+              selectedArena === arena.id
+                ? { borderColor: arena.color + "80", color: arena.color }
+                : undefined
+            }
+          >
+            {arena.name}
+          </button>
+        ))}
+      </div>
+
+      <LobbyCard title="Rankings" icon="🏆">
+        {isLoading ? (
+          <div className="flex justify-center py-16">
+            <div className="w-10 h-10 border-2 border-gold/30 border-t-gold rounded-full animate-spin" />
+          </div>
+        ) : leaderboard.length === 0 ? (
+          <LobbyEmpty title="No players found in this arena" />
+        ) : (
+          <>
+            <div className="hidden sm:grid grid-cols-12 gap-2 px-1 pb-2 text-xs text-gray-500 font-ui uppercase tracking-wide border-b border-white/5 mb-2">
+              <div className="col-span-1 text-center">#</div>
+              <div className="col-span-5">Player</div>
+              <div className="col-span-2 text-center">Trophies</div>
+              <div className="col-span-2 text-center">Rating</div>
+              <div className="col-span-2 text-center">Win Rate</div>
             </div>
-          ) : leaderboard.length === 0 ? (
-            <div className="text-center py-20 text-gray-500">
-              No players found in this arena.
-            </div>
-          ) : (
-            <>
-              {/* Table Header */}
-              <div className="grid grid-cols-12 gap-2 px-4 py-3 bg-gray-900/50 border-b border-gray-700 text-sm text-gray-400 font-medium">
-                <div className="col-span-1 text-center">#</div>
-                <div className="col-span-5">Player</div>
-                <div className="col-span-2 text-center">Trophies</div>
-                <div className="col-span-2 text-center">Rating</div>
-                <div className="col-span-2 text-center">Win Rate</div>
-              </div>
-              
-              {/* Table Body */}
-              <div className="divide-y divide-gray-800/50">
-                {leaderboard.map((player, index) => {
-                  const rank = page * limit + index + 1;
-                  const isCurrentUser = user?.id === player.id;
-                  
-                  return (
-                    <div 
-                      key={player.id}
-                      className={`grid grid-cols-12 gap-2 px-4 py-3 items-center transition-colors ${
-                        isCurrentUser 
-                          ? "bg-indigo-500/10" 
-                          : "hover:bg-gray-800/30"
-                      }`}
-                    >
-                      {/* Rank */}
-                      <div className="col-span-1 flex justify-center">
-                        <div className={`w-8 h-8 flex items-center justify-center rounded-full font-bold text-sm ${
-                          rank === 1 ? "bg-yellow-500 text-black" :
-                          rank === 2 ? "bg-gray-300 text-black" :
-                          rank === 3 ? "bg-orange-400 text-black" :
-                          "bg-gray-700 text-gray-300"
-                        }`}>
-                          {rank}
-                        </div>
+
+            <div className="space-y-2">
+              {leaderboard.map((player, index) => {
+                const rank = page * limit + index + 1;
+                const isCurrentUser = user?.id === player.id;
+
+                return (
+                  <div
+                    key={player.id}
+                    className={`lobby-player-row flex-col sm:flex-row sm:items-center !items-stretch gap-3 ${
+                      isCurrentUser ? "lobby-player-row-me" : ""
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 sm:col-span-5 flex-1 min-w-0">
+                      <div
+                        className={`w-8 h-8 flex items-center justify-center rounded-full font-display font-bold text-sm shrink-0 ${
+                          rank === 1
+                            ? "bg-gold text-black"
+                            : rank === 2
+                              ? "bg-gray-300 text-black"
+                              : rank === 3
+                                ? "bg-orange-400 text-black"
+                                : "bg-black/50 text-gray-300 border border-white/10"
+                        }`}
+                      >
+                        {rank}
                       </div>
-                      
-                      {/* Player */}
-                      <div className="col-span-5 flex items-center gap-3">
-                        <div 
-                          className="w-10 h-10 rounded-full flex items-center justify-center text-lg border-2 flex-shrink-0"
-                          style={{ 
-                            backgroundColor: player.avatarColor,
-                            borderColor: player.avatarBorder,
-                          }}
-                        >
-                          {player.avatarEmoji}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="font-medium truncate flex items-center gap-2">
-                            {player.username}
-                            {isCurrentUser && (
-                              <span className="text-xs bg-indigo-500/30 text-indigo-300 px-2 py-0.5 rounded-full">
-                                You
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {player.gamesPlayed} games played
-                          </div>
-                        </div>
+                      <div
+                        className="avatar-display w-10 h-10 text-lg shrink-0"
+                        style={{
+                          backgroundColor: player.avatarColor,
+                          border: `2px solid ${player.avatarBorder}`,
+                        }}
+                      >
+                        {player.avatarEmoji}
                       </div>
-                      
-                      {/* Trophies */}
-                      <div className="col-span-2 text-center">
-                        <div className="font-bold text-yellow-400">
-                          🏆 {player.trophies}
+                      <div className="min-w-0">
+                        <div className="font-ui font-medium truncate flex items-center gap-2">
+                          {player.username}
+                          {isCurrentUser && <span className="hud-badge text-[10px] py-0">You</span>}
                         </div>
-                        <div className="text-xs text-gray-500">
-                          {player.arenaName}
-                        </div>
-                      </div>
-                      
-                      {/* Rating */}
-                      <div className="col-span-2 text-center">
-                        <div className="font-medium text-purple-400">
-                          {player.rating}
-                        </div>
-                        <div className="text-xs text-gray-500">Elo</div>
-                      </div>
-                      
-                      {/* Win Rate */}
-                      <div className="col-span-2 text-center">
-                        <div className={`font-medium ${
-                          player.winRate >= 60 ? "text-green-400" :
-                          player.winRate >= 40 ? "text-gray-300" :
-                          "text-red-400"
-                        }`}>
-                          {player.winRate}%
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {player.gamesWon}W / {player.gamesLost}L
+                        <div className="text-xs text-gray-500 sm:hidden">
+                          {player.trophies} 🏆 · {player.rating} Elo · {player.winRate}%
                         </div>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </div>
-        
-        {/* Pagination */}
-        {!isLoading && leaderboard.length > 0 && (
-          <div className="flex justify-center gap-2 mt-6">
-            <button
-              onClick={() => setPage(Math.max(0, page - 1))}
-              disabled={page === 0}
-              className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              ← Previous
-            </button>
-            <span className="px-4 py-2 text-gray-400">
-              Page {page + 1}
-            </span>
-            <button
-              onClick={() => setPage(page + 1)}
-              disabled={!hasMore}
-              className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              Next →
-            </button>
-          </div>
+
+                    <div className="hidden sm:flex sm:col-span-2 justify-center">
+                      <TrophyBadge
+                        trophies={player.trophies}
+                        arena={player.arena}
+                        arenaName={player.arenaName}
+                        size="sm"
+                        showArena={false}
+                      />
+                    </div>
+                    <div className="hidden sm:block sm:col-span-2 text-center font-ui text-purple-300">
+                      {player.rating}
+                    </div>
+                    <div
+                      className={`hidden sm:block sm:col-span-2 text-center font-ui ${
+                        player.winRate >= 60
+                          ? "text-success"
+                          : player.winRate >= 40
+                            ? "text-gray-300"
+                            : "text-error"
+                      }`}
+                    >
+                      {player.winRate}%
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
         )}
-      </div>
-    </main>
+      </LobbyCard>
+
+      {!isLoading && leaderboard.length > 0 && (
+        <div className="flex justify-center items-center gap-3 mt-6">
+          <HudButton variant="ghost" onClick={() => setPage(Math.max(0, page - 1))} disabled={page === 0}>
+            ← Previous
+          </HudButton>
+          <span className="text-gray-400 font-ui text-sm">Page {page + 1}</span>
+          <HudButton variant="ghost" onClick={() => setPage(page + 1)} disabled={!hasMore}>
+            Next →
+          </HudButton>
+        </div>
+      )}
+    </LobbyShell>
   );
 }

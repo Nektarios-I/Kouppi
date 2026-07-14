@@ -59,6 +59,18 @@ export function getDefaultAvatar(): AvatarConfig {
   };
 }
 
+/** Deterministic bot persona for single-player seats */
+export function getBotAvatar(botId: string): AvatarConfig {
+  const hash = botId.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  const botEmojis = ["🤖", "🦾", "👾", "🎰", "🃏", "💀", "😈", "🧠"];
+  const color = AVATAR_COLORS[hash % AVATAR_COLORS.length];
+  return {
+    emoji: botEmojis[hash % botEmojis.length],
+    color: color.value,
+    borderColor: color.border,
+  };
+}
+
 // Generate avatar from player ID (deterministic fallback)
 export function getAvatarFromId(playerId: string): AvatarConfig {
   const all = getAllAvatars();

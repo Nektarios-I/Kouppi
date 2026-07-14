@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="800" height="500">
+  <defs>
+    <linearGradient id="wood" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#9a6840"/>
+      <stop offset="25%" stop-color="#6b4528"/>
+      <stop offset="60%" stop-color="#4a2f18"/>
+      <stop offset="100%" stop-color="#2a180c"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#fff" stop-opacity="0.2"/>
+      <stop offset="30%" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0.3"/>
+    </linearGradient>
+    <filter id="grain">
+      <feTurbulence type="fractalNoise" baseFrequency="0.08 0.4" numOctaves="3"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feBlend in="SourceGraphic" mode="multiply"/>
+    </filter>
+  </defs>
+  <ellipse cx="400" cy="250" rx="400" ry="250" fill="url(#wood)" filter="url(#grain)"/>
+  <ellipse cx="400" cy="250" rx="400" ry="250" fill="url(#shine)"/>
+  <!-- leather cushion lip -->
+  <ellipse cx="400" cy="250" rx="385" ry="238" fill="none" stroke="#3a2814" stroke-width="3" opacity="0.5"/>
+</svg>

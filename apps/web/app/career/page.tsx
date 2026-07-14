@@ -2,235 +2,197 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { useCareerStore } from "@/store/careerStore";
 import AuthModal from "@/components/AuthModal";
 import TrophyBadge, { RatingBadge } from "@/components/TrophyBadge";
 import CareerLobby from "@/components/CareerLobby";
+import { LobbyShell, LobbyCard } from "@/components/game/LobbyUI";
+import { HudButton } from "@/components/game/HudButton";
 
 export default function CareerPage() {
-  const router = useRouter();
   const { user, isLoggedIn, logout, refreshUser } = useAuthStore();
-  const { 
-    leaderboard,
-    fetchLeaderboard,
-    isLoadingLeaderboard,
-  } = useCareerStore();
-  
+  const { leaderboard, fetchLeaderboard, isLoadingLeaderboard } = useCareerStore();
   const [showAuthModal, setShowAuthModal] = useState(false);
-  
-  // Fetch leaderboard on mount
+
   useEffect(() => {
     fetchLeaderboard();
     if (isLoggedIn()) {
       refreshUser();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  
+
   return (
-    <main className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-950 text-white">
-      {/* Header */}
-      <header className="border-b border-gray-800 bg-gray-900/50 backdrop-blur">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-          <Link href="/" className="text-2xl font-bold text-indigo-400">
+    <LobbyShell>
+      <header className="career-page-header -mx-4 sm:-mx-6 px-4 sm:px-6 py-4 mb-6 sm:mb-8">
+        <div className="flex items-center justify-between gap-4">
+          <Link href="/" className="font-display text-xl font-bold text-gold-light tracking-widest no-underline">
             KOUPPI
           </Link>
-          
+
           {isLoggedIn() && user ? (
-            <div className="flex items-center gap-4">
-              <TrophyBadge 
-                trophies={user.trophies} 
-                arena={user.arena} 
+            <div className="flex items-center gap-3 flex-wrap justify-end">
+              <TrophyBadge
+                trophies={user.trophies}
+                arena={user.arena}
                 arenaName={user.arenaName}
                 size="sm"
               />
-              <div className="flex items-center gap-2">
-                <span className="text-lg">{user.avatarEmoji}</span>
-                <span className="font-medium">{user.username}</span>
-              </div>
-              <button
-                onClick={logout}
-                className="text-gray-400 hover:text-white text-sm"
-              >
+              <span className="font-ui text-sm text-gray-300 hidden sm:inline">
+                {user.avatarEmoji} {user.username}
+              </span>
+              <HudButton variant="ghost" size="sm" onClick={logout}>
                 Logout
-              </button>
+              </HudButton>
             </div>
           ) : (
-            <button
-              onClick={() => setShowAuthModal(true)}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-medium transition-colors"
-            >
+            <HudButton variant="kouppi" size="sm" onClick={() => setShowAuthModal(true)}>
               Sign In
-            </button>
+            </HudButton>
           )}
         </div>
       </header>
-      
-      <div className="max-w-6xl mx-auto px-4 py-8">
-        {/* Title */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-            Career Mode
-          </h1>
-          <p className="text-gray-400">
-            Choose your league and stakes, join a room, and compete for trophies!
-          </p>
-        </div>
-        
-        <div className="grid md:grid-cols-2 gap-8">
-          {/* Left: Queue/Profile */}
-          <div className="space-y-6">
-            {/* Profile Card (if logged in) */}
-            {isLoggedIn() && user && (
-              <div className="bg-gray-800/50 rounded-2xl border border-gray-700 p-6">
-                <h2 className="text-lg font-bold mb-4 text-gray-300">Your Profile</h2>
-                
-                <div className="flex items-center gap-4 mb-4">
-                  <div 
-                    className="w-16 h-16 rounded-full flex items-center justify-center text-3xl border-2"
-                    style={{ 
-                      backgroundColor: user.avatarColor,
-                      borderColor: user.avatarBorder,
-                    }}
-                  >
-                    {user.avatarEmoji}
-                  </div>
-                  <div>
-                    <div className="text-xl font-bold">{user.username}</div>
-                    <div className="text-gray-400 text-sm">
-                      Joined {new Date(user.createdAt).toLocaleDateString()}
-                    </div>
-                  </div>
+
+      <div className="text-center mb-8">
+        <h1 className="font-display text-3xl sm:text-4xl font-bold text-gold-light tracking-wide mb-2">
+          Career Mode
+        </h1>
+        <p className="text-gray-400 font-ui text-sm sm:text-base">
+          Choose your league and stakes, join a room, and compete for trophies!
+        </p>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-6 sm:gap-8">
+        <div className="space-y-5">
+          {isLoggedIn() && user && (
+            <LobbyCard title="Your Profile" icon="◎">
+              <div className="flex items-center gap-4 mb-4">
+                <div
+                  className="avatar-display w-16 h-16 text-3xl"
+                  style={{
+                    backgroundColor: user.avatarColor,
+                    border: `3px solid ${user.avatarBorder}`,
+                  }}
+                >
+                  {user.avatarEmoji}
                 </div>
-                
-                <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div className="bg-gray-900/50 rounded-lg p-3">
-                    <div className="text-gray-400 text-sm">Bankroll</div>
-                    <div className="text-xl font-bold text-yellow-400">
-                      💰 {user.bankroll.toLocaleString()}
-                    </div>
+                <div>
+                  <div className="font-display text-xl font-bold text-gold-light">{user.username}</div>
+                  <div className="text-gray-400 text-sm font-ui">
+                    Joined {new Date(user.createdAt).toLocaleDateString()}
                   </div>
-                  <div className="bg-gray-900/50 rounded-lg p-3">
-                    <div className="text-gray-400 text-sm">Win Rate</div>
-                    <div className="text-xl font-bold">
-                      {user.gamesPlayed > 0 
-                        ? `${Math.round((user.gamesWon / user.gamesPlayed) * 100)}%`
-                        : "N/A"
-                      }
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="flex flex-wrap gap-2">
-                  <TrophyBadge 
-                    trophies={user.trophies} 
-                    arena={user.arena} 
-                    arenaName={user.arenaName}
-                  />
-                  <RatingBadge rating={user.rating} />
                 </div>
               </div>
-            )}
-            
-            {/* Career Lobby - Tier/Ante Selection */}
-            <CareerLobby />
-            
-            {/* Quick Links */}
-            <div className="flex gap-4">
-              <Link 
-                href="/lobby"
-                className="flex-1 text-center py-3 bg-gray-800/50 hover:bg-gray-700/50 border border-gray-700 rounded-xl transition-colors"
-              >
-                🎲 Custom Games
-              </Link>
-              <Link 
-                href="/play/single"
-                className="flex-1 text-center py-3 bg-gray-800/50 hover:bg-gray-700/50 border border-gray-700 rounded-xl transition-colors"
-              >
-                🤖 Practice
-              </Link>
-            </div>
+
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="career-stat-tile">
+                  <div className="text-xs text-gray-500 font-ui uppercase tracking-wide">Bankroll</div>
+                  <div className="text-xl font-display font-bold text-gold">
+                    {user.bankroll.toLocaleString()}
+                  </div>
+                </div>
+                <div className="career-stat-tile">
+                  <div className="text-xs text-gray-500 font-ui uppercase tracking-wide">Win Rate</div>
+                  <div className="text-xl font-display font-bold text-white">
+                    {user.gamesPlayed > 0
+                      ? `${Math.round((user.gamesWon / user.gamesPlayed) * 100)}%`
+                      : "N/A"}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <TrophyBadge
+                  trophies={user.trophies}
+                  arena={user.arena}
+                  arenaName={user.arenaName}
+                />
+                <RatingBadge rating={user.rating} />
+              </div>
+            </LobbyCard>
+          )}
+
+          <CareerLobby />
+
+          <div className="flex gap-3">
+            <Link href="/lobby" className="flex-1 no-underline">
+              <HudButton variant="ghost" fullWidth>
+                Custom Games
+              </HudButton>
+            </Link>
+            <Link href="/play/single" className="flex-1 no-underline">
+              <HudButton variant="ghost" fullWidth>
+                Practice
+              </HudButton>
+            </Link>
           </div>
-          
-          {/* Right: Leaderboard */}
-          <div className="bg-gray-800/50 rounded-2xl border border-gray-700 p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-gray-300">Top Players</h2>
-              <Link 
-                href="/leaderboard"
-                className="text-indigo-400 hover:text-indigo-300 text-sm"
-              >
-                View All →
-              </Link>
+        </div>
+
+        <LobbyCard
+          title="Top Players"
+          icon="🏆"
+          badge={
+            <Link href="/leaderboard" className="hud-btn hud-btn-ghost text-xs py-1 px-2 no-underline">
+              View All →
+            </Link>
+          }
+        >
+          {isLoadingLeaderboard ? (
+            <div className="flex justify-center py-12">
+              <div className="w-8 h-8 border-2 border-gold/30 border-t-gold rounded-full animate-spin" />
             </div>
-            
-            {isLoadingLeaderboard ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="w-8 h-8 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin" />
-              </div>
-            ) : leaderboard.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                No players yet. Be the first!
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {leaderboard.slice(0, 10).map((player, index) => (
-                  <div 
-                    key={player.id}
-                    className={`flex items-center gap-3 p-3 rounded-lg ${
-                      user?.id === player.id 
-                        ? "bg-indigo-500/20 border border-indigo-500/30" 
-                        : "bg-gray-900/30"
-                    }`}
-                  >
-                    <div className={`w-8 h-8 flex items-center justify-center rounded-full font-bold text-sm ${
-                      index === 0 ? "bg-yellow-500 text-black" :
-                      index === 1 ? "bg-gray-300 text-black" :
-                      index === 2 ? "bg-orange-400 text-black" :
-                      "bg-gray-700 text-gray-300"
-                    }`}>
+          ) : leaderboard.length === 0 ? (
+            <p className="text-center py-12 text-gray-500 font-ui">No players yet. Be the first!</p>
+          ) : (
+            <div className="space-y-2">
+              {leaderboard.slice(0, 10).map((player, index) => (
+                <div
+                  key={player.id}
+                  className={`lobby-player-row ${user?.id === player.id ? "lobby-player-row-me" : ""}`}
+                >
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div
+                      className={`w-8 h-8 flex items-center justify-center rounded-full font-display font-bold text-sm shrink-0 ${
+                        index === 0
+                          ? "bg-gold text-black"
+                          : index === 1
+                            ? "bg-gray-300 text-black"
+                            : index === 2
+                              ? "bg-orange-400 text-black"
+                              : "bg-black/50 text-gray-300 border border-white/10"
+                      }`}
+                    >
                       {index + 1}
                     </div>
-                    
-                    <div 
-                      className="w-10 h-10 rounded-full flex items-center justify-center text-lg border"
-                      style={{ 
+                    <div
+                      className="avatar-display w-10 h-10 text-lg shrink-0"
+                      style={{
                         backgroundColor: player.avatarColor,
-                        borderColor: player.avatarBorder,
+                        border: `2px solid ${player.avatarBorder}`,
                       }}
                     >
                       {player.avatarEmoji}
                     </div>
-                    
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">{player.username}</div>
+                    <div className="min-w-0">
+                      <div className="font-ui font-medium truncate">{player.username}</div>
                       <div className="text-xs text-gray-500">
-                        {player.gamesPlayed} games • {player.winRate}% win
-                      </div>
-                    </div>
-                    
-                    <div className="text-right">
-                      <div className="font-bold text-yellow-400">
-                        🏆 {player.trophies}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {player.arenaName}
+                        {player.gamesPlayed} games · {player.winRate}% win
                       </div>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+                  <div className="text-right shrink-0">
+                    <div className="font-display font-bold text-gold">{player.trophies}</div>
+                    <div className="text-xs text-gray-500">{player.arenaName}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </LobbyCard>
       </div>
-      
-      {/* Auth Modal */}
-      <AuthModal 
-        isOpen={showAuthModal} 
-        onClose={() => setShowAuthModal(false)} 
-      />
-    </main>
+
+      <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
+    </LobbyShell>
   );
 }

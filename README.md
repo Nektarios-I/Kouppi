@@ -153,14 +153,14 @@ pnpm test
 
 ## Useful Commands
 
-| Command | Purpose |
-| --- | --- |
-| `pnpm dev` | Run all workspace dev processes |
-| `pnpm build` | Build all packages/apps via Turbo |
-| `pnpm lint` | Run lint tasks |
-| `pnpm test` | Run test suites |
-| `pnpm --filter @kouppi/web build` | Build web app only |
-| `pnpm --filter @kouppi/server test` | Run server tests only |
+| Command                             | Purpose                           |
+| ----------------------------------- | --------------------------------- |
+| `pnpm dev`                          | Run all workspace dev processes   |
+| `pnpm build`                        | Build all packages/apps via Turbo |
+| `pnpm lint`                         | Run lint tasks                    |
+| `pnpm test`                         | Run test suites                   |
+| `pnpm --filter @kouppi/web build`   | Build web app only                |
+| `pnpm --filter @kouppi/server test` | Run server tests only             |
 
 ## Quality and Validation
 

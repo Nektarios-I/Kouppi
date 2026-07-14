@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="800" height="500">
+  <defs>
+    <radialGradient id="feltG" cx="50%" cy="35%" r="70%">
+      <stop offset="0%" stop-color="#2a9a48"/>
+      <stop offset="35%" stop-color="#1a7038"/>
+      <stop offset="70%" stop-color="#145a28"/>
+      <stop offset="100%" stop-color="#0a3d18"/>
+    </radialGradient>
+    <radialGradient id="spot" cx="50%" cy="30%" r="45%">
+      <stop offset="0%" stop-color="#fff" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="fabric" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.65 0.85" numOctaves="4" seed="2" result="n"/>
+      <feColorMatrix in="n" type="saturate" values="0" result="gn"/>
+      <feBlend in="SourceGraphic" in2="gn" mode="multiply"/>
+    </filter>
+    <filter id="soften">
+      <feGaussianBlur stdDeviation="0.3"/>
+    </filter>
+  </defs>
+  <ellipse cx="400" cy="250" rx="395" ry="245" fill="url(#feltG)" filter="url(#fabric)"/>
+  <ellipse cx="400" cy="250" rx="395" ry="245" fill="url(#spot)"/>
+  <!-- betting line -->
+  <ellipse cx="400" cy="255" rx="310" ry="175" fill="none" stroke="#d4af37" stroke-width="1.2" stroke-dasharray="8 6" opacity="0.22"/>
+  <ellipse cx="400" cy="255" rx="280" ry="155" fill="none" stroke="#fff" stroke-width="0.5" opacity="0.06"/>
+  <!-- dealer zone -->
+  <ellipse cx="400" cy="115" rx="90" ry="35" fill="#000" opacity="0.08"/>
+  <!-- pot zone -->
+  <ellipse cx="400" cy="195" rx="55" ry="32" fill="#000" opacity="0.12"/>
+  <!-- card zone -->
+  <ellipse cx="400" cy="275" rx="120" ry="55" fill="#000" opacity="0.06"/>
+  <!-- wear scuffs -->
+  <ellipse cx="280" cy="320" rx="40" ry="20" fill="#000" opacity="0.04" filter="url(#soften)"/>
+  <ellipse cx="520" cy="300" rx="35" ry="18" fill="#000" opacity="0.035" filter="url(#soften)"/>
+</svg>

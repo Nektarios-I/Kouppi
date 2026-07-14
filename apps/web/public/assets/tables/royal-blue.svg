@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="800" height="500">
+  <defs>
+    <radialGradient id="feltG" cx="50%" cy="35%" r="70%">
+      <stop offset="0%" stop-color="#3a80d0"/>
+      <stop offset="40%" stop-color="#2a60a0"/>
+      <stop offset="100%" stop-color="#0d3060"/>
+    </radialGradient>
+    <radialGradient id="spot" cx="50%" cy="30%" r="45%">
+      <stop offset="0%" stop-color="#fff" stop-opacity="0.1"/>
+      <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="fabric">
+      <feTurbulence type="fractalNoise" baseFrequency="0.68 0.88" numOctaves="4" seed="8"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feBlend in="SourceGraphic" mode="multiply"/>
+    </filter>
+  </defs>
+  <ellipse cx="400" cy="250" rx="395" ry="245" fill="url(#feltG)" filter="url(#fabric)"/>
+  <ellipse cx="400" cy="250" rx="395" ry="245" fill="url(#spot)"/>
+  <ellipse cx="400" cy="255" rx="310" ry="175" fill="none" stroke="#80b0e8" stroke-width="1.2" stroke-dasharray="6 5" opacity="0.18"/>
+  <ellipse cx="400" cy="195" rx="55" ry="32" fill="#000" opacity="0.12"/>
+  <ellipse cx="400" cy="275" rx="120" ry="55" fill="#000" opacity="0.07"/>
+  <!-- subtle crest -->
+  <circle cx="400" cy="250" r="28" fill="none" stroke="#fff" stroke-width="0.6" opacity="0.05"/>
+</svg>

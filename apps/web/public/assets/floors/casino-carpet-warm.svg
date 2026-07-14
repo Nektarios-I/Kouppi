@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320">
+  <defs>
+    <pattern id="warm-carpet" width="320" height="320" patternUnits="userSpaceOnUse">
+      <rect width="320" height="320" fill="#2a1838"/>
+      <!-- diamond lattice -->
+      <path d="M0 160 L160 0 L320 160 L160 320 Z" fill="none" stroke="#3a2848" stroke-width="0.8"/>
+      <path d="M0 0 L320 320 M320 0 L0 320" stroke="#342440" stroke-width="0.5" opacity="0.6"/>
+      <!-- inner medallion -->
+      <circle cx="160" cy="160" r="48" fill="none" stroke="#5a3858" stroke-width="1.2"/>
+      <circle cx="160" cy="160" r="32" fill="#322040" opacity="0.5"/>
+      <circle cx="160" cy="160" r="18" fill="none" stroke="#8a6048" stroke-width="0.8" opacity="0.7"/>
+      <!-- gold flecks -->
+      <circle cx="80" cy="80" r="2" fill="#8a7040" opacity="0.5"/>
+      <circle cx="240" cy="80" r="2" fill="#8a7040" opacity="0.5"/>
+      <circle cx="80" cy="240" r="2" fill="#8a7040" opacity="0.5"/>
+      <circle cx="240" cy="240" r="2" fill="#8a7040" opacity="0.5"/>
+      <!-- border band -->
+      <rect x="4" y="4" width="312" height="312" fill="none" stroke="#4a3050" stroke-width="2"/>
+      <rect x="12" y="12" width="296" height="296" fill="none" stroke="#3a2840" stroke-width="0.5"/>
+    </pattern>
+    <filter id="tex">
+      <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="2" result="n"/>
+      <feDiffuseLighting in="n" lighting-color="#fff" surfaceScale="0.8" result="l">
+        <feDistantLight azimuth="45" elevation="55"/>
+      </feDiffuseLighting>
+      <feBlend in="SourceGraphic" in2="l" mode="multiply"/>
+    </filter>
+  </defs>
+  <rect width="320" height="320" fill="url(#warm-carpet)" filter="url(#tex)" opacity="0.95"/>
+</svg>

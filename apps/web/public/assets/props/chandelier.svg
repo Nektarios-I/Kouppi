@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 120" width="200" height="120">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="30%" r="60%">
+      <stop offset="0%" stop-color="#fff8dc" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#d4af37" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <ellipse cx="100" cy="25" rx="80" ry="20" fill="url(#glow)"/>
+  <!-- chain -->
+  <line x1="100" y1="0" x2="100" y2="12" stroke="#8a7040" stroke-width="1.5"/>
+  <!-- arms -->
+  <rect x="20" y="18" width="160" height="4" rx="2" fill="#6a5830"/>
+  <rect x="95" y="12" width="10" height="12" fill="#5a4828"/>
+  <!-- candle cups -->
+  <g fill="#d4af37" opacity="0.8">
+    <ellipse cx="30" cy="28" rx="8" ry="4"/>
+    <ellipse cx="70" cy="26" rx="8" ry="4"/>
+    <ellipse cx="100" cy="25" rx="9" ry="4"/>
+    <ellipse cx="130" cy="26" rx="8" ry="4"/>
+    <ellipse cx="170" cy="28" rx="8" ry="4"/>
+  </g>
+  <!-- crystals -->
+  <path d="M25 32 L30 50 L35 32 Z" fill="#fff8dc" opacity="0.25"/>
+  <path d="M65 30 L70 55 L75 30 Z" fill="#fff8dc" opacity="0.3"/>
+  <path d="M95 28 L100 60 L105 28 Z" fill="#fff8dc" opacity="0.35"/>
+  <path d="M125 30 L130 55 L135 30 Z" fill="#fff8dc" opacity="0.3"/>
+  <path d="M165 32 L170 50 L175 32 Z" fill="#fff8dc" opacity="0.25"/>
+  <path d="M45 34 L50 42 L55 34 Z" fill="#fff8dc" opacity="0.15"/>
+  <path d="M145 34 L150 42 L155 34 Z" fill="#fff8dc" opacity="0.15"/>
+</svg>

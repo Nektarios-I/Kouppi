@@ -1,14 +1,19 @@
 "use client";
 import { useState } from "react";
+import TableThemeSelector from "@/components/game/TableThemeSelector";
+import { HudButton } from "@/components/game/HudButton";
 
 export type TableSettings = {
-  numberBots: number;                       // 0..7
+  numberBots: number;
   botMode: "deterministic" | "stochastic";
   botDifficulty: "easy" | "normal" | "hard";
-  startingBankroll: number;                 // >= 1
-  ante: number;                             // >= 1
+  startingBankroll: number;
+  ante: number;
   shistri: boolean;
 };
+
+const inputClass =
+  "game-action-bet-input w-full text-gray-100 !bg-black/40 border-white/15 py-2";
 
 export default function SettingsDialog({
   open,
@@ -31,41 +36,58 @@ export default function SettingsDialog({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/60 grid place-items-center z-50">
-      <div className="w-full max-w-xl card text-white">
-        <h2 className="text-2xl font-semibold mb-4">Table Settings</h2>
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm grid place-items-center z-50 p-4">
+      <div className="game-modal-panel w-full max-w-xl" role="dialog" aria-modal="true">
+        <div className="game-modal-header !mb-4 !pb-3">
+          <h2 className="font-display text-2xl font-bold text-gold-light tracking-wide">
+            Table Settings
+          </h2>
+          <p className="text-gray-400 text-sm font-ui mt-1">Configure your single-player game</p>
+        </div>
 
-        <div className="grid md:grid-cols-2 gap-4">
-          <label className="flex flex-col gap-1">
-            <span className="text-sm opacity-80">Number of bots</span>
+        <div className="grid md:grid-cols-2 gap-4 font-ui">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-gray-400 uppercase tracking-wide">Bots</span>
             <input
               type="number"
-              className="text-black rounded px-2 py-1"
+              className={inputClass}
               min={0}
               max={7}
               value={settings.numberBots}
-              onChange={(e) => setSettings(s => ({ ...s, numberBots: Math.max(0, Math.min(7, Number(e.target.value||0))) }))}
+              onChange={(e) =>
+                setSettings((s) => ({
+                  ...s,
+                  numberBots: Math.max(0, Math.min(7, Number(e.target.value || 0))),
+                }))
+              }
             />
           </label>
 
-          <label className="flex flex-col gap-1">
-            <span className="text-sm opacity-80">Bot category</span>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-gray-400 uppercase tracking-wide">Bot mode</span>
             <select
-              className="text-black rounded px-2 py-1"
+              className={inputClass}
               value={settings.botMode}
-              onChange={(e) => setSettings(s => ({ ...s, botMode: e.target.value as any }))}
+              onChange={(e) =>
+                setSettings((s) => ({ ...s, botMode: e.target.value as TableSettings["botMode"] }))
+              }
             >
               <option value="deterministic">Deterministic</option>
               <option value="stochastic">Stochastic</option>
             </select>
           </label>
 
-          <label className="flex flex-col gap-1">
-            <span className="text-sm opacity-80">Bot difficulty</span>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-gray-400 uppercase tracking-wide">Difficulty</span>
             <select
-              className="text-black rounded px-2 py-1"
+              className={inputClass}
               value={settings.botDifficulty}
-              onChange={(e) => setSettings(s => ({ ...s, botDifficulty: e.target.value as any }))}
+              onChange={(e) =>
+                setSettings((s) => ({
+                  ...s,
+                  botDifficulty: e.target.value as TableSettings["botDifficulty"],
+                }))
+              }
             >
               <option value="easy">Easy</option>
               <option value="normal">Normal</option>
@@ -73,40 +95,52 @@ export default function SettingsDialog({
             </select>
           </label>
 
-          <label className="flex flex-col gap-1">
-            <span className="text-sm opacity-80">Starting bankroll (all players)</span>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-gray-400 uppercase tracking-wide">Bankroll</span>
             <input
               type="number"
-              className="text-black rounded px-2 py-1"
+              className={inputClass}
               min={1}
               value={settings.startingBankroll}
-              onChange={(e) => setSettings(s => ({ ...s, startingBankroll: Math.max(1, Number(e.target.value||1)) }))}
+              onChange={(e) =>
+                setSettings((s) => ({
+                  ...s,
+                  startingBankroll: Math.max(1, Number(e.target.value || 1)),
+                }))
+              }
             />
           </label>
 
-          <label className="flex flex-col gap-1">
-            <span className="text-sm opacity-80">Starting ante</span>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-gray-400 uppercase tracking-wide">Ante</span>
             <input
               type="number"
-              className="text-black rounded px-2 py-1"
+              className={inputClass}
               min={1}
               value={settings.ante}
-              onChange={(e) => setSettings(s => ({ ...s, ante: Math.max(1, Number(e.target.value||1)) }))}
+              onChange={(e) =>
+                setSettings((s) => ({ ...s, ante: Math.max(1, Number(e.target.value || 1)) }))
+              }
             />
           </label>
 
-          <label className="flex items-center gap-2 mt-6">
+          <label className="flex items-center gap-2 mt-2 md:mt-6 text-sm text-gray-300">
             <input
               type="checkbox"
+              className="accent-gold"
               checked={settings.shistri}
-              onChange={(e) => setSettings(s => ({ ...s, shistri: e.target.checked }))}
+              onChange={(e) => setSettings((s) => ({ ...s, shistri: e.target.checked }))}
             />
-            <span>Enable SHISTRI</span>
+            Enable SHISTRI
           </label>
+
+          <TableThemeSelector id="settings-table-theme" />
         </div>
 
-        <div className="mt-6 flex justify-end gap-3">
-          <button className="btn" onClick={() => onStart(settings)}>Start Game</button>
+        <div className="mt-6 flex justify-end">
+          <HudButton variant="primary" size="lg" onClick={() => onStart(settings)}>
+            Start Game
+          </HudButton>
         </div>
       </div>
     </div>

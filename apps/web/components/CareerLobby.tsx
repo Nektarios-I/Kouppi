@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { useCareerLobbyStore, type Tier, type AnteOption } from "@/store/careerLobbyStore";
+import { HudButton } from "@/components/game/HudButton";
+import {
+  LobbyCard,
+  LobbyAlert,
+} from "@/components/game/LobbyUI";
 
-/**
- * Career Lobby Component
- * 
- * Displays tier selection and matchmaking UI for Career Mode.
- */
 export default function CareerLobby() {
   const router = useRouter();
   const { token, user, isLoggedIn } = useAuthStore();
@@ -17,7 +17,6 @@ export default function CareerLobby() {
     socket,
     isConnected,
     isConnecting,
-    isAuthenticated,
     playerRating,
     playerBankroll,
     tiers,
@@ -28,7 +27,6 @@ export default function CareerLobby() {
     gameRoomId,
     error,
     connect,
-    disconnect,
     fetchTiers,
     selectTier,
     joinAnte,
@@ -38,34 +36,25 @@ export default function CareerLobby() {
 
   const [countdown, setCountdown] = useState<number | null>(null);
 
-  // Connect on mount if logged in
   useEffect(() => {
     if (isLoggedIn() && token && !socket) {
       connect(token);
     }
-    
-    return () => {
-      // Don't disconnect on unmount - let the store manage this
-    };
-  }, [isLoggedIn, token]);
+  }, [isLoggedIn, token, socket, connect]);
 
-  // Countdown timer for auto-start
   useEffect(() => {
     if (currentRoom?.autoStartAt) {
       const updateCountdown = () => {
         const remaining = Math.max(0, Math.ceil((currentRoom.autoStartAt! - Date.now()) / 1000));
         setCountdown(remaining);
       };
-      
       updateCountdown();
       const interval = setInterval(updateCountdown, 1000);
       return () => clearInterval(interval);
-    } else {
-      setCountdown(null);
     }
+    setCountdown(null);
   }, [currentRoom?.autoStartAt]);
 
-  // Navigate to game room when transition happens
   useEffect(() => {
     if (gameRoomId) {
       router.push(`/room/${gameRoomId}`);
@@ -84,262 +73,198 @@ export default function CareerLobby() {
 
   const selectedTier = tiers.find((t) => t.id === selectedTierId);
 
-  // Not logged in
   if (!isLoggedIn()) {
     return (
-      <div className="bg-gray-800/50 rounded-2xl border border-gray-700 p-8 text-center">
-        <p className="text-gray-400 mb-4">
+      <LobbyCard title="Career Matchmaking" icon="🏆">
+        <p className="text-gray-400 text-center font-ui py-4">
           Sign in to access Career Mode matchmaking
         </p>
-      </div>
+      </LobbyCard>
     );
   }
 
-  // Connecting
   if (isConnecting) {
     return (
-      <div className="bg-gray-800/50 rounded-2xl border border-gray-700 p-8 text-center">
-        <div className="w-10 h-10 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-gray-400">Connecting to server...</p>
-      </div>
-    );
-  }
-
-  // Not connected
-  if (!isConnected) {
-    return (
-      <div className="bg-gray-800/50 rounded-2xl border border-gray-700 p-8 text-center">
-        <p className="text-red-400 mb-4">Disconnected from server</p>
-        <button
-          onClick={() => token && connect(token)}
-          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg transition-colors"
-        >
-          Reconnect
-        </button>
-      </div>
-    );
-  }
-
-  // In a waiting room
-  if (currentRoom) {
-    return (
-      <div className="bg-gray-800/50 rounded-2xl border border-gray-700 overflow-hidden">
-        {/* Room Header */}
-        <div 
-          className="p-4 border-b border-gray-700"
-          style={{ backgroundColor: selectedTier?.color + "20" }}
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-bold">
-                {selectedTier?.emoji} {selectedTier?.name}
-              </h3>
-              <p className="text-gray-400 text-sm">
-                Ante: {currentRoom.ante} • Bet: {currentRoom.minBet}-{currentRoom.maxBet}
-              </p>
-            </div>
-            <div className="text-right">
-              <div className="text-lg font-bold">
-                {currentRoom.playerCount}/{currentRoom.maxPlayers}
-              </div>
-              <div className="text-gray-400 text-sm">Players</div>
-            </div>
+      <LobbyCard title="Connecting" icon="◎">
+        <div className="flex justify-center py-8">
+          <div className="hud-timer-ring w-12 h-12 flex items-center justify-center">
+            <div className="w-8 h-8 border-2 border-gold/30 border-t-gold rounded-full animate-spin" />
           </div>
         </div>
+      </LobbyCard>
+    );
+  }
 
-        {/* Players List */}
-        <div className="p-4">
-          <h4 className="text-sm font-medium text-gray-400 mb-3">Players in Room</h4>
-          <div className="space-y-2">
-            {currentRoom.players.map((player) => (
-              <div 
-                key={player.userId}
-                className={`flex items-center gap-3 p-2 rounded-lg ${
-                  player.userId === user?.id ? "bg-indigo-500/20" : "bg-gray-900/30"
-                }`}
-              >
-                <div 
-                  className="w-10 h-10 rounded-full flex items-center justify-center text-lg border"
-                  style={{ 
+  if (!isConnected) {
+    return (
+      <LobbyCard title="Disconnected" icon="◎">
+        <p className="text-error text-center font-ui mb-4">Disconnected from server</p>
+        <HudButton variant="bet" fullWidth onClick={() => token && connect(token)}>
+          Reconnect
+        </HudButton>
+      </LobbyCard>
+    );
+  }
+
+  if (currentRoom) {
+    return (
+      <LobbyCard
+        title={`${selectedTier?.emoji ?? "♠"} ${selectedTier?.name ?? "Career Room"}`}
+        icon="♣"
+        badge={
+          <span className="hud-badge">
+            {currentRoom.playerCount}/{currentRoom.maxPlayers}
+          </span>
+        }
+      >
+        <p className="text-sm text-gray-400 font-ui mb-4">
+          Ante: {currentRoom.ante} · Bet: {currentRoom.minBet}–{currentRoom.maxBet}
+        </p>
+
+        <div className="space-y-2 mb-4">
+          {currentRoom.players.map((player) => (
+            <div
+              key={player.userId}
+              className={`lobby-player-row ${player.userId === user?.id ? "lobby-player-row-me" : ""}`}
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className="avatar-display w-10 h-10 text-lg"
+                  style={{
                     backgroundColor: player.avatarColor,
-                    borderColor: player.avatarBorder,
+                    border: `2px solid ${player.avatarBorder}`,
                   }}
                 >
                   {player.avatarEmoji}
                 </div>
-                <div className="flex-1">
-                  <div className="font-medium">
+                <div className="min-w-0">
+                  <div className="font-ui font-medium truncate">
                     {player.username}
                     {player.userId === user?.id && (
-                      <span className="ml-2 text-xs bg-indigo-500/30 text-indigo-300 px-2 py-0.5 rounded-full">
-                        You
-                      </span>
+                      <span className="text-gold text-xs ml-1">(you)</span>
                     )}
                   </div>
-                  <div className="text-xs text-gray-500">
-                    Rating: {player.rating}
-                  </div>
+                  <div className="text-xs text-gray-500">Rating {player.rating}</div>
                 </div>
               </div>
-            ))}
-            
-            {/* Empty slots */}
-            {Array.from({ length: currentRoom.maxPlayers - currentRoom.playerCount }).map((_, i) => (
-              <div 
-                key={`empty-${i}`}
-                className="flex items-center gap-3 p-2 rounded-lg bg-gray-900/20 border border-dashed border-gray-700"
-              >
-                <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg bg-gray-800 text-gray-600">
+            </div>
+          ))}
+
+          {Array.from({ length: currentRoom.maxPlayers - currentRoom.playerCount }).map((_, i) => (
+            <div
+              key={`empty-${i}`}
+              className="lobby-player-row border-dashed opacity-60"
+            >
+              <div className="flex items-center gap-3">
+                <div className="avatar-display w-10 h-10 text-lg bg-black/40 text-gray-600 border-2 border-white/10">
                   ?
                 </div>
-                <div className="text-gray-500 text-sm">Waiting for player...</div>
+                <span className="text-gray-500 text-sm font-ui">Waiting for player…</span>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
 
-        {/* Auto-start Timer */}
         {countdown !== null && countdown > 0 && currentRoom.playerCount >= 2 && (
-          <div className="px-4 pb-4">
-            <div className="bg-green-900/30 border border-green-700/50 rounded-lg p-4 text-center">
-              <div className="text-green-400 text-sm mb-1">Game starting in</div>
-              <div className="text-3xl font-bold text-green-300">{countdown}s</div>
-            </div>
+          <div className="hud-result-win text-center py-3 mb-4 font-ui">
+            <div className="text-sm mb-1">Game starting in</div>
+            <div className="font-display text-3xl font-bold text-success">{countdown}s</div>
           </div>
         )}
 
-        {/* Waiting message */}
         {currentRoom.playerCount < 2 && (
-          <div className="px-4 pb-4">
-            <div className="bg-yellow-900/30 border border-yellow-700/50 rounded-lg p-4 text-center">
-              <div className="text-yellow-400">
-                Waiting for at least 2 players to start...
-              </div>
-            </div>
+          <div className="hud-status-banner text-center !py-2 mb-4 font-ui text-sm">
+            Waiting for at least 2 players to start…
           </div>
         )}
 
-        {/* Leave Button */}
-        <div className="p-4 border-t border-gray-700">
-          <button
-            onClick={handleLeaveRoom}
-            className="w-full py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-lg transition-colors"
-          >
-            Leave Room
-          </button>
-        </div>
-      </div>
+        <HudButton variant="danger" fullWidth onClick={handleLeaveRoom}>
+          Leave Room
+        </HudButton>
+      </LobbyCard>
     );
   }
 
-  // Tier selection (no room yet)
   return (
-    <div className="space-y-6">
-      {/* Error Banner */}
+    <div className="space-y-5">
       {error && (
-        <div className="bg-red-900/30 border border-red-700/50 rounded-lg p-4 flex items-center justify-between">
-          <span className="text-red-400">{error}</span>
-          <button onClick={clearError} className="text-red-400 hover:text-red-300">
-            ✕
-          </button>
-        </div>
+        <LobbyAlert variant="error" onDismiss={clearError}>
+          {error}
+        </LobbyAlert>
       )}
 
-      {/* Player Info */}
-      <div className="bg-gray-800/50 rounded-xl border border-gray-700 p-4 flex items-center justify-between">
-        <div>
-          <span className="text-gray-400 text-sm">Your Rating</span>
-          <div className="text-xl font-bold text-purple-400">{playerRating}</div>
+      <LobbyCard title="Your Stats" icon="◎">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="career-stat-tile">
+            <div className="text-xs text-gray-500 font-ui uppercase tracking-wide">Rating</div>
+            <div className="text-xl font-display font-bold text-gold-light">{playerRating}</div>
+          </div>
+          <div className="career-stat-tile">
+            <div className="text-xs text-gray-500 font-ui uppercase tracking-wide">Bankroll</div>
+            <div className="text-xl font-display font-bold text-gold">
+              {playerBankroll.toLocaleString()}
+            </div>
+          </div>
         </div>
-        <div>
-          <span className="text-gray-400 text-sm">Bankroll</span>
-          <div className="text-xl font-bold text-yellow-400">💰 {playerBankroll.toLocaleString()}</div>
-        </div>
-      </div>
+      </LobbyCard>
 
-      {/* Loading Tiers */}
       {isLoadingTiers ? (
-        <div className="bg-gray-800/50 rounded-2xl border border-gray-700 p-8 text-center">
-          <div className="w-10 h-10 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-400">Loading leagues...</p>
-        </div>
+        <LobbyCard title="Loading Leagues" icon="🏆">
+          <div className="flex justify-center py-8">
+            <div className="hud-timer-ring w-12 h-12 flex items-center justify-center">
+              <div className="w-8 h-8 border-2 border-gold/30 border-t-gold rounded-full animate-spin" />
+            </div>
+          </div>
+        </LobbyCard>
+      ) : !selectedTierId ? (
+        <LobbyCard title="Select a League" icon="🏆">
+          <div className="space-y-2">
+            {tiers.map((tier) => (
+              <TierCard
+                key={tier.id}
+                tier={tier}
+                playerRating={playerRating}
+                onSelect={() => selectTier(tier.id)}
+              />
+            ))}
+          </div>
+        </LobbyCard>
       ) : (
-        <>
-          {/* Tier Selection */}
-          {!selectedTierId && (
-            <div className="space-y-3">
-              <h3 className="text-lg font-bold text-gray-300">Select a League</h3>
-              <div className="grid gap-3">
-                {tiers.map((tier) => (
-                  <TierCard 
-                    key={tier.id} 
-                    tier={tier} 
-                    playerRating={playerRating}
-                    onSelect={() => selectTier(tier.id)}
-                  />
-                ))}
-              </div>
+        selectedTier && (
+          <LobbyCard
+            title={`${selectedTier.emoji} ${selectedTier.name}`}
+            icon="♠"
+            badge={
+              <HudButton variant="ghost" size="sm" onClick={() => selectTier("")}>
+                ← Back
+              </HudButton>
+            }
+          >
+            <p className="text-sm text-gray-400 font-ui mb-4">{selectedTier.description}</p>
+            <div className="space-y-2">
+              {selectedTier.antes.map((ante) => (
+                <AnteCard
+                  key={ante.id}
+                  ante={ante}
+                  tierColor={selectedTier.color}
+                  isJoining={isJoiningRoom}
+                  onJoin={() => handleJoinAnte(ante.id)}
+                />
+              ))}
             </div>
-          )}
-
-          {/* Ante Selection */}
-          {selectedTierId && selectedTier && (
-            <div className="space-y-4">
-              {/* Back button */}
-              <button
-                onClick={() => selectTier("")}
-                className="text-gray-400 hover:text-white flex items-center gap-2"
-              >
-                ← Back to leagues
-              </button>
-
-              {/* Selected tier header */}
-              <div 
-                className="rounded-xl p-4 border"
-                style={{ 
-                  backgroundColor: selectedTier.color + "15",
-                  borderColor: selectedTier.color + "50",
-                }}
-              >
-                <div className="flex items-center gap-3">
-                  <span className="text-3xl">{selectedTier.emoji}</span>
-                  <div>
-                    <h3 className="text-xl font-bold">{selectedTier.name}</h3>
-                    <p className="text-gray-400 text-sm">{selectedTier.description}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Ante options */}
-              <div className="space-y-3">
-                <h4 className="text-lg font-bold text-gray-300">Choose Stakes</h4>
-                {selectedTier.antes.map((ante) => (
-                  <AnteCard
-                    key={ante.id}
-                    ante={ante}
-                    tierColor={selectedTier.color}
-                    isJoining={isJoiningRoom}
-                    onJoin={() => handleJoinAnte(ante.id)}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-        </>
+          </LobbyCard>
+        )
       )}
     </div>
   );
 }
 
-/**
- * Tier Card Component
- */
-function TierCard({ 
-  tier, 
-  playerRating, 
-  onSelect 
-}: { 
-  tier: Tier; 
+function TierCard({
+  tier,
+  playerRating,
+  onSelect,
+}: {
+  tier: Tier;
   playerRating: number;
   onSelect: () => void;
 }) {
@@ -348,44 +273,33 @@ function TierCard({
 
   return (
     <button
+      type="button"
       onClick={canAccess ? onSelect : undefined}
       disabled={!canAccess}
-      className={`w-full text-left p-4 rounded-xl border transition-all ${
-        canAccess 
-          ? "hover:scale-[1.02] cursor-pointer" 
-          : "opacity-50 cursor-not-allowed"
-      }`}
-      style={{ 
+      className={`career-tier-card ${canAccess ? "career-tier-card-accessible cursor-pointer" : "opacity-50 cursor-not-allowed"}`}
+      style={{
         backgroundColor: canAccess ? tier.color + "15" : "transparent",
-        borderColor: canAccess ? tier.color + "50" : "#374151",
+        borderColor: canAccess ? tier.color + "50" : "rgba(255,255,255,0.08)",
       }}
     >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">{tier.emoji}</span>
-          <div>
-            <div className="font-bold">{tier.name}</div>
-            <div className="text-sm text-gray-400">
-              {tier.minRating}+ rating required
-            </div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="text-2xl shrink-0">{tier.emoji}</span>
+          <div className="min-w-0 text-left">
+            <div className="font-display font-bold text-gold-light">{tier.name}</div>
+            <div className="text-sm text-gray-400">{tier.minRating}+ rating required</div>
           </div>
         </div>
-        
         {canAccess ? (
-          <div className="text-gray-400">→</div>
+          <span className="text-gold shrink-0">→</span>
         ) : (
-          <div className="text-red-400 text-sm">
-            Need {ratingNeeded} more rating
-          </div>
+          <span className="text-error text-sm shrink-0">Need {ratingNeeded} more</span>
         )}
       </div>
     </button>
   );
 }
 
-/**
- * Ante Card Component
- */
 function AnteCard({
   ante,
   tierColor,
@@ -398,39 +312,25 @@ function AnteCard({
   onJoin: () => void;
 }) {
   return (
-    <div 
-      className="p-4 rounded-xl border bg-gray-900/30"
+    <div
+      className="lobby-room-row"
       style={{ borderColor: tierColor + "30" }}
     >
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="font-bold text-lg">{ante.label}</div>
-          <div className="text-sm text-gray-400">
-            Buy-in: {ante.buyIn.toLocaleString()} chips
-          </div>
+      <div className="min-w-0">
+        <div className="font-ui font-semibold text-white">{ante.label}</div>
+        <div className="text-sm text-gray-400">
+          Buy-in: {ante.buyIn.toLocaleString()} chips
         </div>
-        
-        <button
-          onClick={onJoin}
-          disabled={!ante.canAfford || isJoining}
-          className={`px-5 py-2 rounded-lg font-medium transition-all ${
-            ante.canAfford && !isJoining
-              ? "bg-green-600 hover:bg-green-500 text-white"
-              : "bg-gray-700 text-gray-500 cursor-not-allowed"
-          }`}
-        >
-          {isJoining ? (
-            <span className="flex items-center gap-2">
-              <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              Joining...
-            </span>
-          ) : ante.canAfford ? (
-            "Join"
-          ) : (
-            "Not enough chips"
-          )}
-        </button>
       </div>
+      <HudButton
+        variant={ante.canAfford && !isJoining ? "success" : "ghost"}
+        size="sm"
+        onClick={onJoin}
+        disabled={!ante.canAfford || isJoining}
+        className="shrink-0"
+      >
+        {isJoining ? "…" : ante.canAfford ? "Join" : "Not enough"}
+      </HudButton>
     </div>
   );
 }

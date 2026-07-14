@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="120" viewBox="0 0 360 120">
+  <defs>
+    <pattern id="planks" width="360" height="120" patternUnits="userSpaceOnUse">
+      <!-- plank row 1 -->
+      <rect width="360" height="40" y="0" fill="#4a3020"/>
+      <rect width="118" height="40" y="0" fill="#5a3828" opacity="0.3"/>
+      <rect width="115" height="40" x="122" y="0" fill="#3d2818" opacity="0.2"/>
+      <rect width="119" height="40" x="241" y="0" fill="#523220" opacity="0.25"/>
+      <line x1="0" y1="0" x2="360" y2="0" stroke="#2a1a10" stroke-width="2"/>
+      <line x1="118" y1="0" x2="118" y2="40" stroke="#2a1a10" stroke-width="1.5"/>
+      <line x1="237" y1="0" x2="237" y2="40" stroke="#2a1a10" stroke-width="1.5"/>
+      <!-- grain lines row 1 -->
+      <path d="M10 12 Q60 14 110 11" stroke="#6a4830" stroke-width="0.4" fill="none" opacity="0.4"/>
+      <path d="M130 22 Q180 20 230 23" stroke="#6a4830" stroke-width="0.4" fill="none" opacity="0.35"/>
+      <path d="M250 15 Q300 17 350 14" stroke="#6a4830" stroke-width="0.4" fill="none" opacity="0.4"/>
+      <!-- plank row 2 (offset) -->
+      <rect width="360" height="40" y="40" fill="#3d2814"/>
+      <rect width="95" height="40" y="40" x="60" fill="#4a3220" opacity="0.25"/>
+      <rect width="130" height="40" x="155" y="40" fill="#352010" opacity="0.2"/>
+      <line x1="0" y1="40" x2="360" y2="40" stroke="#2a1a10" stroke-width="2"/>
+      <line x1="60" y1="40" x2="60" y2="80" stroke="#2a1a10" stroke-width="1.5"/>
+      <line x1="155" y1="40" x2="155" y2="80" stroke="#2a1a10" stroke-width="1.5"/>
+      <line x1="285" y1="40" x2="285" y2="80" stroke="#2a1a10" stroke-width="1.5"/>
+      <path d="M20 52 Q70 54 120 51" stroke="#5a3828" stroke-width="0.4" fill="none" opacity="0.35"/>
+      <path d="M170 62 Q220 60 270 63" stroke="#5a3828" stroke-width="0.4" fill="none" opacity="0.35"/>
+      <!-- plank row 3 -->
+      <rect width="360" height="40" y="80" fill="#453018"/>
+      <rect width="140" height="40" y="80" fill="#523820" opacity="0.2"/>
+      <rect width="108" height="40" x="148" y="80" fill="#3a2814" opacity="0.25"/>
+      <line x1="0" y1="80" x2="360" y2="80" stroke="#2a1a10" stroke-width="2"/>
+      <line x1="0" y1="120" x2="360" y2="120" stroke="#1a1008" stroke-width="3"/>
+      <line x1="140" y1="80" x2="140" y2="120" stroke="#2a1a10" stroke-width="1.5"/>
+      <line x1="256" y1="80" x2="256" y2="120" stroke="#2a1a10" stroke-width="1.5"/>
+      <path d="M15 92 Q65 94 130 91" stroke="#6a4830" stroke-width="0.4" fill="none" opacity="0.35"/>
+      <path d="M160 102 Q210 100 260 103" stroke="#6a4830" stroke-width="0.4" fill="none" opacity="0.35"/>
+    </pattern>
+    <filter id="grain">
+      <feTurbulence type="fractalNoise" baseFrequency="0.15 0.8" numOctaves="3"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feBlend in="SourceGraphic" mode="multiply"/>
+    </filter>
+  </defs>
+  <rect width="360" height="120" fill="url(#planks)" filter="url(#grain)" opacity="0.92"/>
+</svg>

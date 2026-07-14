@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 60" width="180" height="60">
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect x="4" y="8" width="172" height="44" rx="6" fill="#0a0c18" stroke="#2a4080" stroke-width="1"/>
+  <text x="90" y="38" text-anchor="middle" font-family="serif" font-size="22" font-weight="bold" fill="#6090e8" filter="url(#glow)" opacity="0.85">KOUPPI</text>
+  <rect x="4" y="8" width="172" height="44" rx="6" fill="none" stroke="#4080d0" stroke-width="0.5" opacity="0.4"/>
+</svg>
