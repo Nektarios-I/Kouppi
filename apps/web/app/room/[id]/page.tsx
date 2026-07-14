@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
+
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useRemoteGameStore, type AvatarConfig } from "@/store/remoteGameStore";
 import { useAuthStore } from "@/store/authStore";
@@ -7,25 +8,38 @@ import dynamic from "next/dynamic";
 import Chat from "../../../components/Chat";
 import SoundControl from "../../../components/SoundControl";
 import EmotePanel from "../../../components/EmotePanel";
-import EmoteDisplay from "../../../components/EmoteDisplay";
-import AvatarPicker, { Avatar } from "../../../components/AvatarPicker";
 import { getDefaultAvatar } from "@/lib/avatars";
+import { useToast } from "@/components/game/Toast";
+import WaitingRoom from "@/components/game/WaitingRoom";
+import RoomPasswordModal from "@/components/game/RoomPasswordModal";
+import {
+  LobbyShell,
+  PreGameShell,
+  PreGameCard,
+  PreGameLoader,
+  LobbyInput,
+  LobbyAlert,
+} from "@/components/game/LobbyUI";
+import { HudButton } from "@/components/game/HudButton";
 
-// Dynamic import to avoid SSR issues - Use new graphics version
 const MultiplayerTable = dynamic(
   () => import("../../../components/MultiplayerTableGraphics"),
   { ssr: false }
 );
 
+const RECOVERABLE_JOIN_CODES = new Set(["room_full", "game_in_progress"]);
+
 export default function RoomPage() {
   const router = useRouter();
   const params = useParams();
   const roomIdParam = params.id as string;
+  const decodedRoomId = decodeURIComponent(roomIdParam);
 
   const {
     connect,
     connected,
     roomId,
+    hostId,
     isHost,
     isSpectator,
     playersInRoom,
@@ -43,40 +57,55 @@ export default function RoomPage() {
     leaveSpectator,
     startGame,
     leaveRoom,
-    listRooms,
     lastError,
     clearError,
-    sendIntent,
   } = useRemoteGameStore();
 
   const [starting, setStarting] = useState(false);
   const [localName, setLocalName] = useState("");
-  const [joinFailed, setJoinFailed] = useState(false);
+  const [joinAttempted, setJoinAttempted] = useState(false);
+  const [joinErrorCode, setJoinErrorCode] = useState<string | null>(null);
   const [showSpectatorOption, setShowSpectatorOption] = useState(false);
-  // Check if this is a career game room
-  const isCareerGame = roomIdParam?.startsWith("career-game-");
-  
-  // Get auth store for career mode
-  const { user, isLoggedIn } = useAuthStore();
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordModalMode, setPasswordModalMode] = useState<"player" | "spectator">("player");
+  const [passwordInput, setPasswordInput] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [joining, setJoining] = useState(false);
 
-  // Connect on mount
+  const isCareerGame = roomIdParam?.startsWith("career-game-");
+  const { user, isLoggedIn } = useAuthStore();
+  const { showToast } = useToast();
+
+  const roomSessionRef = useRef({ roomId, isSpectator, leaveRoom, leaveSpectator });
+  roomSessionRef.current = { roomId, isSpectator, leaveRoom, leaveSpectator };
+
   useEffect(() => {
     connect();
   }, [connect]);
 
-  // Reset join state when room changes (e.g., navigating to a different room)
   useEffect(() => {
-    setJoinFailed(false);
+    return () => {
+      const { roomId: rid, isSpectator: spectating, leaveRoom: leave, leaveSpectator: leaveSpec } =
+        roomSessionRef.current;
+      if (!rid) return;
+      if (spectating) leaveSpec();
+      else leave();
+    };
+  }, []);
+
+  useEffect(() => {
+    setJoinAttempted(false);
+    setJoinErrorCode(null);
     setShowSpectatorOption(false);
+    setShowPasswordModal(false);
+    setPasswordInput("");
+    setPasswordError(null);
   }, [roomIdParam]);
 
-  // Load identity from auth store for career games, or sessionStorage for multiplayer
   useEffect(() => {
     if (isCareerGame && isLoggedIn() && user) {
-      // Career mode: use auth store identity
       setIdentity(user.id, user.username);
       setLocalName(user.username);
-      // Set avatar from user profile
       const avatar: AvatarConfig = {
         emoji: user.avatarEmoji || "🎮",
         color: user.avatarColor || "#4f46e5",
@@ -84,7 +113,6 @@ export default function RoomPage() {
       };
       setAvatar(avatar);
     } else {
-      // Multiplayer: load from sessionStorage (per-tab, so multiple tabs can be different players)
       const savedId = sessionStorage.getItem("kouppi_player_id");
       const savedName = sessionStorage.getItem("kouppi_player_name");
       const savedAvatar = sessionStorage.getItem("kouppi_player_avatar");
@@ -97,58 +125,79 @@ export default function RoomPage() {
           const avatar = JSON.parse(savedAvatar) as AvatarConfig;
           setAvatar(avatar);
         } catch {
-          // Invalid avatar JSON, ignore
+          // ignore invalid JSON
         }
       }
     }
   }, [isCareerGame, isLoggedIn, user, setIdentity, setAvatar]);
 
-  // Join room if we have identity but not in the room yet
-  // For career games, players are already added server-side, so we just need to subscribe to the room
+  const attemptJoin = useCallback(
+    async (password?: string) => {
+      setJoining(true);
+      clearError();
+      const result = await joinRoom(decodedRoomId, password);
+      setJoining(false);
+      setJoinAttempted(true);
+
+      if (result.success) {
+        setShowPasswordModal(false);
+        setPasswordInput("");
+        setPasswordError(null);
+        setJoinErrorCode(null);
+        setShowSpectatorOption(false);
+        return;
+      }
+
+      const code = result.code || "join_failed";
+      setJoinErrorCode(code);
+
+      if (code === "wrong_password") {
+        setPasswordModalMode("player");
+        setShowPasswordModal(true);
+        setPasswordError("Incorrect password");
+        return;
+      }
+
+      if (RECOVERABLE_JOIN_CODES.has(code)) {
+        setShowSpectatorOption(true);
+        clearError();
+        return;
+      }
+
+      if (code === "room_not_found") {
+        router.push("/lobby");
+      }
+    },
+    [joinRoom, decodedRoomId, clearError, router]
+  );
+
   useEffect(() => {
-    if (connected && playerId && playerName && !roomId && roomIdParam && !joinFailed) {
-      const tryJoin = async () => {
-        const decodedRoomId = decodeURIComponent(roomIdParam);
-        
-        // For career games, use subscribe (player already added server-side)
-        if (isCareerGame) {
-          const result = await subscribeToCareerRoom(decodedRoomId);
-          if (!result.success) {
-            console.error("[Career] Subscribe failed:", result.error);
-            setJoinFailed(true);
-          }
-          return;
-        }
-        
-        // For regular multiplayer, join normally
-        const result = await joinRoom(decodedRoomId);
+    if (connected && playerId && playerName && !roomId && roomIdParam && !joinAttempted && !isCareerGame) {
+      attemptJoin();
+    }
+  }, [connected, playerId, playerName, roomId, roomIdParam, joinAttempted, isCareerGame, attemptJoin]);
+
+  useEffect(() => {
+    if (connected && playerId && playerName && !roomId && roomIdParam && !joinAttempted && isCareerGame) {
+      const trySubscribe = async () => {
+        const result = await subscribeToCareerRoom(decodedRoomId);
+        setJoinAttempted(true);
         if (!result.success) {
-          setJoinFailed(true);
-          // If room is full or game in progress, offer spectator mode
-          if (result.error?.includes("full") || result.error?.includes("started") || result.error?.includes("progress")) {
-            setShowSpectatorOption(true);
+          setJoinErrorCode(result.error || "subscribe_failed");
+          if (result.error?.includes("not found")) {
+            router.push("/lobby");
           }
         }
       };
-      tryJoin();
+      trySubscribe();
     }
-  }, [connected, playerId, playerName, roomId, roomIdParam, joinRoom, joinFailed]);
+  }, [connected, playerId, playerName, roomId, roomIdParam, joinAttempted, isCareerGame, subscribeToCareerRoom, decodedRoomId, router]);
 
-  // Redirect to lobby if room is closed (roomId becomes null while we had a room)
   useEffect(() => {
-    // If we were in a room and it got closed, redirect to lobby
-    if (connected && playerId && !roomId && lastError) {
+    if (connected && playerId && !roomId && lastError && joinErrorCode === "room_not_found") {
       router.push("/lobby");
     }
-  }, [connected, playerId, roomId, lastError, router]);
-
-  // Refresh room list to detect changes
-  useEffect(() => {
-    if (!connected) return;
-    listRooms();
-    const interval = setInterval(listRooms, 2000);
-    return () => clearInterval(interval);
-  }, [connected, listRooms]);
+  }, [connected, playerId, roomId, lastError, joinErrorCode, router]);
 
   const handleSetName = () => {
     if (!localName.trim()) return;
@@ -156,15 +205,14 @@ export default function RoomPage() {
     setIdentity(id, localName.trim());
     sessionStorage.setItem("kouppi_player_id", id);
     sessionStorage.setItem("kouppi_player_name", localName.trim());
-    
-    // Set a random avatar if none exists
+
     if (!playerAvatar) {
       const newAvatar = getDefaultAvatar();
       setAvatar(newAvatar);
       sessionStorage.setItem("kouppi_player_avatar", JSON.stringify(newAvatar));
     }
   };
-  
+
   const handleAvatarChange = (newAvatar: AvatarConfig) => {
     setAvatar(newAvatar);
     sessionStorage.setItem("kouppi_player_avatar", JSON.stringify(newAvatar));
@@ -176,7 +224,7 @@ export default function RoomPage() {
     const result = await startGame();
     setStarting(false);
     if (!result.success) {
-      alert(`Failed to start: ${result.error}`);
+      showToast(`Failed to start: ${result.error}`, "error");
     }
   };
 
@@ -189,61 +237,84 @@ export default function RoomPage() {
     router.push("/lobby");
   };
 
-  const handleJoinAsSpectator = async () => {
+  const handleJoinAsSpectator = async (password?: string) => {
+    setJoining(true);
     clearError();
-    const result = await joinAsSpectator(decodeURIComponent(roomIdParam));
-    if (!result.success) {
-      alert(`Failed to join as spectator: ${result.error}`);
+    const result = await joinAsSpectator(decodedRoomId, password);
+    setJoining(false);
+
+    if (result.success) {
+      setShowPasswordModal(false);
+      setShowSpectatorOption(false);
+      setPasswordInput("");
+      setPasswordError(null);
+      return;
+    }
+
+    if (result.code === "wrong_password") {
+      setPasswordModalMode("spectator");
+      setShowPasswordModal(true);
+      setPasswordError("Incorrect password");
+      return;
+    }
+
+    showToast(`Failed to join as spectator: ${result.error}`, "error");
+  };
+
+  const handlePasswordSubmit = () => {
+    if (!passwordInput.trim()) {
+      setPasswordError("Please enter a password");
+      return;
+    }
+    setPasswordError(null);
+    if (passwordModalMode === "spectator") {
+      handleJoinAsSpectator(passwordInput.trim());
+    } else {
+      attemptJoin(passwordInput.trim());
     }
   };
 
-  // Need to set name first (only for non-career multiplayer games)
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(window.location.href);
+    showToast("Link copied to clipboard", "success");
+  };
+
   if (!playerName && !isCareerGame) {
     return (
-      <main className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 text-white p-6 flex items-center justify-center">
-        <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full">
-          <h2 className="text-xl font-semibold mb-4">Enter Your Name</h2>
-          <p className="text-gray-400 mb-4">To join room: <strong>{decodeURIComponent(roomIdParam)}</strong></p>
-          <div className="flex items-center gap-3">
-            <input
-              type="text"
-              className="text-black rounded px-3 py-2 flex-1"
-              placeholder="Your name..."
+      <PreGameShell>
+        <PreGameCard
+          title="Enter Your Name"
+          subtitle={<>To join room: <strong className="text-gold-light">{decodedRoomId}</strong></>}
+        >
+          <div className="flex flex-col sm:flex-row gap-3">
+            <LobbyInput
+              placeholder="Your name…"
               value={localName}
               onChange={(e) => setLocalName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSetName()}
               autoFocus
+              className="flex-1"
             />
-            <button
-              className="btn bg-green-600 hover:bg-green-700 px-4 py-2 rounded"
-              onClick={handleSetName}
-              disabled={!localName.trim()}
-            >
+            <HudButton variant="success" onClick={handleSetName} disabled={!localName.trim()}>
               Join
-            </button>
+            </HudButton>
           </div>
-        </div>
-      </main>
+        </PreGameCard>
+      </PreGameShell>
     );
   }
 
-  // Career game: Show loading while waiting to connect and receive state
   if (isCareerGame && (!connected || !state)) {
     return (
-      <main className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 text-white p-6 flex items-center justify-center">
-        <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full text-center">
-          <div className="w-12 h-12 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mx-auto mb-4" />
-          <h2 className="text-xl font-semibold mb-2">Joining Career Game...</h2>
-          <p className="text-gray-400">Connecting to game room</p>
-          {lastError && (
-            <p className="mt-4 text-red-400 text-sm">{lastError}</p>
-          )}
-        </div>
-      </main>
+      <PreGameShell>
+        <PreGameLoader message="Connecting to career game…" />
+        {lastError && (
+          <p className="mt-4 text-center text-error text-sm font-ui">{lastError}</p>
+        )}
+      </PreGameShell>
     );
   }
 
-  // Game started - show multiplayer game UI (players and spectators)
   if (gameStarted && state) {
     return (
       <>
@@ -251,225 +322,104 @@ export default function RoomPage() {
         <Chat />
         <SoundControl />
         {!isSpectator && <EmotePanel />}
-        <EmoteDisplay />
-        {/* Spectator badge */}
         {isSpectator && (
-          <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50">
-            <div className="bg-purple-600/90 px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2 shadow-lg">
-              👁️ Spectating
-              <button
-                onClick={handleLeave}
-                className="ml-2 bg-purple-800 hover:bg-purple-700 px-2 py-0.5 rounded text-xs"
-              >
-                Leave
-              </button>
-            </div>
+          <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2">
+            <span className="hud-badge hud-badge-live text-sm px-4 py-2">Spectating</span>
+            <HudButton variant="ghost" size="sm" onClick={handleLeave}>
+              Leave
+            </HudButton>
           </div>
         )}
       </>
     );
   }
 
-  // Show spectator option if join failed and spectating is available
   if (showSpectatorOption && !roomId) {
     return (
-      <main className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 text-white p-6 flex items-center justify-center">
-        <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full text-center">
-          <h2 className="text-xl font-semibold mb-4">Game in Progress</h2>
-          <p className="text-gray-400 mb-6">
-            This game has already started. Would you like to watch as a spectator?
-          </p>
-          <div className="flex flex-col gap-3">
-            <button
-              className="btn bg-purple-600 hover:bg-purple-700 px-6 py-3 rounded-lg text-lg font-semibold"
-              onClick={handleJoinAsSpectator}
-            >
-              👁️ Watch as Spectator
-            </button>
-            <button
-              className="btn bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded"
-              onClick={() => router.push("/lobby")}
-            >
-              Back to Lobby
-            </button>
-          </div>
-          {lastError && (
-            <div className="mt-4 text-sm text-red-400">
-              {lastError}
-            </div>
+      <PreGameShell>
+        <PreGameCard
+          title="Cannot Join as Player"
+          subtitle="This room is full or the game is already in progress. Watch as a spectator?"
+        >
+          {lastError && !RECOVERABLE_JOIN_CODES.has(joinErrorCode || "") && (
+            <LobbyAlert variant="error">{lastError}</LobbyAlert>
           )}
-        </div>
-      </main>
+          <div className="flex flex-col gap-3">
+            <HudButton variant="kouppi" size="lg" fullWidth onClick={() => handleJoinAsSpectator()} disabled={joining}>
+              Watch as Spectator
+            </HudButton>
+            <HudButton variant="ghost" fullWidth onClick={() => router.push("/lobby")}>
+              Back to Lobby
+            </HudButton>
+          </div>
+        </PreGameCard>
+        {showPasswordModal && (
+          <RoomPasswordModal
+            roomId={decodedRoomId}
+            password={passwordInput}
+            error={passwordError}
+            loading={joining}
+            onPasswordChange={(v) => {
+              setPasswordInput(v);
+              setPasswordError(null);
+            }}
+            onSubmit={handlePasswordSubmit}
+            onCancel={() => {
+              setShowPasswordModal(false);
+              setPasswordInput("");
+              setPasswordError(null);
+            }}
+            title="Private Room"
+            subtitle={
+              passwordModalMode === "spectator"
+                ? "Enter the password to watch this private room."
+                : undefined
+            }
+          />
+        )}
+      </PreGameShell>
     );
   }
 
-  // Waiting room
   return (
-    <main className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 text-white p-6">
-      <div className="max-w-2xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold">Room: {decodeURIComponent(roomIdParam)}</h1>
-          <span
-            className={`px-3 py-1 rounded-full text-sm ${
-              connected ? "bg-green-600" : "bg-red-600"
-            }`}
-          >
-            {connected ? "Connected" : "Disconnected"}
-          </span>
-        </div>
-
-        {/* Error */}
-        {lastError && (
-          <div className="bg-red-600/30 border border-red-500 rounded-lg p-3 mb-4">
-            ⚠️ {lastError}
-          </div>
-        )}
-
-        {/* Waiting Room Card */}
-        <div className="bg-gray-800 rounded-lg p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-semibold">Waiting for players...</h2>
-            {isHost && (
-              <span className="bg-yellow-600 px-3 py-1 rounded-full text-sm">
-                👑 You are the host
-              </span>
-            )}
-          </div>
-
-          {/* Players List */}
-          <div className="mb-6">
-            <h3 className="text-sm font-medium text-gray-400 mb-2">
-              Players ({playersInRoom.length})
-            </h3>
-            <div className="space-y-2">
-              {playersInRoom.length === 0 ? (
-                <div className="text-gray-500 py-4 text-center">
-                  Waiting for players to join...
-                </div>
-              ) : (
-                playersInRoom.map((player, index) => (
-                  <div
-                    key={player.id}
-                    className="flex items-center justify-between bg-gray-700 rounded px-4 py-3"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Avatar avatar={player.avatar} size="sm" />
-                      <span className="font-medium">{player.name}</span>
-                      {player.id === playerId && (
-                        <span className="text-xs text-green-400">(you)</span>
-                      )}
-                    </div>
-                    {index === 0 && (
-                      <span className="text-xs text-yellow-400">👑 Host</span>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Spectators */}
-          <div className="mb-4">
-            <h3 className="text-sm font-medium text-gray-400 mb-2">
-              Spectators ({spectatorsInRoom.length})
-            </h3>
-            {spectatorsInRoom.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {spectatorsInRoom.map((spectator) => (
-                  <div
-                    key={spectator.id}
-                    className="flex items-center gap-2 bg-purple-900/30 border border-purple-500/30 rounded px-3 py-1.5"
-                  >
-                    <span className="text-purple-400">👁️</span>
-                    <span className="text-sm text-gray-300">{spectator.name}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-gray-500 text-sm">No spectators</div>
-            )}
-          </div>
-
-          {/* Minimum players notice */}
-          {playersInRoom.length < 2 && (
-            <div className="bg-blue-600/20 border border-blue-500 rounded p-3 mb-4 text-sm">
-              ℹ️ At least 2 players are required to start the game
-            </div>
-          )}
-          
-          {/* Your Avatar - Customization */}
-          <div className="bg-gray-700/50 rounded-lg p-4 mb-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-medium text-gray-300 mb-1">Your Avatar</h3>
-                <p className="text-xs text-gray-500">Click to customize</p>
-              </div>
-              <AvatarPicker
-                currentAvatar={playerAvatar}
-                onSelect={handleAvatarChange}
-              />
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="flex items-center gap-4">
-            {isHost ? (
-              <button
-                className="btn bg-green-600 hover:bg-green-700 px-6 py-3 rounded-lg text-lg font-semibold disabled:opacity-50"
-                onClick={handleStartGame}
-                disabled={playersInRoom.length < 2 || starting}
-              >
-                {starting ? "Starting..." : "🎮 Start Game"}
-              </button>
-            ) : (
-              <div className="text-gray-400">
-                Waiting for host to start the game...
-              </div>
-            )}
-            <button
-              className="btn bg-red-600 hover:bg-red-700 px-4 py-2 rounded"
-              onClick={handleLeave}
-            >
-              Leave Room
-            </button>
-          </div>
-        </div>
-
-        {/* Room Link */}
-        <div className="mt-6 bg-gray-800 rounded-lg p-4">
-          <h3 className="text-sm font-medium text-gray-400 mb-2">
-            Share this link to invite players:
-          </h3>
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              readOnly
-              className="flex-1 bg-gray-700 rounded px-3 py-2 text-sm"
-              value={typeof window !== "undefined" ? window.location.href : ""}
-            />
-            <button
-              className="btn bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded"
-              onClick={() => {
-                navigator.clipboard.writeText(window.location.href);
-                alert("Link copied!");
-              }}
-            >
-              Copy
-            </button>
-          </div>
-        </div>
-
-        {/* Back to Lobby */}
-        <div className="mt-6 text-center">
-          <a href="/lobby" className="text-blue-400 hover:underline">
-            ← Back to Lobby
-          </a>
-        </div>
-      </div>
-      
-      {/* Chat */}
+    <LobbyShell>
+      <WaitingRoom
+        roomId={decodedRoomId}
+        hostId={hostId}
+        connected={connected}
+        isHost={isHost}
+        players={playersInRoom}
+        spectators={spectatorsInRoom}
+        playerId={playerId}
+        playerAvatar={playerAvatar}
+        starting={starting}
+        lastError={lastError}
+        onAvatarChange={handleAvatarChange}
+        onStartGame={handleStartGame}
+        onLeave={handleLeave}
+        onCopyLink={handleCopyLink}
+        onClearError={clearError}
+      />
       <Chat />
-    </main>
+
+      {showPasswordModal && (
+        <RoomPasswordModal
+          roomId={decodedRoomId}
+          password={passwordInput}
+          error={passwordError}
+          loading={joining}
+          onPasswordChange={(v) => {
+            setPasswordInput(v);
+            setPasswordError(null);
+          }}
+          onSubmit={handlePasswordSubmit}
+          onCancel={() => {
+            setShowPasswordModal(false);
+            setPasswordInput("");
+            setPasswordError(null);
+          }}
+        />
+      )}
+    </LobbyShell>
   );
 }

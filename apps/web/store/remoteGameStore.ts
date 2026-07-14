@@ -8,13 +8,7 @@ type Intent =
   | { type: "bet"; amount: number }
   | { type: "kouppi" }
   | { type: "shistri" }
-  | { type: "pass" }
-  | { type: "startRound" }
-  | { type: "ante" }
-  | { type: "determineStarter" }
-  | { type: "startTurn" }
-  | { type: "nextPlayer" }
-  | { type: "nextRound" };
+  | { type: "pass" };
 
 export type RoomConfig = {
   ante: number;
@@ -22,6 +16,7 @@ export type RoomConfig = {
   maxPlayers: number;
   shistri: { enabled: boolean; percent: number; minChip: number };
   turnTimeout?: number;
+  spectatorsAllowed?: boolean;
 };
 
 export type RoomInfo = {
@@ -83,6 +78,7 @@ type RemoteStore = {
   // Current room state
   roomId: string | null;
   isHost: boolean;
+  hostId: string | null;
   isSpectator: boolean;
   roomConfig: RoomConfig | null;
   playersInRoom: PlayerInfo[];
@@ -141,7 +137,7 @@ type RemoteStore = {
   // Avatar actions
   setAvatar: (avatar: AvatarConfig) => void;
   // Spectator actions
-  joinAsSpectator: (roomId: string) => Promise<{ success: boolean; error?: string }>;
+  joinAsSpectator: (roomId: string, password?: string) => Promise<{ success: boolean; error?: string; code?: string }>;
   leaveSpectator: () => void;
 };
 
@@ -153,6 +149,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
   playerName: null,
   roomId: null,
   isHost: false,
+  hostId: null,
   isSpectator: false,
   roomConfig: null,
   playersInRoom: [],
@@ -174,6 +171,10 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     const serverUrl = url || process.env.NEXT_PUBLIC_SERVER_URL || "http://localhost:4000";
     const existingSocket = get().socket;
     if (existingSocket?.connected) return;
+    if (existingSocket) {
+      existingSocket.removeAllListeners();
+      existingSocket.disconnect();
+    }
     
     const s = io(serverUrl, {
       autoConnect: true,
@@ -197,7 +198,8 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
         set({ 
           state: snapshot, 
           playersInRoom: players,
-          gameStarted: snapshot.phase !== "Lobby" && snapshot.phase !== undefined 
+          gameStarted: snapshot.phase !== "Lobby" && snapshot.phase !== undefined,
+          roundEnded: snapshot.phase === "RoundEnd",
         });
       }
     });
@@ -216,6 +218,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
           set({
             roomId: null,
             isHost: false,
+            hostId: null,
             isSpectator: false,
             state: null,
             playersInRoom: [],
@@ -236,6 +239,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
           playersInRoom: data.players || [],
           spectatorsInRoom: data.spectators || [],
           isHost: data.hostId === currentPlayerId,
+          hostId: data.hostId || null,
           isSpectator: stillInRoomAsSpectator && !stillInRoomAsPlayer,
         });
       }
@@ -247,6 +251,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
       set({
         roomId: null,
         isHost: false,
+        hostId: null,
         isSpectator: false,
         state: null,
         playersInRoom: [],
@@ -268,15 +273,9 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
       set({ turnTimer: data });
     });
     
-    // Round end notification
-    s.on("roundEnd", () => {
-      set({ roundEnded: true, turnTimer: null });
-    });
-
-    // Round decision phase start
     s.on("roundDecisionStart", (data: { deadlineTs: number; players: PlayerInfo[]; choices: Record<string, "stay"|"leave"|null> }) => {
       const remaining = Math.max(0, Math.ceil((data.deadlineTs - Date.now())/1000));
-      set({ roundDecision: { active: true, remaining, deadlineTs: data.deadlineTs, choices: data.choices } });
+      set({ roundDecision: { active: true, remaining, deadlineTs: data.deadlineTs, choices: data.choices }, roundEnded: true, turnTimer: null });
     });
     // Round decision updates
     s.on("roundDecisionUpdate", (data: { remaining: number; choices: Record<string, "stay"|"leave"|null> }) => {
@@ -369,6 +368,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
         connected: false, 
         roomId: null, 
         isHost: false,
+        hostId: null,
         isSpectator: false,
         state: null,
         playersInRoom: [],
@@ -400,6 +400,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     set({
       roomId: null,
       isHost: false,
+      hostId: null,
       isSpectator: false,
       state: null,
       playersInRoom: [],
@@ -437,6 +438,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
           startingBankroll: config.startingBankroll ?? 100,
           maxPlayers: config.maxPlayers ?? 8,
           shistri: config.shistri ?? { enabled: true, percent: 5, minChip: 1 },
+          spectatorsAllowed: config.spectatorsAllowed ?? true,
         },
         password: password?.trim() || undefined, // Optional password
       }, (err: any, snap: any) => {
@@ -446,7 +448,8 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
         } else {
           set({ 
             roomId, 
-            isHost: true, 
+            isHost: true,
+            hostId: playerId,
             state: snap || null,
             roomConfig: config as RoomConfig,
             playersInRoom: [{ id: playerId, name: playerName, avatar: playerAvatar || undefined }],
@@ -488,6 +491,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
           set({ 
             roomId, 
             isHost,
+            hostId: roomData?.hostId || null,
             isSpectator: false,
             state: snap || null,
             playersInRoom: players,
@@ -525,6 +529,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
           set({ 
             roomId, 
             isHost,
+            hostId: roomData?.hostId || null,
             isSpectator: false,
             state: snap || null,
             playersInRoom: players,
@@ -549,6 +554,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     set({ 
       roomId: null, 
       isHost: false,
+      hostId: null,
       isSpectator: false,
       state: null, 
       playersInRoom: [],
@@ -683,12 +689,11 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
   },
   
   // Spectator actions
-  joinAsSpectator: async (roomId) => {
+  joinAsSpectator: async (roomId, password) => {
     const { socket, playerId, playerName, playerAvatar, roomId: currentRoomId } = get();
     if (!socket) return { success: false, error: "Not connected" };
     if (!playerId || !playerName) return { success: false, error: "Identity not set" };
     
-    // Clear any previous room state first
     if (currentRoomId && currentRoomId !== roomId) {
       get().clearRoomState();
     }
@@ -697,10 +702,11 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
       socket.emit("joinAsSpectator", {
         roomId,
         spectator: { id: playerId, name: playerName, avatar: playerAvatar || undefined },
+        password: password?.trim() || undefined,
       }, (err: any, snap: any, roomData: any) => {
         if (err) {
           set({ lastError: err.message || "Join as spectator failed" });
-          resolve({ success: false, error: err.message || err.code });
+          resolve({ success: false, error: err.message || err.code, code: err.code });
         } else {
           const players: PlayerInfo[] = roomData?.players || [];
           const spectators: PlayerInfo[] = roomData?.spectators || [];
@@ -730,6 +736,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     set({
       roomId: null,
       isHost: false,
+      hostId: null,
       isSpectator: false,
       state: null,
       playersInRoom: [],

@@ -1,68 +1,97 @@
-import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import React from "react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { ToastProvider } from "@/components/game/Toast";
 
-// Mock the remote store consumed by the page
-vi.mock('@/store/remoteGameStore', () => {
-  const joinRoom = vi.fn();
-  const listRooms = vi.fn();
-  const connect = vi.fn();
-  const createOrJoinRoom = vi.fn();
-  const sendIntent = vi.fn();
-  const rooms = [
-    { id: 'lobby-1', playerCount: 1, maxPlayers: 2, started: false },
-    { id: 'lobby-2', playerCount: 2, maxPlayers: 2, started: true },
-  ];
-  const state = { phase: 'Lobby', round: { pot: 0 }, players: [] } as any;
-  const store = {
-    connect,
-    joinRoom,
-    listRooms,
-    createOrJoinRoom,
-    sendIntent,
-    state,
-    connected: true,
-    roomId: null,
-    playerId: 'you',
-    rooms,
-  };
+const joinRoom = vi.fn().mockResolvedValue({ success: true });
+const listRooms = vi.fn();
+const connect = vi.fn();
+const clearRoomState = vi.fn();
+const setIdentity = vi.fn();
+const clearError = vi.fn();
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+}));
+
+vi.mock("@/components/game/LobbyUI", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/components/game/LobbyUI")>();
   return {
-    useRemoteGameStore: () => store,
+    ...actual,
+    LobbyShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   };
 });
 
-import MultiplayerPage from '@/app/multiplayer/page';
+vi.mock("@/store/remoteGameStore", () => {
+  const rooms = [
+    { id: "lobby-1", playerCount: 1, maxPlayers: 2, started: false },
+    { id: "lobby-2", playerCount: 2, maxPlayers: 2, started: true },
+  ];
+  return {
+    useRemoteGameStore: () => ({
+      connect,
+      joinRoom,
+      listRooms,
+      joinAsSpectator: vi.fn(),
+      clearRoomState,
+      setIdentity,
+      clearError,
+      connected: true,
+      rooms,
+      playerId: "you",
+      playerName: "Tester",
+      lastError: null,
+    }),
+  };
+});
 
-describe('Multiplayer lobby UI', () => {
+import LobbyPage from "@/app/lobby/page";
+
+function renderLobby() {
+  return render(
+    <ToastProvider>
+      <LobbyPage />
+    </ToastProvider>
+  );
+}
+
+describe("Multiplayer lobby UI", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionStorage.clear();
   });
 
-  it('shows connection status', async () => {
-    render(<MultiplayerPage />);
-    const status = await screen.findByTestId('conn-status');
-    expect(status).toHaveTextContent(/Connected/i);
+  it("shows connection status", async () => {
+    renderLobby();
+    expect(await screen.findByText(/Connected/i)).toBeInTheDocument();
   });
 
-  it('renders lobby list and join buttons', async () => {
-    render(<MultiplayerPage />);
-    const rows = await screen.findAllByTestId('lobby-row');
-    expect(rows.length).toBeGreaterThan(0);
-
-    const joinButtons = await screen.findAllByRole('button', { name: /Join/i });
+  it("renders lobby list and join buttons", async () => {
+    renderLobby();
+    expect(await screen.findByText("lobby-1")).toBeInTheDocument();
+    const joinButtons = await screen.findAllByRole("button", { name: /Join/i });
     expect(joinButtons.length).toBeGreaterThan(0);
   });
 
-  it('calls joinRoom when clicking Join', async () => {
+  it("calls joinRoom when clicking Join", async () => {
     const user = userEvent.setup();
-    render(<MultiplayerPage />);
+    renderLobby();
+    const row = await screen.findByText("lobby-1");
+    const card = row.closest(".lobby-room-row");
+    const joinBtn = card?.querySelector("button");
+    expect(joinBtn).toBeTruthy();
+    await user.click(joinBtn!);
+    expect(joinRoom).toHaveBeenCalledWith("lobby-1", undefined);
+  });
 
-    const joinBtn = await screen.findByRole('button', { name: /Join lobby-1/i });
-    await user.click(joinBtn);
-
-    const { useRemoteGameStore } = await import('@/store/remoteGameStore');
-    const store: any = useRemoteGameStore();
-    expect(store.joinRoom).toHaveBeenCalledWith('lobby-1', expect.any(String), expect.any(String));
+  it("clears sessionStorage when changing name", async () => {
+    sessionStorage.setItem("kouppi_player_id", "old-id");
+    sessionStorage.setItem("kouppi_player_name", "OldName");
+    const user = userEvent.setup();
+    renderLobby();
+    await user.click(await screen.findByRole("button", { name: /Change Name/i }));
+    expect(sessionStorage.getItem("kouppi_player_id")).toBeNull();
+    expect(sessionStorage.getItem("kouppi_player_name")).toBeNull();
   });
 });
