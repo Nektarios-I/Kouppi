@@ -3,19 +3,22 @@ import { io as clientIo, Socket } from "socket.io-client";
 import { createKouppiServer } from "../src/serverFactory";
 
 let httpServer: any;
+let ioServer: any;
 let port = 4100;
 
 beforeAll(async () => {
   const created = createKouppiServer({ corsOrigin: "*" });
   httpServer = created.httpServer;
+  ioServer = created.io;
   await new Promise<void>((resolve) => {
     httpServer.listen(port, () => resolve());
   });
 }, 20000);
 
 afterAll(async () => {
+  ioServer?.close();
   await new Promise<void>((resolve) => httpServer.close(() => resolve()));
-});
+}, 30000);
 
 describe("socket.io room flow", () => {
   it("creates and joins a room with two clients and applies intents", async () => {
@@ -48,30 +51,44 @@ describe("socket.io room flow", () => {
     // Room not started yet; ack snapshot should be null
     expect(snapJoin2).toBeNull();
     const snapStarted = await new Promise<any>((resolve, reject) => {
-      const handler = (snap: any) => resolve(snap);
-      c1.once("state", handler);
       c1.emit("startRoom", { roomId, by: "p1" }, (err: any, snap: any) => {
         if (err) return reject(new Error(`startRoom error: ${err.code}`));
-        if (snap) resolve(snap);
+        resolve(snap);
       });
     });
     expect(snapStarted.phase).toBe("Round");
 
-    // Start a turn; if forced pass occurs (pair/consecutive), try again a few times
-    let afterStartTurn: any = null;
-    for (let i = 0; i < 10; i++) {
-      const currentPlayerId = snapStarted.players[snapStarted.currentIndex].id;
-      // eslint-disable-next-line no-await-in-loop
-      afterStartTurn = await new Promise<any>((resolve) => {
-        c1.emit("intent", { roomId, playerId: currentPlayerId, intent: { type: "startTurn" } }, (_err: any, snap: any) => resolve(snap));
-      });
-      if (afterStartTurn?.turn) break;
-    }
-    expect(afterStartTurn.turn).not.toBeNull();
+    const currentPlayerId = snapStarted.players[snapStarted.currentIndex].id;
+    const currentClient = currentPlayerId === "p1" ? c1 : c2;
+    const otherClient = currentPlayerId === "p1" ? c2 : c1;
 
-    const passPlayerId = afterStartTurn.players[afterStartTurn.currentIndex].id;
-    const afterPass = await new Promise<any>((resolve) => {
-      c1.emit("intent", { roomId, playerId: passPlayerId, intent: { type: "pass" } }, (_err: any, snap: any) => resolve(snap));
+    let gameState = snapStarted;
+    if (!gameState.turn?.upcards) {
+      gameState = await new Promise<any>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error("turn not started")), 8000);
+        const handler = (snap: any) => {
+          if (snap?.turn?.upcards) {
+            clearTimeout(timeout);
+            currentClient.off("state", handler);
+            resolve(snap);
+          }
+        };
+        currentClient.on("state", handler);
+      });
+    }
+    expect(gameState.turn).not.toBeNull();
+
+    const wrongTurnErr = await new Promise<any>((resolve) => {
+      otherClient.emit("intent", { roomId, intent: { type: "pass" } }, (err: any) => resolve(err));
+    });
+    expect(wrongTurnErr?.code).toBe("intent_error");
+    expect(wrongTurnErr?.message).toBe("not_current_player");
+
+    const afterPass = await new Promise<any>((resolve, reject) => {
+      currentClient.emit("intent", { roomId, intent: { type: "pass" } }, (err: any, snap: any) => {
+        if (err) return reject(err);
+        resolve(snap);
+      });
     });
     expect(afterPass.awaitNext).toBe(true);
 

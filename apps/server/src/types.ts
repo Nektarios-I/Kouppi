@@ -13,6 +13,8 @@ export type PlayerSession = {
   socketId: string;
   afkCount?: number; // consecutive AFK turns
   avatar?: AvatarConfig; // player's chosen avatar
+  disconnectedAt?: number;
+  pendingRemovalTimer?: ReturnType<typeof setTimeout>;
 };
 
 export type ChatMessage = {

@@ -8,6 +8,11 @@ const rooms = new Map<string, Room>();
 const DEFAULT_TURN_TIMEOUT = 30;
 // Max consecutive AFKs before auto-kick
 const MAX_AFK_COUNT = 2;
+/** Grace period before removing a disconnected player from a room */
+export const RECONNECT_GRACE_MS = 45_000;
+
+/** Intents that clients may send; system flow is server-only */
+export const CLIENT_INTENT_TYPES = new Set(["pass", "bet", "kouppi", "shistri"]);
 
 export function createRoom(id: string, config: Room["config"], seed: number, maxPlayers = 2): Room {
   const room: Room = { 
@@ -25,7 +30,8 @@ export function createRoom(id: string, config: Room["config"], seed: number, max
 }
 
 export function createRoomWithCreator(id: string, creator: PlayerSession, config: Partial<Room["config"]>, seed: number, password?: string): Room {
-  const base = createRoom(id, { ...defaultConfig(), ...(config || {}) }, seed, (config as any)?.maxPlayers ?? 2);
+  const merged = { ...defaultConfig(), ...(config || {}) };
+  const base = createRoom(id, merged, seed, (config as any)?.maxPlayers ?? merged.maxPlayers ?? 8);
   base.hostId = creator.id;
   base.players.push({ ...creator, afkCount: 0 });
   base.started = false;
@@ -49,7 +55,7 @@ function defaultConfig(): Room["config"] {
     maxPlayers: 8,
     deckPolicy: "single_no_reshuffle_until_empty",
     allowKouppi: true,
-    spectatorsAllowed: false,
+    spectatorsAllowed: true,
     language: "en",
   } as any;
 }
@@ -61,14 +67,59 @@ export function getRoom(id: string): Room | undefined {
 export function joinRoom(id: string, player: PlayerSession): Room {
   const room = rooms.get(id);
   if (!room) throw new Error("room_not_found");
-  if (room.players.length >= room.maxPlayers) throw new Error("room_full");
   const exists = room.players.find(p => p.id === player.id);
-  if (!exists) room.players.push({ ...player, afkCount: 0 });
-  else {
-    // Reconnecting player - update socket ID
+  if (room.started && !exists) {
+    throw new Error("game_in_progress");
+  }
+  if (room.players.length >= room.maxPlayers && !exists) throw new Error("room_full");
+  if (!exists) {
+    room.players.push({ ...player, afkCount: 0 });
+  } else {
+    cancelDisconnectGrace(exists);
     exists.socketId = player.socketId;
+    if (player.name) exists.name = player.name;
+    if (player.avatar) exists.avatar = player.avatar;
   }
   return room;
+}
+
+export function findPlayerBySocket(room: Room, socketId: string): PlayerSession | undefined {
+  return room.players.find((p) => p.socketId === socketId);
+}
+
+export function promoteHost(room: Room): string | undefined {
+  if (room.players.length === 0) {
+    room.hostId = undefined;
+    return undefined;
+  }
+  if (room.hostId && room.players.some((p) => p.id === room.hostId)) {
+    return room.hostId;
+  }
+  room.hostId = room.players[0].id;
+  return room.hostId;
+}
+
+export function cancelDisconnectGrace(player: PlayerSession | undefined): void {
+  if (!player) return;
+  player.disconnectedAt = undefined;
+  if (player.pendingRemovalTimer) {
+    clearTimeout(player.pendingRemovalTimer);
+    player.pendingRemovalTimer = undefined;
+  }
+}
+
+export function beginDisconnectGrace(
+  room: Room,
+  playerId: string,
+  graceMs: number,
+  onExpire: () => void
+): void {
+  const player = room.players.find((p) => p.id === playerId);
+  if (!player) return;
+  cancelDisconnectGrace(player);
+  player.disconnectedAt = Date.now();
+  player.socketId = "";
+  player.pendingRemovalTimer = setTimeout(onExpire, graceMs);
 }
 
 export function leaveRoom(id: string, playerId: string): Room | undefined {
@@ -144,21 +195,39 @@ export function syncGamePlayersToRoom(id: string): void {
 }
 
 export function closeRoom(id: string): void {
-  // Clear any active turn timers before deleting
   const room = rooms.get(id);
-  if (room?.turnTimer) {
-    clearTimeout(room.turnTimer);
-  }
+  if (!room) return;
+  if (room.turnTimer) clearTimeout(room.turnTimer);
+  if (room.decision?.timer) clearTimeout(room.decision.timer);
+  if (room.decision?.interval) clearInterval(room.decision.interval);
+  for (const p of room.players) cancelDisconnectGrace(p);
   rooms.delete(id);
 }
 
+/** Apply a client gameplay intent (pass/bet/kouppi/shistri only). */
+export function handleClientIntent(id: string, playerId: string, intent: Action): Room {
+  if (!CLIENT_INTENT_TYPES.has(intent.type)) {
+    throw new Error("forbidden_intent");
+  }
+  return handleIntent(id, playerId, intent);
+}
+
+/** Apply a system intent (server-only flow control). */
+export function applySystemIntent(id: string, intent: Action): Room {
+  const room = rooms.get(id);
+  if (!room) throw new Error("room_not_found");
+  if (!room.state) throw new Error("room_not_ready");
+  room.state = applyAction(room.state, intent);
+  return room;
+}
+
+/** Apply a player gameplay intent (current player only). */
 export function handleIntent(id: string, playerId: string, intent: Action): Room {
   const room = rooms.get(id);
   if (!room) throw new Error("room_not_found");
   if (!room.state) throw new Error("room_not_ready");
   const currentPlayer = room.state.players[room.state.currentIndex];
-  // Simple guard: only current player may act (bots handled server-side later)
-  if (currentPlayer.id !== playerId && intent.type !== "startRound" && intent.type !== "ante" && intent.type !== "determineStarter" && intent.type !== "startTurn" && intent.type !== "nextPlayer" && intent.type !== "nextRound") {
+  if (currentPlayer.id !== playerId) {
     throw new Error("not_current_player");
   }
   room.state = applyAction(room.state, intent);

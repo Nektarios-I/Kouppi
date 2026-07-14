@@ -2,11 +2,12 @@ import express from "express";
 import cors from "cors";
 import { createServer } from "http";
 import { Server } from "socket.io";
-import { CreateRoomPayload, JoinRoomPayload, Intent, StartRoomPayload } from "@kouppi/protocol";
+import { CreateRoomPayload, JoinRoomPayload, ClientIntent, StartRoomPayload, JoinAsSpectatorPayload } from "@kouppi/protocol";
 import { 
-  createRoomWithCreator, joinRoom, leaveRoom, closeRoom, handleIntent, snapshot, getRoom, roomsInfo, startRoom,
+  createRoomWithCreator, joinRoom, leaveRoom, closeRoom, handleClientIntent, applySystemIntent, snapshot, getRoom, roomsInfo, startRoom,
   startTurnTimer, clearTurnTimer, getTurnTimerInfo, resetAfkCount, incrementAfkCount, shouldKickForAfk,
-  startFirstTurn, getCurrentPlayerId, syncGamePlayersToRoom,
+  startFirstTurn, getCurrentPlayerId, syncGamePlayersToRoom, findPlayerBySocket, promoteHost,
+  beginDisconnectGrace, cancelDisconnectGrace, RECONNECT_GRACE_MS,
   addChatMessage, getChatMessages, clearChatMessages, cleanupEmptyRooms
 } from "./rooms.js";
 import type { TableConfig } from "@kouppi/game-core";
@@ -124,6 +125,62 @@ export function createKouppiServer(opts?: {
       closeRoom(roomId);
     }
 
+    function buildRoomData(room: NonNullable<ReturnType<typeof getRoom>>) {
+      return {
+        players: room.players.map((p: any) => ({ id: p.id, name: p.name, avatar: p.avatar })),
+        spectators: room.spectators?.map((s: any) => ({ id: s.id, name: s.name, avatar: s.avatar })) || [],
+        hostId: room.hostId,
+      };
+    }
+
+    /** Remove player, promote host if needed, sync state, or close empty room. */
+    function finalizePlayerRemoval(roomId: string, removedPlayerId?: string): boolean {
+      const room = getRoom(roomId);
+      if (!room) return true;
+
+      if (removedPlayerId) {
+        const removed = room.players.find((p) => p.id === removedPlayerId);
+        cancelDisconnectGrace(removed);
+      }
+
+      if (room.players.length === 0) {
+        io.to(roomId).emit("roomClosed", { reason: "empty" });
+        closeRoomWithCareerTracking(roomId);
+        return true;
+      }
+
+      promoteHost(room);
+
+      try {
+        syncGamePlayersToRoom(roomId);
+      } catch {}
+
+      if (room.state && room.state.phase === "Round" && room.state.players.length <= 1) {
+        try {
+          if (room.state.players.length === 1) {
+            const winner = room.state.players[0];
+            winner.bankroll += room.state.round.pot;
+            room.state.history.push(`${winner.name} wins the pot (${room.state.round.pot}) - all other players left`);
+            room.state.round.pot = 0;
+          }
+          room.state.turn = null;
+          room.state.phase = "RoundEnd" as any;
+          room.state.history.push("Round ended - not enough players");
+        } catch {}
+      }
+
+      try {
+        if (room.state && room.state.phase === "Round" && !room.state.turn && !room.state.awaitNext && room.state.players.length > 1) {
+          startEligibleTurn(roomId);
+        }
+      } catch {}
+
+      const snap = snapshot(roomId);
+      if (snap) io.to(roomId).emit("state", snap);
+      io.to(roomId).emit("roomUpdate", buildRoomData(room));
+      return false;
+    }
+
     /**
      * Update bankroll for all players in a career game after each action.
      * This ensures real-time balance tracking for career mode.
@@ -193,8 +250,13 @@ export function createKouppiServer(opts?: {
         try {
           joinRoom(data.roomId, { id: data.player.id, name: data.player.name, socketId: socket.id, avatar: data.player.avatar });
         } catch (err: any) {
-          const code = err?.message === "room_full" ? "room_full" : "bad_request";
-          const e2 = { code, message: err?.message || String(err) };
+          const msg = err?.message || String(err);
+          const code =
+            msg === "room_full" ? "room_full"
+            : msg === "game_in_progress" ? "game_in_progress"
+            : msg === "room_not_found" ? "room_not_found"
+            : "bad_request";
+          const e2 = { code, message: msg };
           cb ? cb(e2) : socket.emit("error", e2);
           return;
         }
@@ -274,11 +336,25 @@ export function createKouppiServer(opts?: {
       }
     });
 
-    socket.on("intent", ({ roomId, playerId, intent }, cb?: (err: any|null, snapshot?: any) => void) => {
+    socket.on("intent", ({ roomId, intent }, cb?: (err: any|null, snapshot?: any) => void) => {
       try {
-        const i = Intent.parse(intent) as any;
         const room = getRoom(roomId);
-        
+        if (!room) {
+          const err = { code: "room_not_found", message: "Room not found" };
+          cb ? cb(err) : socket.emit("error", err);
+          return;
+        }
+
+        const sessionPlayer = findPlayerBySocket(room, socket.id);
+        if (!sessionPlayer) {
+          const err = { code: "not_in_room", message: "Not a player in this room" };
+          cb ? cb(err) : socket.emit("error", err);
+          return;
+        }
+
+        const i = ClientIntent.parse(intent) as any;
+        const playerId = sessionPlayer.id;
+
         // If this is a player action (not a system action), reset their AFK count
         const playerActions = ["pass", "bet", "kouppi", "shistri"];
         if (playerActions.includes(i.type)) {
@@ -286,8 +362,8 @@ export function createKouppiServer(opts?: {
           clearTurnTimer(roomId);
           clearTimerInterval(roomId);
         }
-        
-        handleIntent(roomId, playerId, i);
+
+        handleClientIntent(roomId, playerId, i);
         const snap = snapshot(roomId);
         io.to(roomId).emit("state", snap);
         cb ? cb(null, snap) : socket.emit("state", snap);
@@ -315,7 +391,7 @@ export function createKouppiServer(opts?: {
               const room2 = getRoom(roomId);
               if (!room2 || !room2.state) return;
               
-              room2.state = applyAction(room2.state, { type: "nextPlayer" });
+              room2.state = applySystemIntent(roomId, { type: "nextPlayer" }).state;
               startEligibleTurn(roomId);
             } catch (e) {
               console.error("Error in intent flow:", e);
@@ -332,9 +408,6 @@ export function createKouppiServer(opts?: {
           } catch (e) {
             console.error("Error auto-starting turn:", e);
           }
-        } else if (i.type === "startTurn" && r.state.phase === "Round" && r.state.turn?.upcards) {
-          // If a startTurn intent was explicitly sent, ensure the timer is started
-          startTurnTimerForRoom(roomId);
         }
       } catch (e: any) {
         const err = { code: "intent_error", message: e.message };
@@ -351,8 +424,8 @@ export function createKouppiServer(opts?: {
         if (!room.state || room.state.phase !== "RoundEnd") throw new Error("game_not_ended");
         
         // Start new round
-        room.state = applyAction(room.state, { type: "nextRound" });
-        room.state = applyAction(room.state, { type: "ante" });
+        room.state = applySystemIntent(roomId, { type: "nextRound" }).state;
+        room.state = applySystemIntent(roomId, { type: "ante" }).state;
         startEligibleTurn(roomId);
         
         // Reset all AFK counts
@@ -455,7 +528,7 @@ export function createKouppiServer(opts?: {
       }
 
       // Start a turn
-      room.state = applyAction(room.state, { type: "startTurn" });
+      applySystemIntent(roomId, { type: "startTurn" });
       const snap = snapshot(roomId);
       io.to(roomId).emit("state", snap);
 
@@ -471,7 +544,7 @@ export function createKouppiServer(opts?: {
           try {
             const r2 = getRoom(roomId);
             if (!r2 || !r2.state) return;
-            r2.state = applyAction(r2.state, { type: "nextPlayer" });
+            r2.state = applySystemIntent(roomId, { type: "nextPlayer" }).state;
             startEligibleTurn(roomId);
           } catch (e) {
             console.error("Error advancing after auto-pass:", e);
@@ -507,33 +580,21 @@ export function createKouppiServer(opts?: {
       
       // Check if should kick
       if (shouldKickForAfk(roomId, currentPlayerId)) {
-        // Kick the player
-        const player = room.players.find(p => p.id === currentPlayerId);
-        if (player) {
-          const wasHost = room.hostId === player.id;
-          leaveRoom(roomId, currentPlayerId);
-          
-          if (wasHost || room.players.length === 0) {
-            io.to(roomId).emit("roomClosed", { reason: wasHost ? "host_left" : "empty" });
-            closeRoomWithCareerTracking(roomId);
-            return;
-          } else {
-            io.to(roomId).emit("roomUpdate", {
-              players: room.players.map((p: any) => ({ id: p.id, name: p.name, avatar: p.avatar })),
-              spectators: room.spectators?.map((s: any) => ({ id: s.id, name: s.name, avatar: s.avatar })) || [],
-              hostId: room.hostId,
-            });
-            io.to(roomId).emit("playerKicked", { playerId: currentPlayerId, reason: "afk" });
-          }
+        leaveRoom(roomId, currentPlayerId);
+        io.to(roomId).emit("playerKicked", { playerId: currentPlayerId, reason: "afk" });
+        if (finalizePlayerRemoval(roomId, currentPlayerId)) {
+          return;
         }
       }
       
-      // Auto-pass for the timed-out player
+      // Auto-pass for the timed-out player (if still in game)
       try {
-        if (room.state.turn?.upcards) {
-          room.state = applyAction(room.state, { type: "pass" });
+        const roomAfterKick = getRoom(roomId);
+        if (!roomAfterKick?.state) return;
+        if (roomAfterKick.state.turn?.upcards) {
+          applySystemIntent(roomId, { type: "pass" });
         }
-        room.state = applyAction(room.state, { type: "nextPlayer" });
+        applySystemIntent(roomId, { type: "nextPlayer" });
         startEligibleTurn(roomId);
       } catch (e) {
         console.error("Error handling timeout:", e);
@@ -601,17 +662,8 @@ export function createKouppiServer(opts?: {
 
         // If player chose leave, remove immediately from room (and broadcast)
         if (decision === "leave") {
-          const wasHost = room.hostId === playerId;
           leaveRoom(roomId, playerId);
-          io.to(roomId).emit("roomUpdate", {
-            players: room.players.map((p: any) => ({ id: p.id, name: p.name, avatar: p.avatar })),
-            spectators: room.spectators?.map((s: any) => ({ id: s.id, name: s.name, avatar: s.avatar })) || [],
-            hostId: room.hostId,
-          });
-          // If host left or no players, close
-          if (wasHost || room.players.length === 0) {
-            io.to(roomId).emit("roomClosed", { reason: wasHost ? "host_left" : "empty" });
-            closeRoomWithCareerTracking(roomId);
+          if (finalizePlayerRemoval(roomId, playerId)) {
             return cb ? cb(null) : undefined;
           }
         }
@@ -644,29 +696,27 @@ export function createKouppiServer(opts?: {
       for (const pid of Array.from(remainingIds)) {
         const ch = decision.choices[pid];
         if (ch === null) {
-          // undecided -> kick
-          const wasHost = room.hostId === pid;
           leaveRoom(roomId, pid);
           io.to(roomId).emit("playerKicked", { playerId: pid, reason: "no_decision" });
-          if (wasHost || room.players.length === 0) {
-            io.to(roomId).emit("roomClosed", { reason: wasHost ? "host_left" : "empty" });
-            closeRoomWithCareerTracking(roomId);
-            // Clean decision timers
-            if (room.decision.timer) clearTimeout(room.decision.timer);
-            if (room.decision.interval) clearInterval(room.decision.interval);
+          if (finalizePlayerRemoval(roomId, pid)) {
+            if (room.decision?.timer) clearTimeout(room.decision.timer);
+            if (room.decision?.interval) clearInterval(room.decision.interval);
             room.decision.active = false;
             return;
           }
         }
       }
 
+      const roomAfterKicks = getRoom(roomId);
+      if (!roomAfterKicks || !roomAfterKicks.decision) return;
+
       // Clean timers and mark inactive
-      if (room.decision.timer) clearTimeout(room.decision.timer);
-      if (room.decision.interval) clearInterval(room.decision.interval);
-      room.decision.active = false;
+      if (roomAfterKicks.decision.timer) clearTimeout(roomAfterKicks.decision.timer);
+      if (roomAfterKicks.decision.interval) clearInterval(roomAfterKicks.decision.interval);
+      roomAfterKicks.decision.active = false;
 
       // If fewer than 2 players remain, do not start a new round
-      if (room.players.length < 2) {
+      if (roomAfterKicks.players.length < 2) {
         io.to(roomId).emit("roundDecisionEnd", { started: false, reason: "not_enough_players" });
         return;
       }
@@ -678,9 +728,9 @@ export function createKouppiServer(opts?: {
 
       // Start the next round automatically: nextRound -> ante -> startTurn (via eligibility)
       try {
-        if (room.state) {
-          room.state = applyAction(room.state, { type: "nextRound" });
-          room.state = applyAction(room.state, { type: "ante" });
+        if (roomAfterKicks.state) {
+          applySystemIntent(roomId, { type: "nextRound" });
+          applySystemIntent(roomId, { type: "ante" });
           startEligibleTurn(roomId);
           const snap = snapshot(roomId);
           io.to(roomId).emit("state", snap);
@@ -725,51 +775,10 @@ export function createKouppiServer(opts?: {
           cb ? cb(err) : socket.emit("error", err);
           return;
         }
-        const wasHost = room.hostId === leavingPlayer.id;
+        cancelDisconnectGrace(leavingPlayer);
         leaveRoom(roomId, leavingPlayer.id);
         socket.leave(roomId);
-        
-        if (wasHost || room.players.length === 0) {
-          // Host left or room empty - close the room
-          io.to(roomId).emit("roomClosed", { reason: wasHost ? "host_left" : "empty" });
-          // Remove remaining players from the socket room
-          closeRoomWithCareerTracking(roomId);
-        } else {
-          // Notify remaining players
-          // Sync game state players to room - this clears turn if leaving player had it
-          try { syncGamePlayersToRoom(roomId); } catch {}
-          
-          // Handle single player remaining - end the round
-          if (room.state && room.state.phase === "Round" && room.state.players.length <= 1) {
-            try {
-              // Give remaining player the pot and end round
-              if (room.state.players.length === 1) {
-                const winner = room.state.players[0];
-                winner.bankroll += room.state.round.pot;
-                room.state.history.push(`${winner.name} wins the pot (${room.state.round.pot}) - all other players left`);
-                room.state.round.pot = 0;
-              }
-              room.state.turn = null;
-              room.state.phase = "RoundEnd" as any;
-              room.state.history.push("Round ended - not enough players");
-            } catch {}
-          }
-          
-          // If in Round and no turn is active and not awaiting, start a turn to avoid deadlock
-          try {
-            if (room.state && room.state.phase === "Round" && !room.state.turn && !room.state.awaitNext && room.state.players.length > 1) {
-              startEligibleTurn(roomId);
-            }
-          } catch {}
-          
-          const snap = snapshot(roomId);
-          io.to(roomId).emit("state", snap);
-          io.to(roomId).emit("roomUpdate", {
-            players: room.players.map((p: any) => ({ id: p.id, name: p.name, avatar: p.avatar })),
-            spectators: room.spectators?.map((s: any) => ({ id: s.id, name: s.name, avatar: s.avatar })) || [],
-            hostId: room.hostId,
-          });
-        }
+        finalizePlayerRemoval(roomId, leavingPlayer.id);
         cb ? cb(null) : undefined;
       } catch (e: any) {
         console.error("leaveRoom error", e);
@@ -778,13 +787,24 @@ export function createKouppiServer(opts?: {
     });
 
     // Spectator: Join as spectator
-    socket.on("joinAsSpectator", ({ roomId, spectator }, cb?: (err: any|null, snapshot?: any, roomData?: any) => void) => {
+    socket.on("joinAsSpectator", (payload, cb?: (err: any|null, snapshot?: any, roomData?: any) => void) => {
       try {
+        const data = JoinAsSpectatorPayload.parse(payload);
+        const roomId = data.roomId;
+        const spectator = data.spectator;
         const room = getRoom(roomId);
         if (!room) {
           const err = { code: "room_not_found", message: "Room not found" };
           cb ? cb(err) : socket.emit("error", err);
           return;
+        }
+
+        if (room.password) {
+          if (!data.password || data.password !== room.password) {
+            const err = { code: "wrong_password", message: "Incorrect password" };
+            cb ? cb(err) : socket.emit("error", err);
+            return;
+          }
         }
         
         // Check if spectators are allowed
@@ -889,49 +909,12 @@ export function createKouppiServer(opts?: {
         
         const player = room.players.find((p: any) => p.socketId === socket.id);
         if (player) {
-          const wasHost = room.hostId === player.id;
-          leaveRoom(roomInfo.id, player.id);
-          
-          if (wasHost || room.players.length === 0) {
-            // Host left or room empty - close the room
-            io.to(roomInfo.id).emit("roomClosed", { reason: wasHost ? "host_left" : "empty" });
-            closeRoomWithCareerTracking(roomInfo.id);
-          } else {
-            // Sync game state players to room - this clears turn if leaving player had it
-            try { syncGamePlayersToRoom(roomInfo.id); } catch {}
-            
-            // Handle single player remaining - end the round
-            if (room.state && room.state.phase === "Round" && room.state.players.length <= 1) {
-              try {
-                // Give remaining player the pot and end round
-                if (room.state.players.length === 1) {
-                  const winner = room.state.players[0];
-                  winner.bankroll += room.state.round.pot;
-                  room.state.history.push(`${winner.name} wins the pot (${room.state.round.pot}) - all other players left`);
-                  room.state.round.pot = 0;
-                }
-                room.state.turn = null;
-                room.state.phase = "RoundEnd" as any;
-                room.state.history.push("Round ended - not enough players");
-              } catch {}
-            }
-            
-            // If in Round and no turn is active and not awaiting, start a turn to avoid deadlock
-            try {
-              if (room.state && room.state.phase === "Round" && !room.state.turn && !room.state.awaitNext && room.state.players.length > 1) {
-                startEligibleTurn(roomInfo.id);
-              }
-            } catch {}
-            
-            // Broadcast updated state
-            const snap = snapshot(roomInfo.id);
-            io.to(roomInfo.id).emit("state", snap);
-            io.to(roomInfo.id).emit("roomUpdate", {
-              players: room.players.map((p: any) => ({ id: p.id, name: p.name, avatar: p.avatar })),
-              spectators: room.spectators?.map((s: any) => ({ id: s.id, name: s.name, avatar: s.avatar })) || [],
-              hostId: room.hostId,
-            });
-          }
+          const rid = roomInfo.id;
+          const playerId = player.id;
+          beginDisconnectGrace(room, playerId, RECONNECT_GRACE_MS, () => {
+            leaveRoom(rid, playerId);
+            finalizePlayerRemoval(rid, playerId);
+          });
         }
       }
     });
