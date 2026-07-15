@@ -1,6 +1,7 @@
 import { initGame, applyAction } from "@kouppi/game-core";
 import type { Action } from "@kouppi/game-core";
 import type { Room, PlayerSession, SpectatorSession, AvatarConfig } from "./types.js";
+import { hashRoomPassword } from "./security/password.js";
 
 const rooms = new Map<string, Room>();
 /** Normalized uppercase code → room id */
@@ -172,9 +173,9 @@ export function createRoomWithCreator(id: string, creator: PlayerSession, config
   base.hostId = creator.id;
   base.players.push({ ...creator, afkCount: 0, ready: true });
   base.started = false;
-  // Set optional password for private rooms
+  // Hash optional password for private rooms
   if (password && password.trim().length > 0) {
-    base.password = password.trim();
+    base.passwordHash = hashRoomPassword(password.trim());
   }
   // Allow custom turn timeout from config
   if ((config as any)?.turnTimeout) {
@@ -514,7 +515,7 @@ export function roomsInfo(): Array<{ id: string; code: string; playerCount: numb
     hostId: r.hostId,
     spectatorsAllowed: r.config.spectatorsAllowed ?? true,
     spectatorCount: r.spectators?.length ?? 0,
-    isPrivate: !!r.password,
+    isPrivate: !!r.passwordHash,
   }));
 }
 

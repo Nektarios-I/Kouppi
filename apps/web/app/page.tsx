@@ -44,9 +44,15 @@ export default function HomePage() {
 
         <footer className="mt-12 text-gray-500 text-xs sm:text-sm font-ui">
           For entertainment only. Chips have no monetary value.
-          <span className="block mt-2">
+          <span className="block mt-2 space-x-3">
+            <Link href="/privacy" className="text-gold/70 hover:text-gold-light underline">
+              Privacy
+            </Link>
+            <Link href="/terms" className="text-gold/70 hover:text-gold-light underline">
+              Terms
+            </Link>
             <Link href="/3d-preview" className="text-gold/70 hover:text-gold-light underline">
-              Try 3D preview (experimental)
+              3D preview
             </Link>
           </span>
         </footer>

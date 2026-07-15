@@ -6,6 +6,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const routes = [
     "",
     "/how-to-play",
+    "/privacy",
+    "/terms",
     "/leaderboard",
     "/lobby",
     "/multiplayer",

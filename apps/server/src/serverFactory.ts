@@ -23,12 +23,18 @@ import { authRoutes } from "./auth/index.js";
 import profileRoutes, { leaderboardRouter, matchesRouter } from "./career/profileRoutes.js";
 import { registerCareerHandlers } from "./career/careerSocketHandlers.js";
 import { isCareerGame, handleCareerGameEnd, getCareerRoomByGameId } from "./career/careerRoomManager.js";
+import { verifyRoomPassword, roomRequiresPassword } from "./security/password.js";
+import { sanitizeDisplayName, sanitizeChatText, sanitizeEmote } from "./security/sanitize.js";
+import { checkEventRateLimit, recordEvent } from "./security/rateLimit.js";
+import { logServerEvent } from "./security/log.js";
 
 export function createKouppiServer(opts?: {
   corsOrigin?: string;
   config?: TableConfig;
   /** Skip career database init (used in tests). */
   skipCareerDatabase?: boolean;
+  /** Force websocket-only transport (defaults to true when NODE_ENV=production). */
+  websocketOnly?: boolean;
 }) {
   // Initialize database for Career Mode
   if (!opts?.skipCareerDatabase) {
@@ -61,7 +67,14 @@ export function createKouppiServer(opts?: {
       .send("KOUPPI multiplayer server is running. Try GET /health or connect via Socket.IO.");
   });
 
-  app.get("/health", (_req, res) => res.json({ ok: true }));
+  app.get("/health", (_req, res) => {
+    res.json({
+      ok: true,
+      uptimeSec: Math.floor(process.uptime()),
+      rooms: roomsInfo().length,
+      ts: new Date().toISOString(),
+    });
+  });
 
   // Career Mode API routes
   app.use("/api/auth", authRoutes);
@@ -70,7 +83,22 @@ export function createKouppiServer(opts?: {
   app.use("/api/matches", matchesRouter);
 
   const httpServer = createServer(app);
-  const io = new Server(httpServer, { cors: { origin: opts?.corsOrigin ?? "*" } });
+  const websocketOnly = opts?.websocketOnly ?? process.env.NODE_ENV === "production";
+  const io = new Server(httpServer, {
+    cors: { origin: opts?.corsOrigin ?? "*" },
+    transports: websocketOnly ? ["websocket"] : ["websocket", "polling"],
+  });
+
+  app.get("/health/ready", (_req, res) => {
+    res.json({
+      ok: true,
+      uptimeSec: Math.floor(process.uptime()),
+      rooms: roomsInfo().length,
+      connections: io.engine.clientsCount,
+      transport: websocketOnly ? "websocket" : "websocket,polling",
+      ts: new Date().toISOString(),
+    });
+  });
 
   const defaultConfig: TableConfig =
     opts?.config ??
@@ -97,6 +125,44 @@ export function createKouppiServer(opts?: {
   }, 30000);
 
   io.on("connection", (socket) => {
+    logServerEvent("socket_connect", { socketId: socket.id });
+
+    function checkRateLimit(
+      event: string,
+      maxPerMinute: number,
+      minIntervalMs = 0,
+      cb?: (err: any | null) => void
+    ): boolean {
+      const rate = checkEventRateLimit(socket.id, event, maxPerMinute, minIntervalMs);
+      if (!rate.allowed) {
+        const err = {
+          code: "rate_limited",
+          message: `Too many ${event} requests — wait ${Math.ceil((rate.retryAfterMs || 1000) / 1000)}s`,
+        };
+        cb ? cb(err) : socket.emit("error", err);
+        return false;
+      }
+      return true;
+    }
+
+    function markRateLimit(event: string): void {
+      recordEvent(socket.id, event);
+    }
+
+    function verifyPrivateRoomAccess(
+      room: NonNullable<ReturnType<typeof getRoom>>,
+      password: string | undefined,
+      cb?: (err: any | null) => void
+    ): boolean {
+      if (!roomRequiresPassword(room)) return true;
+      if (!password || !room.passwordHash || !verifyRoomPassword(password, room.passwordHash)) {
+        const err = { code: "wrong_password", message: "Incorrect password" };
+        cb ? cb(err) : socket.emit("error", err);
+        return false;
+      }
+      return true;
+    }
+
     // Register Career Mode socket handlers
     registerCareerHandlers(io, socket, defaultConfig);
 
@@ -233,6 +299,7 @@ export function createKouppiServer(opts?: {
     // createRoom with creator + config (ack)
     socket.on("createRoom", (payload, cb?: (err: any|null, snapshot?: any, roomData?: any) => void) => {
       try {
+        if (!checkRateLimit("createRoom", 8, 2000, cb)) return;
         const data = CreateRoomPayload.parse(payload);
         const publicCode = data.code ? data.code.trim().toUpperCase() : undefined;
         const roomId = data.roomId?.trim() || publicCode || generateRoomCode();
@@ -242,12 +309,20 @@ export function createKouppiServer(opts?: {
           return;
         }
         const cfg: TableConfig = { ...defaultConfig, ...(data.config as any) };
-        const creator = { id: data.creator.id, name: data.creator.name, socketId: socket.id, avatar: data.creator.avatar };
+        const creatorName = sanitizeDisplayName(data.creator.name);
+        if (!creatorName) {
+          const err = { code: "invalid_name", message: "Player name is required" };
+          cb ? cb(err) : socket.emit("error", err);
+          return;
+        }
+        const creator = { id: data.creator.id, name: creatorName, socketId: socket.id, avatar: data.creator.avatar };
         createRoomWithCreator(roomId, creator, cfg as any, Math.floor(Math.random() * 1e9), data.password, publicCode);
         socket.join(roomId);
         const room = getRoom(roomId)!;
         const ackSnap = snapshot(roomId) ?? null;
         const roomData = buildRoomData(room);
+        logServerEvent("room_created", { roomId, code: room.code, socketId: socket.id });
+        markRateLimit("createRoom");
         cb ? cb(null, ackSnap, roomData) : socket.emit("state", ackSnap);
       } catch (e: any) {
         const err = { code: "bad_request", message: e.message };
@@ -258,6 +333,7 @@ export function createKouppiServer(opts?: {
     // joinRoom with ack
     socket.on("joinRoom", (payload, cb?: (err: any|null, snapshot?: any, roomData?: any) => void) => {
       try {
+        if (!checkRateLimit("joinRoom", 30, 300, cb)) return;
         const data = JoinRoomPayload.parse(payload);
         
         const resolvedId = resolveRoomIdentifier(data.roomId);
@@ -267,18 +343,18 @@ export function createKouppiServer(opts?: {
           cb ? cb(err) : socket.emit("error", err);
           return;
         }
-        
-        // Check password for private rooms
-        if (existingRoom.password) {
-          if (!data.password || data.password !== existingRoom.password) {
-            const err = { code: "wrong_password", message: "Incorrect password" };
-            cb ? cb(err) : socket.emit("error", err);
-            return;
-          }
+
+        if (!verifyPrivateRoomAccess(existingRoom, data.password, cb)) return;
+
+        const playerName = sanitizeDisplayName(data.player.name);
+        if (!playerName) {
+          const err = { code: "invalid_name", message: "Player name is required" };
+          cb ? cb(err) : socket.emit("error", err);
+          return;
         }
         
         try {
-          joinRoom(data.roomId, { id: data.player.id, name: data.player.name, socketId: socket.id, avatar: data.player.avatar });
+          joinRoom(data.roomId, { id: data.player.id, name: playerName, socketId: socket.id, avatar: data.player.avatar });
         } catch (err: any) {
           const msg = err?.message || String(err);
           const code =
@@ -300,7 +376,8 @@ export function createKouppiServer(opts?: {
         if (snap) {
           io.to(resolvedId!).emit("state", snap);
         }
-        emitSystemMessage(resolvedId!, `${data.player.name} joined the room`);
+        emitSystemMessage(resolvedId!, `${playerName} joined the room`);
+        markRateLimit("joinRoom");
         cb ? cb(null, ackSnap, roomData) : socket.emit("state", ackSnap);
       } catch (e: any) {
         const err = { code: "bad_request", message: e.message };
@@ -481,6 +558,7 @@ export function createKouppiServer(opts?: {
 
     socket.on("intent", ({ roomId, intent }, cb?: (err: any|null, snapshot?: any) => void) => {
       try {
+        if (!checkRateLimit("intent", 120, 100, cb)) return;
         const room = getRoom(roomId);
         if (!room) {
           const err = { code: "room_not_found", message: "Room not found" };
@@ -977,6 +1055,7 @@ export function createKouppiServer(opts?: {
     // Spectator: Join as spectator
     socket.on("joinAsSpectator", (payload, cb?: (err: any|null, snapshot?: any, roomData?: any) => void) => {
       try {
+        if (!checkRateLimit("joinAsSpectator", 30, 300, cb)) return;
         const data = JoinAsSpectatorPayload.parse(payload);
         const resolvedId = resolveRoomIdentifier(data.roomId);
         const room = resolvedId ? getRoom(resolvedId) : undefined;
@@ -987,12 +1066,13 @@ export function createKouppiServer(opts?: {
           return;
         }
 
-        if (room.password) {
-          if (!data.password || data.password !== room.password) {
-            const err = { code: "wrong_password", message: "Incorrect password" };
-            cb ? cb(err) : socket.emit("error", err);
-            return;
-          }
+        if (!verifyPrivateRoomAccess(room, data.password, cb)) return;
+
+        const spectatorName = sanitizeDisplayName(spectator.name);
+        if (!spectatorName) {
+          const err = { code: "invalid_name", message: "Spectator name is required" };
+          cb ? cb(err) : socket.emit("error", err);
+          return;
         }
         
         // Check if spectators are allowed
@@ -1021,13 +1101,13 @@ export function createKouppiServer(opts?: {
           }
           cancelSpectatorDisconnectGrace(existing);
           existing.socketId = socket.id;
-          if (spectator.name) existing.name = spectator.name;
+          if (spectatorName) existing.name = spectatorName;
           if (spectator.avatar) existing.avatar = spectator.avatar;
         } else {
           if (!room.spectators) room.spectators = [];
           room.spectators.push({
             id: spectator.id,
-            name: spectator.name,
+            name: spectatorName,
             socketId: socket.id,
             avatar: spectator.avatar,
           });
@@ -1040,6 +1120,7 @@ export function createKouppiServer(opts?: {
         io.to(resolvedId!).emit("roomUpdate", roomData);
         
         const ackState = buildStatePayload(room);
+        markRateLimit("joinAsSpectator");
         cb ? cb(null, ackState, roomData) : (ackState ? socket.emit("state", ackState) : undefined);
       } catch (e: any) {
         console.error("joinAsSpectator error", e);
@@ -1144,9 +1225,16 @@ export function createKouppiServer(opts?: {
           return;
         }
         recordChatSend(player);
+
+        const cleanMessage = sanitizeChatText(message);
+        if (!cleanMessage) {
+          const err = { code: "invalid_message", message: "Message cannot be empty" };
+          cb ? cb(err) : socket.emit("error", err);
+          return;
+        }
         
         // Add message to room
-        const chatMsg = addChatMessage(roomId, player.id, player.name, message);
+        const chatMsg = addChatMessage(roomId, player.id, player.name, cleanMessage);
         if (!chatMsg) {
           const err = { code: "failed", message: "Failed to send message" };
           cb ? cb(err) : socket.emit("error", err);
@@ -1194,6 +1282,7 @@ export function createKouppiServer(opts?: {
     // Emote: Send an emote that broadcasts to all players in the room
     socket.on("sendEmote", ({ roomId, emote }, cb?: (err: any|null) => void) => {
       try {
+        if (!checkRateLimit("sendEmote", 40, 500, cb)) return;
         const room = getRoom(roomId);
         if (!room) {
           const err = { code: "room_not_found", message: "Room not found" };
@@ -1209,8 +1298,8 @@ export function createKouppiServer(opts?: {
           return;
         }
         
-        // Validate emote (must be non-empty string, max 32 chars)
-        if (!emote || typeof emote !== "string" || emote.length > 32) {
+        const cleanEmote = sanitizeEmote(emote);
+        if (!cleanEmote) {
           const err = { code: "invalid_emote", message: "Invalid emote" };
           cb ? cb(err) : socket.emit("error", err);
           return;
@@ -1221,12 +1310,13 @@ export function createKouppiServer(opts?: {
           id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           playerId: player.id,
           playerName: player.name,
-          emote: emote.trim(),
+          emote: cleanEmote,
           timestamp: Date.now(),
         };
         
         // Broadcast to all players in the room (including sender for consistency)
         io.to(roomId).emit("emote", emoteEvent);
+        markRateLimit("sendEmote");
         
         cb ? cb(null) : void 0;
       } catch (e: any) {

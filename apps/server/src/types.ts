@@ -58,7 +58,7 @@ export type Room = {
   players: PlayerSession[];
   spectators?: SpectatorSession[]; // Spectators watching the game
   hostId?: string;
-  password?: string; // Optional password for private rooms
+  passwordHash?: string; // scrypt hash for private rooms (never store plaintext)
   started?: boolean;
   autoRoundTimer?: any;
   state?: GameState;
