@@ -89,8 +89,6 @@ export default function RoomPage() {
   const { user, isLoggedIn } = useAuthStore();
   const { showToast } = useToast();
 
-  const roomSessionRef = useRef({ roomId, isSpectator, leaveRoom, leaveSpectator });
-  roomSessionRef.current = { roomId, isSpectator, leaveRoom, leaveSpectator };
   const lastSystemChatIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -104,16 +102,6 @@ export default function RoomPage() {
   useEffect(() => {
     connect();
   }, [connect]);
-
-  useEffect(() => {
-    return () => {
-      const { roomId: rid, isSpectator: spectating, leaveRoom: leave, leaveSpectator: leaveSpec } =
-        roomSessionRef.current;
-      if (!rid) return;
-      if (spectating) leaveSpec();
-      else leave();
-    };
-  }, []);
 
   useEffect(() => {
     setJoinAttempted(false);

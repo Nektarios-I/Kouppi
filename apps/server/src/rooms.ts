@@ -638,6 +638,11 @@ export function resetRoomForPlayAgain(roomId: string, hostId: string): Room {
   const room = rooms.get(resolved)!;
   if (room.hostId !== hostId) throw new Error("not_host");
 
+  if (room.started) {
+    if (!room.state || room.state.phase !== "RoundEnd") throw new Error("game_in_progress");
+    if (room.decision?.active) throw new Error("decision_in_progress");
+  }
+
   if (room.turnTimer) clearTimeout(room.turnTimer);
   if (room.flowTimer) clearTimeout(room.flowTimer);
   if (room.timerIntervalId) clearInterval(room.timerIntervalId);
@@ -667,15 +672,11 @@ export function cleanupEmptyRooms(): number {
     const hasPlayers = room.players.length > 0;
     const hasSpectators = (room.spectators?.length ?? 0) > 0;
     if (!hasPlayers && !hasSpectators) {
-      // Clear any timers
-      if (room.turnTimer) {
-        clearTimeout(room.turnTimer);
-      }
       toRemove.push(id);
     }
   }
   for (const id of toRemove) {
-    rooms.delete(id);
+    closeRoom(id);
   }
   return toRemove.length;
 }

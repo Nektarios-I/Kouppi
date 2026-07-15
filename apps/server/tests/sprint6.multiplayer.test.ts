@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { io as clientIo, Socket } from "socket.io-client";
 import { createKouppiServer } from "../src/serverFactory";
-import { resetAllRoomsForTests } from "../src/rooms";
+import { resetAllRoomsForTests, getRoom } from "../src/rooms";
 import { resetRateLimits } from "../src/security/rateLimit";
 
 let httpServer: any;
@@ -136,6 +136,10 @@ describe("Sprint 6 — discovery and retention", () => {
     await new Promise<void>((resolve, reject) => {
       host.emit("startRoom", { roomId: roomData.roomId, by: "host-1" }, (err: any) => (err ? reject(err) : resolve()));
     });
+
+    const room = getRoom(roomData.roomId);
+    expect(room?.state).toBeTruthy();
+    if (room?.state) room.state.phase = "RoundEnd";
 
     const tableResetPromise = new Promise<void>((resolve) => {
       guest.once("tableReset", () => resolve());

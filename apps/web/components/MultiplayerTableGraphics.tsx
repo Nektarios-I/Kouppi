@@ -48,7 +48,6 @@ export default function MultiplayerTableGraphics() {
     closeRoomAsHost,
     decideStay,
     decideLeave,
-    requestNewRound,
     playAgain,
     sessionSummary,
     pendingIntent,
@@ -60,7 +59,6 @@ export default function MultiplayerTableGraphics() {
   const [celebrationType, setCelebrationType] = useState<"win" | "kouppi" | "shistri">("win");
   const [showChipFly, setShowChipFly] = useState(false);
   const [chipFlyAmount, setChipFlyAmount] = useState(0);
-  const [startingRound, setStartingRound] = useState(false);
   const [resettingTable, setResettingTable] = useState(false);
   const [leaveError, setLeaveError] = useState<string | null>(null);
   const [hostActionError, setHostActionError] = useState<string | null>(null);
@@ -246,12 +244,6 @@ export default function MultiplayerTableGraphics() {
     router.push("/lobby");
   };
 
-  const handleStartNewRound = async () => {
-    setStartingRound(true);
-    await requestNewRound();
-    setStartingRound(false);
-  };
-
   const handlePlayAgain = async () => {
     setResettingTable(true);
     const result = await playAgain();
@@ -380,27 +372,17 @@ export default function MultiplayerTableGraphics() {
           }))}
       >
         {isHost ? (
-          <>
-            <HudButton
-              variant="success"
-              fullWidth
-              onClick={handleStartNewRound}
-              disabled={startingRound}
-            >
-              {startingRound ? "Starting…" : "Start Next Round"}
-            </HudButton>
-            <HudButton
-              variant="bet"
-              fullWidth
-              onClick={handlePlayAgain}
-              disabled={resettingTable}
-            >
-              {resettingTable ? "Resetting…" : "Play Again (waiting room)"}
-            </HudButton>
-          </>
+          <HudButton
+            variant="bet"
+            fullWidth
+            onClick={handlePlayAgain}
+            disabled={resettingTable}
+          >
+            {resettingTable ? "Resetting…" : "Play Again (waiting room)"}
+          </HudButton>
         ) : (
           <div className="flex-1 text-center text-gray-400 py-3 bg-black/25 rounded-xl font-ui text-sm border border-white/5">
-            Waiting for host to start next round…
+            Waiting for host to reset the table…
           </div>
         )}
         <HudButton variant="danger" onClick={handleLeave}>

@@ -449,8 +449,11 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
       set((prev) => ({ roundDecision: prev.roundDecision ? { ...prev.roundDecision, remaining: data.remaining, choices: data.choices } : null }));
     });
     // Round decision end
-    s.on("roundDecisionEnd", (_data: { started: boolean; reason?: string }) => {
-      set({ roundDecision: null, roundEnded: false });
+    s.on("roundDecisionEnd", (data: { started: boolean; reason?: string }) => {
+      set((prev) => ({
+        roundDecision: null,
+        roundEnded: data.started ? false : prev.roundEnded,
+      }));
     });
 
     s.on("sessionSummary", (summary: SessionSummary | null) => {
@@ -957,6 +960,8 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     socket.emit("intent", { roomId, intent }, (err: any) => {
       if (err) {
         set({ pendingIntent: null, lastError: err.message || "Action failed" });
+      } else {
+        set({ pendingIntent: null });
       }
     });
   },

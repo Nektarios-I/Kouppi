@@ -702,7 +702,13 @@ export function createKouppiServer(opts?: {
     socket.on("intent", ({ roomId, intent }, cb?: (err: any|null, snapshot?: any) => void) => {
       try {
         if (!checkRateLimit("intent", 120, 100, cb)) return;
-        const room = getRoom(roomId);
+        const resolvedId = resolveRoomIdentifier(roomId);
+        if (!resolvedId) {
+          const err = { code: "room_not_found", message: "Room not found" };
+          cb ? cb(err) : socket.emit("error", err);
+          return;
+        }
+        const room = getRoom(resolvedId);
         if (!room) {
           const err = { code: "room_not_found", message: "Room not found" };
           cb ? cb(err) : socket.emit("error", err);
@@ -722,25 +728,25 @@ export function createKouppiServer(opts?: {
         // If this is a player action (not a system action), reset their AFK count
         const playerActions = ["pass", "bet", "kouppi", "shistri"];
         if (playerActions.includes(i.type)) {
-          resetAfkCount(roomId, playerId);
-          clearTurnTimer(roomId);
-          clearTimerInterval(roomId);
-          clearFlowTimer(roomId);
+          resetAfkCount(resolvedId, playerId);
+          clearTurnTimer(resolvedId);
+          clearTimerInterval(resolvedId);
+          clearFlowTimer(resolvedId);
         }
 
-        handleClientIntent(roomId, playerId, i);
-        const afterIntent = getRoom(roomId);
+        handleClientIntent(resolvedId, playerId, i);
+        const afterIntent = getRoom(resolvedId);
         if (afterIntent) trackSessionPot(afterIntent);
-        emitState(roomId);
-        const updated = getRoom(roomId);
+        emitState(resolvedId);
+        const updated = getRoom(resolvedId);
         const ackState = updated ? buildStatePayload(updated) : undefined;
         markRateLimit("intent");
         cb ? cb(null, ackState) : (ackState ? socket.emit("state", ackState) : undefined);
         
         // For career games, update bankroll in database after each action
-        const r = getRoom(roomId);
-        if (r && r.state && isCareerGame(roomId)) {
-          updateCareerBankrolls(roomId, r);
+        const r = getRoom(resolvedId);
+        if (r && r.state && isCareerGame(resolvedId)) {
+          updateCareerBankrolls(resolvedId, r);
         }
         
         // Handle game flow
@@ -748,19 +754,19 @@ export function createKouppiServer(opts?: {
         
         // If round ended
         if (r.state.phase === "RoundEnd") {
-          handleRoundEnd(roomId);
+          handleRoundEnd(resolvedId);
           return;
         }
         
         // If awaiting next turn (after pass/bet), continue to next player after a short delay
         if (r.state.awaitNext) {
-          scheduleFlowStep(roomId, 1500, () => {
+          scheduleFlowStep(resolvedId, 1500, () => {
             try {
-              const room2 = getRoom(roomId);
+              const room2 = getRoom(resolvedId);
               if (!room2 || !room2.state) return;
 
-              room2.state = applySystemIntent(roomId, { type: "nextPlayer" }).state;
-              startEligibleTurn(roomId);
+              room2.state = applySystemIntent(resolvedId, { type: "nextPlayer" }).state;
+              startEligibleTurn(resolvedId);
             } catch (e) {
               console.error("Error in intent flow:", e);
             }
@@ -772,7 +778,7 @@ export function createKouppiServer(opts?: {
         // This prevents a stuck state where no cards/actions are available.
         if (r.state.phase === "Round" && !r.state.turn && !r.state.awaitNext) {
           try {
-            startEligibleTurn(roomId);
+            startEligibleTurn(resolvedId);
           } catch (e) {
             console.error("Error auto-starting turn:", e);
           }
@@ -805,7 +811,14 @@ export function createKouppiServer(opts?: {
         io.to(resolvedId).emit("sessionSummary", null);
         cb?.(null, roomData);
       } catch (e: any) {
-        const code = e?.message === "not_host" ? "not_host" : "bad_request";
+        const code =
+          e?.message === "not_host"
+            ? "not_host"
+            : e?.message === "game_in_progress"
+              ? "game_in_progress"
+              : e?.message === "decision_in_progress"
+                ? "decision_in_progress"
+                : "bad_request";
         cb?.({ code, message: e?.message || String(e) });
       }
     });
@@ -813,24 +826,27 @@ export function createKouppiServer(opts?: {
     // Request new round (host only, after round end)
     socket.on("newRound", ({ roomId }, cb?: (err: any|null, snapshot?: any) => void) => {
       try {
-        const room = getRoom(roomId);
+        const resolvedId = resolveRoomIdentifier(roomId);
+        if (!resolvedId) throw new Error("room_not_found");
+        const room = getRoom(resolvedId);
         if (!room) throw new Error("room_not_found");
 
         const sessionPlayer = findPlayerBySocket(room, socket.id);
         if (!sessionPlayer) throw new Error("not_in_room");
         if (room.hostId !== sessionPlayer.id) throw new Error("not_host");
         if (!room.state || room.state.phase !== "RoundEnd") throw new Error("game_not_ended");
+        if (room.decision?.active) throw new Error("decision_in_progress");
         
         // Start new round
-        room.state = applySystemIntent(roomId, { type: "nextRound" }).state;
-        room.state = applySystemIntent(roomId, { type: "ante" }).state;
-        startEligibleTurn(roomId);
+        room.state = applySystemIntent(resolvedId, { type: "nextRound" }).state;
+        room.state = applySystemIntent(resolvedId, { type: "ante" }).state;
+        startEligibleTurn(resolvedId);
         
         // Reset all AFK counts
         room.players.forEach(p => p.afkCount = 0);
         
-        const snap = snapshot(roomId);
-        io.to(roomId).emit("state", snap);
+        const snap = snapshot(resolvedId);
+        io.to(resolvedId).emit("state", snap);
         
         // Timer handled by startEligibleTurn
         
@@ -845,7 +861,13 @@ export function createKouppiServer(opts?: {
     socket.on("startRoom", (payload, cb?: (err: any|null, snapshot?: any) => void) => {
       try {
         const data = StartRoomPayload.parse(payload);
-        const room = getRoom(data.roomId);
+        const resolvedId = resolveRoomIdentifier(data.roomId);
+        if (!resolvedId) {
+          const err = { code: "room_not_found", message: "Room not found" };
+          cb ? cb(err) : socket.emit("error", err);
+          return;
+        }
+        const room = getRoom(resolvedId);
         if (!room) {
           const err = { code: "room_not_found", message: "Room not found" };
           cb ? cb(err) : socket.emit("error", err);
@@ -864,14 +886,14 @@ export function createKouppiServer(opts?: {
           return;
         }
 
-        startRoom(data.roomId, sessionPlayer.id);
+        startRoom(resolvedId, sessionPlayer.id);
         
         // Start the first turn with eligibility
-        startEligibleTurn(data.roomId);
+        startEligibleTurn(resolvedId);
         
-        emitSystemMessage(data.roomId, "Game started!");
+        emitSystemMessage(resolvedId, "Game started!");
         
-        const updated = getRoom(data.roomId);
+        const updated = getRoom(resolvedId);
         const ackState = updated ? buildStatePayload(updated) : undefined;
         cb ? cb(null, ackState) : (ackState ? socket.emit("state", ackState) : undefined);
       } catch (e: any) {
@@ -1037,6 +1059,7 @@ export function createKouppiServer(opts?: {
     function handleRoundEnd(roomId: string) {
       const room = getRoom(roomId);
       if (!room || !room.state) return;
+      if (room.decision?.active) return;
 
       clearTurnTimer(roomId);
       clearTimerInterval(roomId);
@@ -1089,7 +1112,9 @@ export function createKouppiServer(opts?: {
     // Record player decision and resolve early if all decided
     socket.on("roundDecision", ({ roomId, decision }: { roomId: string; decision: "stay"|"leave" }, cb?: (err: any|null) => void) => {
       try {
-        const room = getRoom(roomId);
+        const resolvedId = resolveRoomIdentifier(roomId);
+        if (!resolvedId) return cb ? cb({ code: "room_not_found", message: "Room not found" }) : undefined;
+        const room = getRoom(resolvedId);
         if (!room || !room.decision?.active) return cb ? cb({ code: "no_decision_phase", message: "No active decision phase" }) : undefined;
 
         const sessionPlayer = findPlayerBySocket(room, socket.id);
@@ -1104,14 +1129,14 @@ export function createKouppiServer(opts?: {
 
         // If player chose leave, remove immediately from room (and broadcast)
         if (decision === "leave") {
-          leaveRoom(roomId, playerId);
-          if (finalizePlayerRemoval(roomId, playerId)) {
+          leaveRoom(resolvedId, playerId);
+          if (finalizePlayerRemoval(resolvedId, playerId)) {
             return cb ? cb(null) : undefined;
           }
         }
 
         // Broadcast update of choices
-        io.to(roomId).emit("roundDecisionUpdate", {
+        io.to(resolvedId).emit("roundDecisionUpdate", {
           remaining: Math.max(0, Math.ceil(((room.decision.deadlineTs) - Date.now()) / 1000)),
           choices: room.decision.choices,
         });
@@ -1119,7 +1144,7 @@ export function createKouppiServer(opts?: {
         // Check if all decided (for remaining players)
         const undecided = room.players.some(p => room.decision!.choices[p.id] === null);
         if (!undecided) {
-          resolveDecisionPhase(roomId);
+          resolveDecisionPhase(resolvedId);
         }
         cb ? cb(null) : undefined;
       } catch (e: any) {
@@ -1186,7 +1211,12 @@ export function createKouppiServer(opts?: {
     // Leave room
     socket.on("leaveRoom", ({ roomId }, cb?: (err: any|null) => void) => {
       try {
-        const room = getRoom(roomId);
+        const resolvedId = resolveRoomIdentifier(roomId);
+        if (!resolvedId) {
+          cb ? cb(null) : undefined;
+          return;
+        }
+        const room = getRoom(resolvedId);
         if (!room) {
           cb ? cb(null) : undefined;
           return;
@@ -1219,10 +1249,10 @@ export function createKouppiServer(opts?: {
         }
         cancelDisconnectGrace(leavingPlayer);
         const leaveName = leavingPlayer.name;
-        leaveRoom(roomId, leavingPlayer.id);
-        socket.leave(roomId);
-        emitSystemMessage(roomId, `${leaveName} left the room`);
-        finalizePlayerRemoval(roomId, leavingPlayer.id);
+        leaveRoom(resolvedId, leavingPlayer.id);
+        socket.leave(resolvedId);
+        emitSystemMessage(resolvedId, `${leaveName} left the room`);
+        finalizePlayerRemoval(resolvedId, leavingPlayer.id);
         cb ? cb(null) : undefined;
       } catch (e: any) {
         console.error("leaveRoom error", e);
@@ -1316,7 +1346,12 @@ export function createKouppiServer(opts?: {
     // Spectator: Leave spectator mode
     socket.on("leaveSpectator", ({ roomId }, cb?: (err: any|null) => void) => {
       try {
-        const room = getRoom(roomId);
+        const resolvedId = resolveRoomIdentifier(roomId);
+        if (!resolvedId) {
+          cb ? cb(null) : undefined;
+          return;
+        }
+        const room = getRoom(resolvedId);
         if (!room) {
           cb ? cb(null) : undefined;
           return;
@@ -1326,8 +1361,8 @@ export function createKouppiServer(opts?: {
         if (spectatorIndex >= 0) {
           const spectator = room.spectators![spectatorIndex];
           removeSpectator(room, spectator.id);
-          socket.leave(roomId);
-          emitRoomUpdate(roomId);
+          socket.leave(resolvedId);
+          emitRoomUpdate(resolvedId);
         }
         
         cb ? cb(null) : undefined;
@@ -1377,7 +1412,13 @@ export function createKouppiServer(opts?: {
     // Chat: Send message
     socket.on("chatMessage", ({ roomId, message }, cb?: (err: any|null, msg?: any) => void) => {
       try {
-        const room = getRoom(roomId);
+        const resolvedId = resolveRoomIdentifier(roomId);
+        if (!resolvedId) {
+          const err = { code: "room_not_found", message: "Room not found" };
+          cb ? cb(err) : socket.emit("error", err);
+          return;
+        }
+        const room = getRoom(resolvedId);
         if (!room) {
           const err = { code: "room_not_found", message: "Room not found" };
           cb ? cb(err) : socket.emit("error", err);
@@ -1427,7 +1468,7 @@ export function createKouppiServer(opts?: {
         }
         
         // Add message to room
-        const chatMsg = addChatMessage(roomId, player.id, player.name, cleanMessage);
+        const chatMsg = addChatMessage(resolvedId, player.id, player.name, cleanMessage);
         if (!chatMsg) {
           const err = { code: "failed", message: "Failed to send message" };
           cb ? cb(err) : socket.emit("error", err);
@@ -1435,7 +1476,7 @@ export function createKouppiServer(opts?: {
         }
         
         // Broadcast to all players in the room
-        io.to(roomId).emit("chatMessage", chatMsg);
+        io.to(resolvedId).emit("chatMessage", chatMsg);
         
         cb ? cb(null, chatMsg) : undefined;
       } catch (e: any) {
@@ -1448,7 +1489,13 @@ export function createKouppiServer(opts?: {
     // Chat: Get message history
     socket.on("getChatHistory", ({ roomId }, cb?: (err: any|null, messages?: any[]) => void) => {
       try {
-        const room = getRoom(roomId);
+        const resolvedId = resolveRoomIdentifier(roomId);
+        if (!resolvedId) {
+          const err = { code: "room_not_found", message: "Room not found" };
+          cb ? cb(err) : socket.emit("error", err);
+          return;
+        }
+        const room = getRoom(resolvedId);
         if (!room) {
           const err = { code: "room_not_found", message: "Room not found" };
           cb ? cb(err) : socket.emit("error", err);
@@ -1463,7 +1510,7 @@ export function createKouppiServer(opts?: {
           return;
         }
         
-        const messages = getChatMessages(roomId);
+        const messages = getChatMessages(resolvedId);
         cb ? cb(null, messages) : socket.emit("chatHistory", messages);
       } catch (e: any) {
         console.error("getChatHistory error", e);
@@ -1476,7 +1523,13 @@ export function createKouppiServer(opts?: {
     socket.on("sendEmote", ({ roomId, emote }, cb?: (err: any|null) => void) => {
       try {
         if (!checkRateLimit("sendEmote", 40, 500, cb)) return;
-        const room = getRoom(roomId);
+        const resolvedId = resolveRoomIdentifier(roomId);
+        if (!resolvedId) {
+          const err = { code: "room_not_found", message: "Room not found" };
+          cb ? cb(err) : socket.emit("error", err);
+          return;
+        }
+        const room = getRoom(resolvedId);
         if (!room) {
           const err = { code: "room_not_found", message: "Room not found" };
           cb ? cb(err) : socket.emit("error", err);
@@ -1517,7 +1570,7 @@ export function createKouppiServer(opts?: {
         };
         
         // Broadcast to all players in the room (including sender for consistency)
-        io.to(roomId).emit("emote", emoteEvent);
+        io.to(resolvedId).emit("emote", emoteEvent);
         markRateLimit("sendEmote");
         
         cb ? cb(null) : void 0;
@@ -1531,7 +1584,13 @@ export function createKouppiServer(opts?: {
     // setAvatar: Update player's avatar in the room
     socket.on("setAvatar", ({ roomId, avatar }, cb?: (err: any|null) => void) => {
       try {
-        const room = getRoom(roomId);
+        const resolvedId = resolveRoomIdentifier(roomId);
+        if (!resolvedId) {
+          const err = { code: "room_not_found", message: "Room not found" };
+          cb ? cb(err) : socket.emit("error", err);
+          return;
+        }
+        const room = getRoom(resolvedId);
         if (!room) {
           const err = { code: "room_not_found", message: "Room not found" };
           cb ? cb(err) : socket.emit("error", err);
@@ -1560,13 +1619,8 @@ export function createKouppiServer(opts?: {
           borderColor: avatar.borderColor.slice(0, 20),
         };
         
-        // Broadcast updated room data to all players
-        const roomData = {
-          players: room.players.map((p: any) => ({ id: p.id, name: p.name, avatar: p.avatar })),
-          spectators: room.spectators?.map((s: any) => ({ id: s.id, name: s.name, avatar: s.avatar })) || [],
-          hostId: room.hostId,
-        };
-        io.to(roomId).emit("roomUpdate", roomData);
+        bumpRoomRevision(room);
+        io.to(resolvedId).emit("roomUpdate", buildRoomUpdatePayload(room));
         
         cb ? cb(null) : void 0;
       } catch (e: any) {

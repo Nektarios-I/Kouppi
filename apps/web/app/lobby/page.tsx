@@ -36,7 +36,6 @@ export default function LobbyPage() {
     setIdentity,
     joinRoom,
     joinAsSpectator,
-    clearRoomState,
     lastError,
     clearError,
     resumeActiveRoom,
@@ -62,8 +61,7 @@ export default function LobbyPage() {
 
   useEffect(() => {
     connect();
-    clearRoomState();
-  }, [connect, clearRoomState]);
+  }, [connect]);
 
   useEffect(() => {
     if (!connected) return;
