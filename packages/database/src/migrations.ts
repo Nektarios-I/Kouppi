@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { CASUAL_SCHEMA_SQL } from "./schema.js";
+import { CASUAL_SCHEMA_SQL, FRIENDS_SCHEMA_SQL } from "./schema.js";
 
 /** Apply idempotent schema migrations for existing databases. */
 export function runMigrations(db: Database.Database): void {
@@ -14,4 +14,5 @@ export function runMigrations(db: Database.Database): void {
   }
 
   db.exec(CASUAL_SCHEMA_SQL);
+  db.exec(FRIENDS_SCHEMA_SQL);
 }

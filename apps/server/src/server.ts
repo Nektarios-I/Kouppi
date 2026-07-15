@@ -1,11 +1,15 @@
 import { createKouppiServer } from "./serverFactory.js";
 import { attachRedisAdapterIfConfigured } from "./redisAdapter.js";
+import { initRedisServices } from "./redisClient.js";
 
 const corsOrigin = process.env.CORS_ORIGIN || "*";
-const { httpServer, io } = createKouppiServer({ corsOrigin });
-const port = process.env.PORT ? Number(process.env.PORT) : 4000;
 
 async function start() {
+  await initRedisServices();
+
+  const { httpServer, io } = createKouppiServer({ corsOrigin });
+  const port = process.env.PORT ? Number(process.env.PORT) : 4000;
+
   await attachRedisAdapterIfConfigured(io);
 
   httpServer.listen(port, () => {

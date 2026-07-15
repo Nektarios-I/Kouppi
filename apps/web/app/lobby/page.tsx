@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useRemoteGameStore, getPersistedActiveRoom } from "@/store/remoteGameStore";
 import ConnectionStatusBanner from "@/components/game/ConnectionStatusBanner";
 import CreateRoomDialog from "../../components/CreateRoomDialog";
@@ -20,6 +21,7 @@ import {
   LobbyFooterLink,
   PreGameCard,
 } from "@/components/game/LobbyUI";
+import FriendsPanel from "@/components/FriendsPanel";
 
 type RoomFilter = "all" | "waiting" | "live" | "seats";
 type RoomSort = "players" | "newest";
@@ -307,19 +309,30 @@ export default function LobbyPage() {
         )}
       </LobbyCard>
 
-      {isLoggedIn() && casualStats && casualStats.gamesPlayed > 0 && (
+      {isLoggedIn() && (
         <LobbyCard title="Friends Stats" icon="📊">
-          <p className="text-sm text-gray-400 font-ui">
-            <strong className="text-gold-light">{casualStats.gamesPlayed}</strong> friends games played
-            {casualStats.mvpCount > 0 && (
+          <p className="text-sm text-gray-400 font-ui mb-3">
+            {casualStats && casualStats.gamesPlayed > 0 ? (
               <>
-                {" "}
-                · <strong className="text-gold-light">{casualStats.mvpCount}</strong> MVP rounds
+                <strong className="text-gold-light">{casualStats.gamesPlayed}</strong> friends games played
+                {casualStats.mvpCount > 0 && (
+                  <>
+                    {" "}
+                    · <strong className="text-gold-light">{casualStats.mvpCount}</strong> MVP tables
+                  </>
+                )}
               </>
+            ) : (
+              <>Track your casual games with logged-in friends.</>
             )}
           </p>
+          <Link href="/friends/stats" className="text-sm text-gold-light font-ui underline hover:text-gold">
+            View full history →
+          </Link>
         </LobbyCard>
       )}
+
+      {isLoggedIn() && <FriendsPanel />}
 
       {persistedRoom && !activeRoomId && playerName && (
         <LobbyCard title="Resume Game" icon="↻">

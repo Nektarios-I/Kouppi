@@ -188,3 +188,66 @@ export const RoomsListItem = z.object({
   presetLabel: z.string().optional(),
 });
 export type RoomsListItem = z.infer<typeof RoomsListItem>;
+
+// Friends system
+export const FriendProfile = z.object({
+  id: z.string(),
+  username: z.string(),
+  avatarEmoji: z.string(),
+  avatarColor: z.string(),
+  avatarBorder: z.string(),
+  friendsSince: z.number(),
+});
+export type FriendProfile = z.infer<typeof FriendProfile>;
+
+export const FriendRequestInfo = z.object({
+  id: z.string(),
+  fromUserId: z.string(),
+  toUserId: z.string(),
+  status: z.enum(["pending", "accepted", "declined", "cancelled"]),
+  createdAt: z.number(),
+  respondedAt: z.number().nullable(),
+  fromUsername: z.string().optional(),
+  toUsername: z.string().optional(),
+});
+export type FriendRequestInfo = z.infer<typeof FriendRequestInfo>;
+
+export const PresenceStatus = z.enum([
+  "offline",
+  "lobby",
+  "in_room",
+  "in_game",
+  "career_queue",
+  "career_room",
+]);
+export type PresenceStatus = z.infer<typeof PresenceStatus>;
+
+export const UserPresence = z.object({
+  userId: z.string(),
+  status: PresenceStatus,
+  roomCode: z.string().optional(),
+  roomId: z.string().optional(),
+  lastSeen: z.number(),
+});
+export type UserPresence = z.infer<typeof UserPresence>;
+
+export const FriendsAuthPayload = z.object({
+  token: z.string().min(1),
+});
+export type FriendsAuthPayload = z.infer<typeof FriendsAuthPayload>;
+
+export const FriendsInvitePayload = z.object({
+  friendId: z.string(),
+  roomCode: z.string(),
+  roomId: z.string(),
+});
+export type FriendsInvitePayload = z.infer<typeof FriendsInvitePayload>;
+
+export const FriendsGameInvite = z.object({
+  fromUserId: z.string(),
+  fromUsername: z.string(),
+  roomCode: z.string(),
+  roomId: z.string(),
+  timestamp: z.number(),
+});
+export type FriendsGameInvite = z.infer<typeof FriendsGameInvite>;

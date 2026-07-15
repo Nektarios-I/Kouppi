@@ -211,9 +211,11 @@ The multiplayer Socket.IO server (`apps/server`) must run on a **persistent host
 | `CORS_ORIGIN` | Allowed web origin (your Vercel URL) |
 | `JWT_SECRET` | Auth signing secret |
 | `DATABASE_PATH` | SQLite file path on a mounted volume |
-| `REDIS_URL` | Optional — enables Socket.IO cluster adapter when `redis` + `@socket.io/redis-adapter` are installed on the host |
+| `REDIS_URL` | Optional — enables Socket.IO cluster adapter, shared room store, and friend presence when `redis` + `@socket.io/redis-adapter` are installed on the host |
 
 Logged-in friends games persist session stats to SQLite when a room closes (`GET /api/casual/stats`). Guest-only tables are not stored.
+
+Friends system (logged-in): `GET/POST/DELETE /api/friends/*`, socket events `friends:auth`, `friends:invite`, `friends:presence`. Lobby shows a Friends panel when signed in.
 
 ## Contributing
 

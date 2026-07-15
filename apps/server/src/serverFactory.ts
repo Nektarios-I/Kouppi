@@ -10,12 +10,12 @@ import {
   beginDisconnectGrace, cancelDisconnectGrace, RECONNECT_GRACE_MS,
   beginSpectatorDisconnectGrace, cancelSpectatorDisconnectGrace, removeSpectator,
   addChatMessage, getChatMessages, clearChatMessages, cleanupEmptyRooms,
-  resolveRoomIdentifier, buildRoomUpdatePayload, buildStatePayload, bumpStateRevision, bumpRoomRevision, setPlayerReady, kickPlayer, transferHost,
+  resolveRoomIdentifier, resolveRoomIdentifierAsync, buildRoomUpdatePayload, buildStatePayload, bumpStateRevision, bumpRoomRevision, setPlayerReady, kickPlayer, transferHost,
   banPlayerFromRoom, setRoomChatMuted, setPlayerChatMuted, isChatSendBlocked, isPlayerBanned,
   startGraceTickBroadcast, stopGraceTickBroadcast, generateRoomCode,
   addSystemChatMessage, checkChatRateLimit, recordChatSend,
   trackSessionPot, buildSessionSummary, resetRoomForPlayAgain,
-  getPlayerJoinSessionToken, getSpectatorJoinSessionToken,
+  getPlayerJoinSessionToken, getSpectatorJoinSessionToken, roomsInfoAsync,
 } from "./rooms.js";
 import type { TableConfig } from "@kouppi/game-core";
 import { applyAction } from "@kouppi/game-core";
@@ -25,8 +25,10 @@ import { getDatabase, cleanupExpiredSessions } from "@kouppi/database";
 import { authRoutes } from "./auth/index.js";
 import profileRoutes, { leaderboardRouter, matchesRouter } from "./career/profileRoutes.js";
 import casualRoutes from "./casual/casualRoutes.js";
+import friendsRoutes from "./friends/friendsRoutes.js";
 import { persistCasualFriendsSessionFromRoom } from "./casual/persistCasualSession.js";
 import { registerCareerHandlers } from "./career/careerSocketHandlers.js";
+import { registerFriendHandlers, updateAndBroadcastPresence } from "./friends/friendSocketHandlers.js";
 import { isCareerGame, handleCareerGameEnd, getCareerRoomByGameId } from "./career/careerRoomManager.js";
 import { verifyRoomPassword, roomRequiresPassword } from "./security/password.js";
 import { sanitizeDisplayName, sanitizeChatText, sanitizeEmote } from "./security/sanitize.js";
@@ -120,6 +122,7 @@ export function createKouppiServer(opts?: {
   app.use("/api/leaderboard", leaderboardRouter);
   app.use("/api/matches", matchesRouter);
   app.use("/api/casual", casualRoutes);
+  app.use("/api/friends", friendsRoutes);
 
   const httpServer = createServer(app);
   const websocketOnly = opts?.websocketOnly ?? process.env.NODE_ENV === "production";
@@ -205,6 +208,7 @@ export function createKouppiServer(opts?: {
 
     // Register Career Mode socket handlers
     registerCareerHandlers(io, socket, defaultConfig);
+    registerFriendHandlers(io, socket);
 
     /**
      * Helper to close a room and handle career game end if applicable.
@@ -407,6 +411,16 @@ export function createKouppiServer(opts?: {
         const ackSnap = snapshot(roomId) ?? null;
         const roomData = buildJoinAck(room, creator.id, "player");
         logServerEvent("room_created", { roomId, code: room.code, socketId: socket.id });
+        if (data.authToken) {
+          const authPayload = verifyToken(data.authToken);
+          if (authPayload) {
+            void updateAndBroadcastPresence(io, authPayload.userId, {
+              status: "in_room",
+              roomCode: room.code,
+              roomId: room.id,
+            });
+          }
+        }
         markRateLimit("createRoom");
         cb ? cb(null, ackSnap, roomData) : socket.emit("state", ackSnap);
       } catch (e: any) {
@@ -416,12 +430,12 @@ export function createKouppiServer(opts?: {
     });
 
     // joinRoom with ack
-    socket.on("joinRoom", (payload, cb?: (err: any|null, snapshot?: any, roomData?: any) => void) => {
+    socket.on("joinRoom", async (payload, cb?: (err: any|null, snapshot?: any, roomData?: any) => void) => {
       try {
         if (!checkRateLimit("joinRoom", 30, 300, cb)) return;
         const data = JoinRoomPayload.parse(payload);
         
-        const resolvedId = resolveRoomIdentifier(data.roomId);
+        const resolvedId = await resolveRoomIdentifierAsync(data.roomId);
         const existingRoom = resolvedId ? getRoom(resolvedId) : undefined;
         if (!existingRoom) {
           const err = { code: "room_not_found", message: "Room not found" };
@@ -484,6 +498,16 @@ export function createKouppiServer(opts?: {
           io.to(resolvedId!).emit("state", snap);
         }
         emitSystemMessage(resolvedId!, `${resolvedPlayer.name} joined the room`);
+        if (data.authToken) {
+          const authPayload = verifyToken(data.authToken);
+          if (authPayload) {
+            void updateAndBroadcastPresence(io, authPayload.userId, {
+              status: room.started ? "in_game" : "in_room",
+              roomCode: room.code,
+              roomId: room.id,
+            });
+          }
+        }
         markRateLimit("joinRoom");
         cb ? cb(null, ackSnap, roomData) : socket.emit("state", ackSnap);
       } catch (e: any) {
@@ -1357,11 +1381,11 @@ export function createKouppiServer(opts?: {
     });
 
     // Spectator: Join as spectator
-    socket.on("joinAsSpectator", (payload, cb?: (err: any|null, snapshot?: any, roomData?: any) => void) => {
+    socket.on("joinAsSpectator", async (payload, cb?: (err: any|null, snapshot?: any, roomData?: any) => void) => {
       try {
         if (!checkRateLimit("joinAsSpectator", 30, 300, cb)) return;
         const data = JoinAsSpectatorPayload.parse(payload);
-        const resolvedId = resolveRoomIdentifier(data.roomId);
+        const resolvedId = await resolveRoomIdentifierAsync(data.roomId);
         const room = resolvedId ? getRoom(resolvedId) : undefined;
         const spectator = data.spectator;
         if (!room) {
@@ -1735,9 +1759,9 @@ export function createKouppiServer(opts?: {
     });
 
     // Lobby listing
-    socket.on("listRooms", (cb?: (err: any|null, rooms?: any[]) => void) => {
+    socket.on("listRooms", async (cb?: (err: any|null, rooms?: any[]) => void) => {
       try {
-        const list = roomsInfo();
+        const list = await roomsInfoAsync();
         cb ? cb(null, list) : socket.emit("rooms", list);
       } catch (e: any) {
         const err = { code: "bad_request", message: e.message };

@@ -12,7 +12,10 @@ router.get("/stats", requireAuth, (req: AuthenticatedRequest, res) => {
       return;
     }
 
-    const stats = getCasualStatsForUser(req.user.userId);
+    const limitRaw = typeof req.query.limit === "string" ? parseInt(req.query.limit, 10) : 10;
+    const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 50) : 10;
+
+    const stats = getCasualStatsForUser(req.user.userId, limit);
     res.json({ success: true, stats });
   } catch (error) {
     console.error("[Casual] Failed to load stats:", error);

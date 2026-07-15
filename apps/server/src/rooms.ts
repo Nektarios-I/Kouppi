@@ -3,21 +3,26 @@ import type { Action } from "@kouppi/game-core";
 import type { Room, PlayerSession, SpectatorSession, AvatarConfig } from "./types.js";
 import { hashRoomPassword } from "./security/password.js";
 import { generateJoinSessionToken, isValidJoinSessionToken } from "./security/joinToken.js";
+import { getRoomStore } from "./stores/initRoomStore.js";
+import { InMemoryRoomStore } from "./stores/roomStore.js";
 
-const rooms = new Map<string, Room>();
-/** Normalized uppercase code → room id */
-const roomCodes = new Map<string, string>();
-
-const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+function store() {
+  return getRoomStore();
+}
 
 /** Generate a unique 6-character room code (no ambiguous 0/O/1/I). */
 export function generateRoomCode(): string {
+  const s = store();
+  if (s instanceof InMemoryRoomStore) {
+    return s.generateUniqueCode();
+  }
   for (let attempt = 0; attempt < 100; attempt++) {
     let code = "";
+    const CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     for (let i = 0; i < 6; i++) {
       code += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
     }
-    if (!roomCodes.has(code)) return code;
+    if (!s.hasCode(code)) return code;
   }
   throw new Error("code_generation_failed");
 }
@@ -29,18 +34,36 @@ export function normalizeRoomCode(code: string): string {
 /** Resolve a room id or public code to the internal room id. */
 export function resolveRoomIdentifier(idOrCode: string): string | undefined {
   const trimmed = idOrCode.trim();
-  if (rooms.has(trimmed)) return trimmed;
-  const byCode = roomCodes.get(normalizeRoomCode(trimmed));
-  if (byCode && rooms.has(byCode)) return byCode;
+  if (store().has(trimmed)) return trimmed;
+  const byCode = store().resolveCode(normalizeRoomCode(trimmed));
+  if (byCode && store().has(byCode)) return byCode;
+  return undefined;
+}
+
+/** Async resolve — hydrates from Redis when code exists on another node. */
+export async function resolveRoomIdentifierAsync(idOrCode: string): Promise<string | undefined> {
+  const sync = resolveRoomIdentifier(idOrCode);
+  if (sync) return sync;
+
+  const s = store();
+  if (!s.resolveCodeAsync || !s.hydrateRoom) return undefined;
+
+  const trimmed = idOrCode.trim();
+  const byCode = await s.resolveCodeAsync(normalizeRoomCode(trimmed));
+  if (byCode) {
+    await s.hydrateRoom(byCode);
+    if (store().has(byCode)) return byCode;
+  }
+  if (store().has(trimmed)) return trimmed;
   return undefined;
 }
 
 export function registerRoomCode(room: Room): void {
-  roomCodes.set(normalizeRoomCode(room.code), room.id);
+  store().registerCode(room);
 }
 
 export function unregisterRoomCode(room: Room): void {
-  roomCodes.delete(normalizeRoomCode(room.code));
+  store().unregisterCode(room);
 }
 
 export type RoomPlayerPayload = {
@@ -169,7 +192,7 @@ export function createRoom(id: string, config: Room["config"], seed: number, max
     createdAt: Date.now(),
     sessionStats: { handsPlayed: 0, biggestPot: 0 },
   };
-  rooms.set(id, room);
+  store().set(id, room);
   registerRoomCode(room);
   return room;
 }
@@ -219,15 +242,15 @@ function defaultConfig(): Room["config"] {
 }
 
 export function getRoom(id: string): Room | undefined {
-  return rooms.get(id);
+  return store().get(id);
 }
 
 /** Clear all rooms and timers — for integration tests only. */
 export function resetAllRoomsForTests(): void {
-  for (const id of Array.from(rooms.keys())) {
+  for (const id of store().keys()) {
     closeRoom(id);
   }
-  roomCodes.clear();
+  store().clear();
 }
 
 export function joinRoom(
@@ -237,7 +260,7 @@ export function joinRoom(
 ): Room {
   const roomId = resolveRoomIdentifier(id);
   if (!roomId) throw new Error("room_not_found");
-  const room = rooms.get(roomId)!;
+  const room = store().get(roomId)!;
   if (isPlayerBanned(room, player.id)) throw new Error("player_banned");
   const exists = room.players.find(p => p.id === player.id);
   if (room.started && !exists) {
@@ -272,7 +295,7 @@ export function joinRoom(
 export function getPlayerJoinSessionToken(roomId: string, playerId: string): string | undefined {
   const resolved = resolveRoomIdentifier(roomId);
   if (!resolved) return undefined;
-  const room = rooms.get(resolved);
+  const room = store().get(resolved);
   return room?.players.find((p) => p.id === playerId)?.joinSessionToken;
 }
 
@@ -309,14 +332,14 @@ export function joinSpectator(
 export function getSpectatorJoinSessionToken(roomId: string, spectatorId: string): string | undefined {
   const resolved = resolveRoomIdentifier(roomId);
   if (!resolved) return undefined;
-  const room = rooms.get(resolved);
+  const room = store().get(resolved);
   return room?.spectators?.find((s) => s.id === spectatorId)?.joinSessionToken;
 }
 
 export function setPlayerReady(roomId: string, playerId: string, ready: boolean): Room {
   const resolved = resolveRoomIdentifier(roomId);
   if (!resolved) throw new Error("room_not_found");
-  const room = rooms.get(resolved)!;
+  const room = store().get(resolved)!;
   if (room.started) throw new Error("game_in_progress");
   const player = room.players.find((p) => p.id === playerId);
   if (!player) throw new Error("not_in_room");
@@ -329,7 +352,7 @@ export function setPlayerReady(roomId: string, playerId: string, ready: boolean)
 export function kickPlayer(roomId: string, hostId: string, targetId: string): Room {
   const resolved = resolveRoomIdentifier(roomId);
   if (!resolved) throw new Error("room_not_found");
-  const room = rooms.get(resolved)!;
+  const room = store().get(resolved)!;
   if (room.hostId !== hostId) throw new Error("not_host");
   if (targetId === hostId) throw new Error("cannot_kick_self");
   const target = room.players.find((p) => p.id === targetId);
@@ -347,7 +370,7 @@ export function kickPlayer(roomId: string, hostId: string, targetId: string): Ro
 export function transferHost(roomId: string, hostId: string, newHostId: string): Room {
   const resolved = resolveRoomIdentifier(roomId);
   if (!resolved) throw new Error("room_not_found");
-  const room = rooms.get(resolved)!;
+  const room = store().get(resolved)!;
   if (room.hostId !== hostId) throw new Error("not_host");
   if (newHostId === hostId) throw new Error("already_host");
   const target = room.players.find((p) => p.id === newHostId);
@@ -365,7 +388,7 @@ export function isPlayerBanned(room: Room, playerId: string): boolean {
 export function banPlayerFromRoom(roomId: string, hostId: string, targetId: string): Room {
   const resolved = resolveRoomIdentifier(roomId);
   if (!resolved) throw new Error("room_not_found");
-  const room = rooms.get(resolved)!;
+  const room = store().get(resolved)!;
   if (room.hostId !== hostId) throw new Error("not_host");
   if (targetId === hostId) throw new Error("cannot_kick_self");
   const target = room.players.find((p) => p.id === targetId);
@@ -381,7 +404,7 @@ export function banPlayerFromRoom(roomId: string, hostId: string, targetId: stri
 export function setRoomChatMuted(roomId: string, hostId: string, muted: boolean): Room {
   const resolved = resolveRoomIdentifier(roomId);
   if (!resolved) throw new Error("room_not_found");
-  const room = rooms.get(resolved)!;
+  const room = store().get(resolved)!;
   if (room.hostId !== hostId) throw new Error("not_host");
   room.chatMutedAll = muted;
   bumpRoomRevision(room);
@@ -391,7 +414,7 @@ export function setRoomChatMuted(roomId: string, hostId: string, muted: boolean)
 export function setPlayerChatMuted(roomId: string, hostId: string, targetId: string, muted: boolean): Room {
   const resolved = resolveRoomIdentifier(roomId);
   if (!resolved) throw new Error("room_not_found");
-  const room = rooms.get(resolved)!;
+  const room = store().get(resolved)!;
   if (room.hostId !== hostId) throw new Error("not_host");
   if (!room.players.some((p) => p.id === targetId)) throw new Error("player_not_found");
   if (!room.chatMutedPlayerIds) room.chatMutedPlayerIds = [];
@@ -501,7 +524,7 @@ export function beginDisconnectGrace(
 }
 
 export function leaveRoom(id: string, playerId: string): Room | undefined {
-  const room = rooms.get(id);
+  const room = store().get(id);
   if (!room) return undefined;
   room.players = room.players.filter(p => p.id !== playerId);
   bumpRoomRevision(room);
@@ -520,7 +543,7 @@ export function removeSpectator(room: Room, spectatorId: string): void {
  *  Also clears turn state if the leaving player had an active turn.
  */
 export function syncGamePlayersToRoom(id: string): void {
-  const room = rooms.get(id);
+  const room = store().get(id);
   if (!room || !room.state) return;
   
   const allowedIds = new Set(room.players.map(p => p.id));
@@ -583,7 +606,7 @@ export function syncGamePlayersToRoom(id: string): void {
 }
 
 export function closeRoom(id: string): void {
-  const room = rooms.get(id);
+  const room = store().get(id);
   if (!room) return;
   stopGraceTickBroadcast(room);
   if (room.turnTimer) clearTimeout(room.turnTimer);
@@ -593,7 +616,7 @@ export function closeRoom(id: string): void {
   if (room.decision?.interval) clearInterval(room.decision.interval);
   for (const p of room.players) cancelDisconnectGrace(p);
   unregisterRoomCode(room);
-  rooms.delete(id);
+  store().delete(id);
 }
 
 /** Apply a client gameplay intent (pass/bet/kouppi/shistri only). */
@@ -606,7 +629,7 @@ export function handleClientIntent(id: string, playerId: string, intent: Action)
 
 /** Apply a system intent (server-only flow control). */
 export function applySystemIntent(id: string, intent: Action): Room {
-  const room = rooms.get(id);
+  const room = store().get(id);
   if (!room) throw new Error("room_not_found");
   if (!room.state) throw new Error("room_not_ready");
   room.state = applyAction(room.state, intent);
@@ -616,7 +639,7 @@ export function applySystemIntent(id: string, intent: Action): Room {
 
 /** Apply a player gameplay intent (current player only). */
 export function handleIntent(id: string, playerId: string, intent: Action): Room {
-  const room = rooms.get(id);
+  const room = store().get(id);
   if (!room) throw new Error("room_not_found");
   if (!room.state) throw new Error("room_not_ready");
   const currentPlayer = room.state.players[room.state.currentIndex];
@@ -629,7 +652,7 @@ export function handleIntent(id: string, playerId: string, intent: Action): Room
 }
 
 export function snapshot(id: string): Room["state"] | undefined {
-  return rooms.get(id)?.state;
+  return store().get(id)?.state;
 }
 
 /** Return lobby info for listed public rooms */
@@ -648,7 +671,7 @@ export function roomsInfo(): Array<{
   createdAt?: number;
   presetLabel?: string;
 }> {
-  return Array.from(rooms.values())
+  return store().values()
     .filter((r) => r.listedInLobby !== false)
     .map((r) => ({
       id: r.id,
@@ -665,6 +688,36 @@ export function roomsInfo(): Array<{
       createdAt: r.createdAt,
       presetLabel: r.presetLabel,
     }));
+}
+
+/** Lobby listing merged with Redis metadata when distributed store is active. */
+export async function roomsInfoAsync(): Promise<ReturnType<typeof roomsInfo>> {
+  const local = roomsInfo();
+  const s = store();
+  if (!s.listLobbyFromRedis) return local;
+
+  const remote = await s.listLobbyFromRedis();
+  const byId = new Map(local.map((r) => [r.id, r]));
+  for (const meta of remote) {
+    const id = meta.id as string;
+    if (!id || byId.has(id)) continue;
+    byId.set(id, {
+      id,
+      code: meta.code as string,
+      playerCount: (meta.playerCount as number) ?? 0,
+      maxPlayers: (meta.maxPlayers as number) ?? 8,
+      started: !!meta.started,
+      hostId: meta.hostId as string | undefined,
+      spectatorsAllowed: meta.spectatorsAllowed as boolean | undefined,
+      spectatorCount: (meta.spectatorCount as number) ?? 0,
+      isPrivate: !!meta.isPrivate,
+      listedInLobby: meta.listedInLobby !== false,
+      seatsOpen: meta.seatsOpen !== false,
+      createdAt: meta.createdAt as number | undefined,
+      presetLabel: meta.presetLabel as string | undefined,
+    });
+  }
+  return Array.from(byId.values());
 }
 
 export function trackSessionPot(room: Room): void {
@@ -693,7 +746,7 @@ export function buildSessionSummary(room: Room): {
 export function resetRoomForPlayAgain(roomId: string, hostId: string): Room {
   const resolved = resolveRoomIdentifier(roomId);
   if (!resolved) throw new Error("room_not_found");
-  const room = rooms.get(resolved)!;
+  const room = store().get(resolved)!;
   if (room.hostId !== hostId) throw new Error("not_host");
 
   if (room.started) {
@@ -726,7 +779,9 @@ export function resetRoomForPlayAgain(roomId: string, hostId: string): Room {
 /** Cleanup empty rooms - removes rooms with no players and no spectators */
 export function cleanupEmptyRooms(): number {
   const toRemove: string[] = [];
-  for (const [id, room] of rooms.entries()) {
+  for (const id of store().keys()) {
+    const room = store().get(id);
+    if (!room) continue;
     const hasPlayers = room.players.length > 0;
     const hasSpectators = (room.spectators?.length ?? 0) > 0;
     if (!hasPlayers && !hasSpectators) {
@@ -741,7 +796,7 @@ export function cleanupEmptyRooms(): number {
 
 /** Start the turn timer for the current player */
 export function startTurnTimer(id: string, onTimeout: () => void): void {
-  const room = rooms.get(id);
+  const room = store().get(id);
   if (!room) return;
   
   // Clear any existing timer
@@ -757,7 +812,7 @@ export function startTurnTimer(id: string, onTimeout: () => void): void {
 
 /** Clear the turn timer */
 export function clearTurnTimer(id: string): void {
-  const room = rooms.get(id);
+  const room = store().get(id);
   if (!room) return;
   
   if (room.turnTimer) {
@@ -769,7 +824,7 @@ export function clearTurnTimer(id: string): void {
 
 /** Get turn timer info */
 export function getTurnTimerInfo(id: string): { remaining: number; total: number } | null {
-  const room = rooms.get(id);
+  const room = store().get(id);
   if (!room || !room.turnStartTime) return null;
   
   const total = (room.turnTimeout || DEFAULT_TURN_TIMEOUT) * 1000;
@@ -781,7 +836,7 @@ export function getTurnTimerInfo(id: string): { remaining: number; total: number
 
 /** Reset AFK count for a player (they made a move) */
 export function resetAfkCount(id: string, playerId: string): void {
-  const room = rooms.get(id);
+  const room = store().get(id);
   if (!room) return;
   
   const player = room.players.find(p => p.id === playerId);
@@ -792,7 +847,7 @@ export function resetAfkCount(id: string, playerId: string): void {
 
 /** Increment AFK count for a player (they timed out) */
 export function incrementAfkCount(id: string, playerId: string): number {
-  const room = rooms.get(id);
+  const room = store().get(id);
   if (!room) return 0;
   
   const player = room.players.find(p => p.id === playerId);
@@ -805,7 +860,7 @@ export function incrementAfkCount(id: string, playerId: string): number {
 
 /** Check if player should be kicked for AFK */
 export function shouldKickForAfk(id: string, playerId: string): boolean {
-  const room = rooms.get(id);
+  const room = store().get(id);
   if (!room) return false;
   
   const player = room.players.find(p => p.id === playerId);
@@ -816,7 +871,7 @@ export function shouldKickForAfk(id: string, playerId: string): boolean {
 export function startRoom(id: string, by: string): Room {
   const resolved = resolveRoomIdentifier(id);
   if (!resolved) throw new Error("room_not_found");
-  const room = rooms.get(resolved)!;
+  const room = store().get(resolved)!;
   if (room.hostId !== by) throw new Error("not_host");
   if (room.players.length < 2) throw new Error("not_enough_players");
   if (!allPlayersReady(room)) throw new Error("not_all_ready");
@@ -839,7 +894,7 @@ export function startRoom(id: string, by: string): Room {
 
 /** Start the first turn of a round */
 export function startFirstTurn(id: string): Room {
-  const room = rooms.get(id);
+  const room = store().get(id);
   if (!room || !room.state) throw new Error("room_not_found");
   room.state = applyAction(room.state, { type: "startTurn" });
   bumpStateRevision(room);
@@ -848,14 +903,14 @@ export function startFirstTurn(id: string): Room {
 
 /** Check if the current player is the given player */
 export function isCurrentPlayer(id: string, playerId: string): boolean {
-  const room = rooms.get(id);
+  const room = store().get(id);
   if (!room || !room.state) return false;
   return room.state.players[room.state.currentIndex]?.id === playerId;
 }
 
 /** Get current player ID */
 export function getCurrentPlayerId(id: string): string | null {
-  const room = rooms.get(id);
+  const room = store().get(id);
   if (!room || !room.state) return null;
   return room.state.players[room.state.currentIndex]?.id || null;
 }
@@ -875,7 +930,7 @@ export function addChatMessage(
   isSystem = false
 ): ChatMessage | null {
   const resolved = resolveRoomIdentifier(roomId) || roomId;
-  const room = rooms.get(resolved);
+  const room = store().get(resolved);
   if (!room) return null;
   
   if (!room.chatMessages) {
@@ -906,14 +961,14 @@ export function addSystemChatMessage(roomId: string, message: string): ChatMessa
 
 /** Get all chat messages for a room */
 export function getChatMessages(roomId: string): ChatMessage[] {
-  const room = rooms.get(roomId);
+  const room = store().get(roomId);
   if (!room || !room.chatMessages) return [];
   return room.chatMessages;
 }
 
 /** Clear chat messages for a room (called when room is closed) */
 export function clearChatMessages(roomId: string): void {
-  const room = rooms.get(roomId);
+  const room = store().get(roomId);
   if (room) {
     room.chatMessages = [];
   }

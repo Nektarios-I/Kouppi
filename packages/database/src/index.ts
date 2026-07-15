@@ -66,6 +66,25 @@ export {
   type CasualSessionSummary,
 } from "./casualSessions.js";
 
+// Friend graph
+export {
+  sendFriendRequest,
+  acceptFriendRequest,
+  declineFriendRequest,
+  cancelFriendRequest,
+  removeFriend,
+  listFriends,
+  listPendingRequests,
+  searchUsersByUsername,
+  getFriendRequestById,
+  isFriend,
+  getFriendProfile,
+  type FriendRequest,
+  type FriendRequestStatus,
+  type FriendProfile,
+  type FriendRequestWithProfiles,
+} from "./friends.js";
+
 // Rating calculations
 export {
   calculateExpectedScore,

@@ -106,6 +106,33 @@ CREATE INDEX IF NOT EXISTS idx_casual_sessions_ended ON casual_sessions(ended_at
 CREATE INDEX IF NOT EXISTS idx_casual_session_players_user ON casual_session_players(user_id);
 `;
 
+export const FRIENDS_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS friendships (
+  user_id TEXT NOT NULL,
+  friend_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, friend_id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (friend_id) REFERENCES users(id) ON DELETE CASCADE,
+  CHECK (user_id != friend_id)
+);
+
+CREATE TABLE IF NOT EXISTS friend_requests (
+  id TEXT PRIMARY KEY,
+  from_user_id TEXT NOT NULL,
+  to_user_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at INTEGER NOT NULL,
+  responded_at INTEGER,
+  UNIQUE (from_user_id, to_user_id),
+  FOREIGN KEY (from_user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (to_user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_friend_requests_to ON friend_requests(to_user_id, status);
+CREATE INDEX IF NOT EXISTS idx_friendships_user ON friendships(user_id);
+`;
+
 /**
  * Arena definitions for trophy gates
  */
