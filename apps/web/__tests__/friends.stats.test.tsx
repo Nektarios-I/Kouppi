@@ -31,7 +31,7 @@ describe("FriendsStatsView", () => {
         session={{
           id: "sess-1",
           roomCode: "PLAY42",
-          endedAt: Date.now(),
+          endedAt: new Date("2026-01-15T12:00:00").getTime(),
           handsPlayed: 8,
           biggestPot: 120,
           playerCount: 4,
@@ -43,8 +43,9 @@ describe("FriendsStatsView", () => {
 
     expect(screen.getByText("PLAY42")).toBeInTheDocument();
     expect(screen.getByText("MVP")).toBeInTheDocument();
-    expect(screen.getByText(/8/)).toBeInTheDocument();
-    expect(screen.getByText(/120/)).toBeInTheDocument();
+    const row = screen.getByTestId("session-sess-1");
+    expect(row).toHaveTextContent("8 hands");
+    expect(row).toHaveTextContent("120");
   });
 
   it("shows empty state copy", () => {

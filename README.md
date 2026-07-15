@@ -178,6 +178,8 @@ This multi-layer approach helps keep rapid iteration safe.
 - Production deploy target: Vercel project `kouppi-web`.
 - GitHub auto-deploy is configured for `main`.
 - Root directory in Vercel is set to `apps/web`.
+- Enable **Include source files outside of the Root Directory** (monorepo) in Vercel project settings.
+- `apps/web/vercel.json` installs from the repo root and runs `turbo build --filter=@kouppi/web` so `@kouppi/game-core` and `@kouppi/protocol` are compiled before Next.js (their `dist/` folders are not committed).
 
 For manual production deploy from the web app folder:
 
