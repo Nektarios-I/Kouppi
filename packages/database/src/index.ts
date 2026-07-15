@@ -57,6 +57,15 @@ export {
   type MatchWithPlayers,
 } from "./matches.js";
 
+// Friends multiplayer session history
+export {
+  recordCasualFriendsSession,
+  getCasualStatsForUser,
+  type CasualSessionInput,
+  type CasualUserStats,
+  type CasualSessionSummary,
+} from "./casualSessions.js";
+
 // Rating calculations
 export {
   calculateExpectedScore,

@@ -60,10 +60,31 @@ export default function LobbyPage() {
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [roomFilter, setRoomFilter] = useState<RoomFilter>("all");
   const [roomSort, setRoomSort] = useState<RoomSort>("players");
+  const [casualStats, setCasualStats] = useState<{ gamesPlayed: number; mvpCount: number } | null>(null);
 
   useEffect(() => {
     connect();
   }, [connect]);
+
+  useEffect(() => {
+    if (!isLoggedIn() || !user) {
+      setCasualStats(null);
+      return;
+    }
+    const token = useAuthStore.getState().token;
+    if (!token) return;
+    const apiBase = process.env.NEXT_PUBLIC_SERVER_URL || "http://localhost:4000";
+    fetch(`${apiBase}/api/casual/stats`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.success && data.stats) {
+          setCasualStats({ gamesPlayed: data.stats.gamesPlayed, mvpCount: data.stats.mvpCount });
+        }
+      })
+      .catch(() => setCasualStats(null));
+  }, [isLoggedIn, user]);
 
   useEffect(() => {
     if (!connected) return;
@@ -285,6 +306,20 @@ export default function LobbyPage() {
           </div>
         )}
       </LobbyCard>
+
+      {isLoggedIn() && casualStats && casualStats.gamesPlayed > 0 && (
+        <LobbyCard title="Friends Stats" icon="📊">
+          <p className="text-sm text-gray-400 font-ui">
+            <strong className="text-gold-light">{casualStats.gamesPlayed}</strong> friends games played
+            {casualStats.mvpCount > 0 && (
+              <>
+                {" "}
+                · <strong className="text-gold-light">{casualStats.mvpCount}</strong> MVP rounds
+              </>
+            )}
+          </p>
+        </LobbyCard>
+      )}
 
       {persistedRoom && !activeRoomId && playerName && (
         <LobbyCard title="Resume Game" icon="↻">

@@ -585,7 +585,7 @@ export function handleCareerGameEnd(
   console.log(`[Career] Game ${gameRoomId} ended. Processing results...`);
 
   // Import database functions dynamically to avoid circular deps
-  import("@kouppi/database").then(({ updateRatingAndTrophies, updateBankroll, createMatch, completeMatch, calculateMultiplayerTrophyChange, calculateNewRating }) => {
+  import("@kouppi/database").then(({ updateRatingAndTrophies, updateBankroll, updateMatchStats, createMatch, completeMatch, calculateMultiplayerTrophyChange, calculateNewRating }) => {
     // Sort players by chips won (best to worst)
     const sortedResults = [...playerResults].sort((a, b) => b.chipsWon - a.chipsWon);
     
@@ -631,6 +631,8 @@ export function handleCareerGameEnd(
         
         // Update bankroll
         updateBankroll(result.userId, result.finalBankroll);
+
+        updateMatchStats(result.userId, isWinner, Math.max(0, result.chipsWon));
         
         console.log(`[Career] Updated ${careerPlayer.username}: rating ${careerPlayer.rating} -> ${newRating}, trophies ${trophyChange >= 0 ? '+' : ''}${trophyChange}, bankroll -> ${result.finalBankroll}`);
       } catch (error) {

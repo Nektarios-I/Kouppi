@@ -24,6 +24,8 @@ import { applyAction } from "@kouppi/game-core";
 import { getDatabase, cleanupExpiredSessions } from "@kouppi/database";
 import { authRoutes } from "./auth/index.js";
 import profileRoutes, { leaderboardRouter, matchesRouter } from "./career/profileRoutes.js";
+import casualRoutes from "./casual/casualRoutes.js";
+import { persistCasualFriendsSessionFromRoom } from "./casual/persistCasualSession.js";
 import { registerCareerHandlers } from "./career/careerSocketHandlers.js";
 import { isCareerGame, handleCareerGameEnd, getCareerRoomByGameId } from "./career/careerRoomManager.js";
 import { verifyRoomPassword, roomRequiresPassword } from "./security/password.js";
@@ -117,6 +119,7 @@ export function createKouppiServer(opts?: {
   app.use("/api/profile", profileRoutes);
   app.use("/api/leaderboard", leaderboardRouter);
   app.use("/api/matches", matchesRouter);
+  app.use("/api/casual", casualRoutes);
 
   const httpServer = createServer(app);
   const websocketOnly = opts?.websocketOnly ?? process.env.NODE_ENV === "production";
@@ -132,6 +135,7 @@ export function createKouppiServer(opts?: {
       rooms: roomsInfo().length,
       connections: io.engine.clientsCount,
       transport: websocketOnly ? "websocket" : "websocket,polling",
+      redis: !!process.env.REDIS_URL,
       ts: new Date().toISOString(),
     });
   });
@@ -228,6 +232,15 @@ export function createKouppiServer(opts?: {
           
           // Process career game results
           handleCareerGameEnd(roomId, playerResults, io);
+        }
+      } else if (!opts?.skipCareerDatabase) {
+        const room = getRoom(roomId);
+        if (room) {
+          try {
+            persistCasualFriendsSessionFromRoom(room);
+          } catch (error) {
+            console.error("[Casual] Failed to persist friends session:", error);
+          }
         }
       }
       

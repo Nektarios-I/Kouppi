@@ -4,6 +4,7 @@
 
 import Database from "better-sqlite3";
 import { SCHEMA_SQL } from "./schema.js";
+import { runMigrations } from "./migrations.js";
 import path from "path";
 import fs from "fs";
 
@@ -31,6 +32,7 @@ export function getDatabase(dbPath?: string): Database.Database {
   
   // Initialize schema
   db.exec(SCHEMA_SQL);
+  runMigrations(db);
   
   console.log(`[Database] Connected to ${finalPath}`);
   

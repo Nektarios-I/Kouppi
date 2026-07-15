@@ -201,6 +201,20 @@ This project intentionally emphasizes:
 - Add richer telemetry and gameplay analytics.
 - Expand e2e coverage for multiplayer paths.
 
+## Game Server (Production)
+
+The multiplayer Socket.IO server (`apps/server`) must run on a **persistent host** (not Vercel serverless). Suggested env:
+
+| Variable | Purpose |
+|----------|---------|
+| `PORT` | HTTP + Socket.IO port (default `4000`) |
+| `CORS_ORIGIN` | Allowed web origin (your Vercel URL) |
+| `JWT_SECRET` | Auth signing secret |
+| `DATABASE_PATH` | SQLite file path on a mounted volume |
+| `REDIS_URL` | Optional — enables Socket.IO cluster adapter when `redis` + `@socket.io/redis-adapter` are installed on the host |
+
+Logged-in friends games persist session stats to SQLite when a room closes (`GET /api/casual/stats`). Guest-only tables are not stored.
+
 ## Contributing
 
 Issues and pull requests are welcome.

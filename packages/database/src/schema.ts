@@ -81,6 +81,31 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 `;
 
+export const CASUAL_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS casual_sessions (
+  id TEXT PRIMARY KEY,
+  room_code TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  ended_at INTEGER NOT NULL,
+  hands_played INTEGER NOT NULL DEFAULT 0,
+  biggest_pot INTEGER NOT NULL DEFAULT 0,
+  player_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS casual_session_players (
+  session_id TEXT NOT NULL,
+  user_id TEXT,
+  display_name TEXT NOT NULL,
+  final_bankroll INTEGER NOT NULL DEFAULT 0,
+  is_mvp INTEGER NOT NULL DEFAULT 0,
+  FOREIGN KEY (session_id) REFERENCES casual_sessions(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_casual_sessions_ended ON casual_sessions(ended_at DESC);
+CREATE INDEX IF NOT EXISTS idx_casual_session_players_user ON casual_session_players(user_id);
+`;
+
 /**
  * Arena definitions for trophy gates
  */
