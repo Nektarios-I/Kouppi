@@ -164,8 +164,19 @@ describe("multiplayer security fixes", () => {
       );
     });
 
-    await new Promise<void>((resolve) => {
-      player.emit("joinRoom", { roomId, player: { id: "p2", name: "Bob" } }, () => resolve());
+    const joinTokenHolder = { token: "" as string };
+    await new Promise<void>((resolve, reject) => {
+      player.emit(
+        "joinRoom",
+        { roomId, player: { id: "p2", name: "Bob" } },
+        (err: any, _snap: any, roomData: any) => {
+          if (err) reject(err);
+          else {
+            joinTokenHolder.token = roomData.joinSessionToken;
+            resolve();
+          }
+        }
+      );
     });
 
     player.disconnect();
@@ -176,7 +187,11 @@ describe("multiplayer security fixes", () => {
     const rejoinErr = await new Promise<any>((resolve) => {
       reconnected.emit(
         "joinRoom",
-        { roomId, player: { id: "p2", name: "Bob" } },
+        {
+          roomId,
+          player: { id: "p2", name: "Bob" },
+          joinSessionToken: joinTokenHolder.token,
+        },
         (err: any) => resolve(err)
       );
     });

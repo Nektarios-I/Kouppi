@@ -6,6 +6,7 @@ import { useRemoteGameStore, getPersistedActiveRoom } from "@/store/remoteGameSt
 import ConnectionStatusBanner from "@/components/game/ConnectionStatusBanner";
 import CreateRoomDialog from "../../components/CreateRoomDialog";
 import { useToast } from "@/components/game/Toast";
+import { useAuthStore } from "@/store/authStore";
 import { HudButton } from "@/components/game/HudButton";
 import {
   LobbyShell,
@@ -26,6 +27,7 @@ type RoomSort = "players" | "newest";
 export default function LobbyPage() {
   const router = useRouter();
   const { showToast } = useToast();
+  const { user, isLoggedIn } = useAuthStore();
   const {
     connect,
     connected,
@@ -71,13 +73,18 @@ export default function LobbyPage() {
   }, [connected, listRooms]);
 
   useEffect(() => {
+    if (isLoggedIn() && user) {
+      setIdentity(user.id, user.username);
+      setLocalName(user.username);
+      return;
+    }
     const savedId = sessionStorage.getItem("kouppi_player_id");
     const savedName = sessionStorage.getItem("kouppi_player_name");
     if (savedId && savedName) {
       setIdentity(savedId, savedName);
       setLocalName(savedName);
     }
-  }, [setIdentity]);
+  }, [setIdentity, isLoggedIn, user]);
 
   const handleSetName = () => {
     if (!localName.trim()) return;

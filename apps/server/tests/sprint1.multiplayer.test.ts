@@ -53,12 +53,21 @@ async function createRoomWithCode(host: Socket, code: string, creatorId = "host-
   });
 }
 
-async function joinByCode(client: Socket, code: string, player: { id: string; name: string }) {
+async function joinByCode(
+  client: Socket,
+  code: string,
+  player: { id: string; name: string },
+  options?: { joinSessionToken?: string }
+) {
   return new Promise<any>((resolve, reject) => {
-    client.emit("joinRoom", { roomId: code, player }, (err: any, snap: any, roomData: any) => {
-      if (err) reject(err);
-      else resolve({ snap, roomData });
-    });
+    client.emit(
+      "joinRoom",
+      { roomId: code, player, joinSessionToken: options?.joinSessionToken },
+      (err: any, snap: any, roomData: any) => {
+        if (err) reject(err);
+        else resolve({ snap, roomData });
+      }
+    );
   });
 }
 
@@ -180,11 +189,13 @@ describe("Sprint 1 — friends can play", () => {
     const code = "REJOIN";
 
     await createRoomWithCode(host, code);
-    await joinByCode(guest, code, { id: "p2", name: "Bob" });
+    const firstJoin = await joinByCode(guest, code, { id: "p2", name: "Bob" });
+    const joinToken = firstJoin.roomData.joinSessionToken as string;
+    expect(joinToken).toBeTruthy();
     guest.disconnect();
 
     guest = await connectClient();
-    const rejoined = await joinByCode(guest, code, { id: "p2", name: "Bob" });
+    const rejoined = await joinByCode(guest, code, { id: "p2", name: "Bob" }, { joinSessionToken: joinToken });
     const bob = rejoined.roomData.players.find((p: any) => p.id === "p2");
     expect(bob.connected).toBe(true);
     expect(bob.reconnectRemainingSec).toBeNull();

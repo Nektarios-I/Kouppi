@@ -4,6 +4,7 @@ import { io, Socket } from "socket.io-client";
 import type { GameState } from "@kouppi/game-core";
 import { formatSocketError } from "@/lib/errorMessages";
 import { isPlayerMuted } from "@/lib/mutedPlayers";
+import { useAuthStore } from "@/store/authStore";
 
 // Local Intent type to avoid cross-package type resolution issues in dev
 type Intent =
@@ -58,9 +59,25 @@ export type AvatarConfig = {
 const SESSION_ROOM_KEY = "kouppi_active_room_code";
 const SESSION_ROOM_ID_KEY = "kouppi_active_room_id";
 const SESSION_SPECTATOR_KEY = "kouppi_active_room_spectator";
+const SESSION_JOIN_TOKEN_KEY = "kouppi_join_session_token";
 
 let joinRoomInFlight: Promise<{ success: boolean; error?: string; code?: string }> | null = null;
 let joinSpectatorInFlight: Promise<{ success: boolean; error?: string; code?: string }> | null = null;
+
+function persistJoinSessionToken(token: string) {
+  if (typeof sessionStorage === "undefined") return;
+  sessionStorage.setItem(SESSION_JOIN_TOKEN_KEY, token);
+}
+
+function getPersistedJoinSessionToken(): string | null {
+  if (typeof sessionStorage === "undefined") return null;
+  return sessionStorage.getItem(SESSION_JOIN_TOKEN_KEY);
+}
+
+function clearJoinSessionToken() {
+  if (typeof sessionStorage === "undefined") return;
+  sessionStorage.removeItem(SESSION_JOIN_TOKEN_KEY);
+}
 
 function persistActiveRoom(code: string, roomId: string, isSpectator = false) {
   if (typeof sessionStorage === "undefined") return;
@@ -74,6 +91,7 @@ function clearActiveRoomSession() {
   sessionStorage.removeItem(SESSION_ROOM_KEY);
   sessionStorage.removeItem(SESSION_ROOM_ID_KEY);
   sessionStorage.removeItem(SESSION_SPECTATOR_KEY);
+  clearJoinSessionToken();
 }
 
 export function getPersistedActiveRoom(): { code: string; roomId: string; isSpectator: boolean } | null {
@@ -639,10 +657,12 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     const publicCode = code?.trim().toUpperCase();
     
     return new Promise((resolve) => {
+      const authToken = useAuthStore.getState().token || undefined;
       socket.emit("createRoom", {
         code: publicCode,
         roomId: publicCode,
         creator: { id: playerId, name: playerName, avatar: playerAvatar || undefined },
+        authToken,
         config: {
           ante: config.ante ?? 10,
           startingBankroll: config.startingBankroll ?? 100,
@@ -662,7 +682,8 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
           const resolvedCode = roomData?.code || publicCode || "";
           const resolvedRoomId = roomData?.roomId || publicCode || "";
           persistActiveRoom(resolvedCode, resolvedRoomId);
-          set({ 
+          if (roomData?.joinSessionToken) persistJoinSessionToken(roomData.joinSessionToken);
+          set({
             roomId: resolvedRoomId,
             roomCode: resolvedCode,
             isHost: true,
@@ -693,10 +714,14 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     }
     
     return new Promise((resolve) => {
+      const authToken = useAuthStore.getState().token || undefined;
+      const joinSessionToken = getPersistedJoinSessionToken() || undefined;
       socket.emit("joinRoom", {
         roomId: roomIdOrCode.trim(),
         player: { id: playerId, name: playerName, avatar: playerAvatar || undefined },
         password: password?.trim() || undefined,
+        joinSessionToken,
+        authToken,
       }, (err: any, snap: any, roomData: any) => {
         if (err) {
           set({ lastError: formatSocketError(err.code, err.message) });
@@ -708,6 +733,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
           const resolvedRoomId = roomData?.roomId || roomIdOrCode;
           const resolvedCode = roomData?.code || roomIdOrCode.toUpperCase();
           persistActiveRoom(resolvedCode, resolvedRoomId, false);
+          if (roomData?.joinSessionToken) persistJoinSessionToken(roomData.joinSessionToken);
           const incomingVersion = typeof snap?.version === "number" ? snap.version : 0;
           const { version: _v, ...gameState } = snap || {};
           
@@ -1112,10 +1138,14 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     }
     
     return new Promise((resolve) => {
+      const authToken = useAuthStore.getState().token || undefined;
+      const joinSessionToken = getPersistedJoinSessionToken() || undefined;
       socket.emit("joinAsSpectator", {
         roomId,
         spectator: { id: playerId, name: playerName, avatar: playerAvatar || undefined },
         password: password?.trim() || undefined,
+        joinSessionToken,
+        authToken,
       }, (err: any, snap: any, roomData: any) => {
         if (err) {
           set({ lastError: err.message || "Join as spectator failed" });
@@ -1124,6 +1154,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
           const resolvedRoomId = roomData?.roomId || roomId;
           const resolvedCode = roomData?.code || roomId.toUpperCase();
           persistActiveRoom(resolvedCode, resolvedRoomId, true);
+          if (roomData?.joinSessionToken) persistJoinSessionToken(roomData.joinSessionToken);
           const incomingVersion = typeof snap?.version === "number" ? snap.version : 0;
           const { version: _v, ...gameState } = snap || {};
           const players: PlayerInfo[] = roomData?.players || [];

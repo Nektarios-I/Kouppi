@@ -34,8 +34,12 @@ describe("protocol schemas", () => {
     expect(sr.by).toBe("p1");
   });
 
-  it("validates rooms list item", () => {
-    const item = RoomsListItem.parse({ id: "room-123", playerCount: 1, maxPlayers: 2, started: false, hostId: "p1" });
-    expect(item.started).toBe(false);
+  it("validates join session token on JoinRoomPayload", () => {
+    const jr = JoinRoomPayload.parse({
+      roomId: "room-123",
+      player: { id: "p2", name: "Bob" },
+      joinSessionToken: "a".repeat(24),
+    });
+    expect(jr.joinSessionToken?.length).toBe(24);
   });
 });

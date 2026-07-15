@@ -15,6 +15,7 @@ import {
   generateRoomCode,
   RECONNECT_GRACE_MS,
   resetAllRoomsForTests,
+  getPlayerJoinSessionToken,
 } from "../src/rooms";
 import type { TableConfig } from "@kouppi/game-core";
 
@@ -79,8 +80,19 @@ describe("rooms", () => {
     startRoom("r4", "p1");
     const room = getRoom("r4")!;
     beginDisconnectGrace(room, "p2", RECONNECT_GRACE_MS, () => {});
-    const updated = joinRoom("r4", { id: "p2", name: "Bob", socketId: "s-new" });
+    const token = getPlayerJoinSessionToken("r4", "p2")!;
+    const updated = joinRoom("r4", { id: "p2", name: "Bob", socketId: "s-new" }, { joinSessionToken: token });
     expect(updated.players.find((p) => p.id === "p2")?.socketId).toBe("s-new");
+  });
+
+  it("rejects seat hijack during disconnect grace without join token", () => {
+    createRoomWithCreator("r10", { id: "p1", name: "Alice", socketId: "s1" }, cfg, 4444);
+    joinRoom("r10", { id: "p2", name: "Bob", socketId: "s2" });
+    const room = getRoom("r10")!;
+    beginDisconnectGrace(room, "p2", RECONNECT_GRACE_MS, () => {});
+    expect(() =>
+      joinRoom("r10", { id: "p2", name: "Attacker", socketId: "s-attacker" })
+    ).toThrow("invalid_session_token");
   });
 
   it("rejects join hijack when player slot is actively connected", () => {

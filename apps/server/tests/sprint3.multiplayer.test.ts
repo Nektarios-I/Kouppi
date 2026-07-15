@@ -162,11 +162,18 @@ describe("Sprint 3 — mobile & reconnect hardening", () => {
       );
     });
 
+    const specTokenHolder = { token: "" as string };
     await new Promise<void>((resolve, reject) => {
       spectator.emit(
         "joinAsSpectator",
         { roomId: code, spectator: { id: "spec-1", name: "Watcher" } },
-        (err: any) => (err ? reject(err) : resolve())
+        (err: any, _snap: any, roomData: any) => {
+          if (err) reject(err);
+          else {
+            specTokenHolder.token = roomData.joinSessionToken;
+            resolve();
+          }
+        }
       );
     });
 
@@ -176,7 +183,11 @@ describe("Sprint 3 — mobile & reconnect hardening", () => {
     const rejoined = await new Promise<any>((resolve, reject) => {
       spectator.emit(
         "joinAsSpectator",
-        { roomId: code, spectator: { id: "spec-1", name: "Watcher" } },
+        {
+          roomId: code,
+          spectator: { id: "spec-1", name: "Watcher" },
+          joinSessionToken: specTokenHolder.token,
+        },
         (err: any, _snap: any, roomData: any) => (err ? reject(err) : resolve(roomData))
       );
     });

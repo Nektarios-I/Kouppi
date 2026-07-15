@@ -2,6 +2,7 @@ import { initGame, applyAction } from "@kouppi/game-core";
 import type { Action } from "@kouppi/game-core";
 import type { Room, PlayerSession, SpectatorSession, AvatarConfig } from "./types.js";
 import { hashRoomPassword } from "./security/password.js";
+import { generateJoinSessionToken, isValidJoinSessionToken } from "./security/joinToken.js";
 
 const rooms = new Map<string, Room>();
 /** Normalized uppercase code → room id */
@@ -186,7 +187,8 @@ export function createRoomWithCreator(
   const publicCode = code ?? (id.length <= 8 && /^[A-Za-z0-9]+$/.test(id) ? normalizeRoomCode(id) : generateRoomCode());
   const base = createRoom(id, merged, seed, (config as any)?.maxPlayers ?? merged.maxPlayers ?? 8, publicCode);
   base.hostId = creator.id;
-  base.players.push({ ...creator, afkCount: 0, ready: true });
+  const creatorToken = generateJoinSessionToken();
+  base.players.push({ ...creator, afkCount: 0, ready: true, joinSessionToken: creatorToken });
   base.started = false;
   const hasPassword = !!(password && password.trim().length > 0);
   base.listedInLobby = options?.listedInLobby ?? !hasPassword;
@@ -228,7 +230,11 @@ export function resetAllRoomsForTests(): void {
   roomCodes.clear();
 }
 
-export function joinRoom(id: string, player: PlayerSession): Room {
+export function joinRoom(
+  id: string,
+  player: PlayerSession,
+  options?: { joinSessionToken?: string }
+): Room {
   const roomId = resolveRoomIdentifier(id);
   if (!roomId) throw new Error("room_not_found");
   const room = rooms.get(roomId)!;
@@ -239,12 +245,20 @@ export function joinRoom(id: string, player: PlayerSession): Room {
   }
   if (room.players.length >= room.maxPlayers && !exists) throw new Error("room_full");
   if (!exists) {
-    room.players.push({ ...player, afkCount: 0, ready: false });
+    const token = generateJoinSessionToken();
+    room.players.push({ ...player, afkCount: 0, ready: false, joinSessionToken: token });
   } else {
     const hasActiveSocket =
       !!exists.socketId && exists.socketId !== player.socketId && !exists.disconnectedAt;
     if (hasActiveSocket) {
       throw new Error("slot_taken");
+    }
+    if (exists.joinSessionToken) {
+      if (!isValidJoinSessionToken(options?.joinSessionToken) || options!.joinSessionToken !== exists.joinSessionToken) {
+        throw new Error("invalid_session_token");
+      }
+    } else {
+      exists.joinSessionToken = generateJoinSessionToken();
     }
     cancelDisconnectGrace(exists);
     exists.socketId = player.socketId;
@@ -253,6 +267,50 @@ export function joinRoom(id: string, player: PlayerSession): Room {
   }
   bumpRoomRevision(room);
   return room;
+}
+
+export function getPlayerJoinSessionToken(roomId: string, playerId: string): string | undefined {
+  const resolved = resolveRoomIdentifier(roomId);
+  if (!resolved) return undefined;
+  const room = rooms.get(resolved);
+  return room?.players.find((p) => p.id === playerId)?.joinSessionToken;
+}
+
+export function joinSpectator(
+  room: Room,
+  spectator: SpectatorSession,
+  options?: { joinSessionToken?: string }
+): void {
+  const exists = room.spectators?.find((s) => s.id === spectator.id);
+  if (exists) {
+    const hasActiveSocket =
+      !!exists.socketId && exists.socketId !== spectator.socketId && !exists.disconnectedAt;
+    if (hasActiveSocket) throw new Error("slot_taken");
+    if (exists.joinSessionToken) {
+      if (!isValidJoinSessionToken(options?.joinSessionToken) || options!.joinSessionToken !== exists.joinSessionToken) {
+        throw new Error("invalid_session_token");
+      }
+    } else {
+      exists.joinSessionToken = generateJoinSessionToken();
+    }
+    cancelSpectatorDisconnectGrace(exists);
+    exists.socketId = spectator.socketId;
+    if (spectator.name) exists.name = spectator.name;
+    if (spectator.avatar) exists.avatar = spectator.avatar;
+  } else {
+    if (!room.spectators) room.spectators = [];
+    room.spectators.push({
+      ...spectator,
+      joinSessionToken: generateJoinSessionToken(),
+    });
+  }
+}
+
+export function getSpectatorJoinSessionToken(roomId: string, spectatorId: string): string | undefined {
+  const resolved = resolveRoomIdentifier(roomId);
+  if (!resolved) return undefined;
+  const room = rooms.get(resolved);
+  return room?.spectators?.find((s) => s.id === spectatorId)?.joinSessionToken;
 }
 
 export function setPlayerReady(roomId: string, playerId: string, ready: boolean): Room {

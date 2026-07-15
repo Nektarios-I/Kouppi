@@ -113,7 +113,7 @@ export default function RoomPage() {
   }, [roomIdParam]);
 
   useEffect(() => {
-    if (isCareerGame && isLoggedIn() && user) {
+    if (isLoggedIn() && user) {
       setIdentity(user.id, user.username);
       setLocalName(user.username);
       const avatar: AvatarConfig = {
@@ -122,24 +122,24 @@ export default function RoomPage() {
         borderColor: user.avatarBorder || "#818cf8",
       };
       setAvatar(avatar);
-    } else {
-      const savedId = sessionStorage.getItem("kouppi_player_id");
-      const savedName = sessionStorage.getItem("kouppi_player_name");
-      const savedAvatar = sessionStorage.getItem("kouppi_player_avatar");
-      if (savedId && savedName) {
-        setIdentity(savedId, savedName);
-        setLocalName(savedName);
-      }
-      if (savedAvatar) {
-        try {
-          const avatar = JSON.parse(savedAvatar) as AvatarConfig;
-          setAvatar(avatar);
-        } catch {
-          // ignore invalid JSON
-        }
+      return;
+    }
+    const savedId = sessionStorage.getItem("kouppi_player_id");
+    const savedName = sessionStorage.getItem("kouppi_player_name");
+    const savedAvatar = sessionStorage.getItem("kouppi_player_avatar");
+    if (savedId && savedName) {
+      setIdentity(savedId, savedName);
+      setLocalName(savedName);
+    }
+    if (savedAvatar) {
+      try {
+        const avatar = JSON.parse(savedAvatar) as AvatarConfig;
+        setAvatar(avatar);
+      } catch {
+        // ignore invalid JSON
       }
     }
-  }, [isCareerGame, isLoggedIn, user, setIdentity, setAvatar]);
+  }, [isLoggedIn, user, setIdentity, setAvatar]);
 
   const attemptJoin = useCallback(
     async (password?: string) => {

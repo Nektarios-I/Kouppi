@@ -24,6 +24,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   already_host: "That player is already the host.",
   player_not_found: "Player not found in this room.",
   player_disconnected: "That player is disconnected right now.",
+  invalid_session_token: "Could not reclaim your seat — rejoin from the lobby with your room code.",
+  invalid_auth_token: "Your login session expired. Sign in again and retry.",
   join_failed: "Could not join the room.",
   create_failed: "Could not create the room.",
   bad_request: "Something went wrong. Please try again.",

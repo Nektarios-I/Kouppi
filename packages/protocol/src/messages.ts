@@ -41,6 +41,8 @@ export const CreateRoomPayload = z.object({
   password: z.string().optional(),
   listedInLobby: z.boolean().optional(),
   presetLabel: z.string().max(32).optional(),
+  /** Optional JWT — binds host seat to logged-in account */
+  authToken: z.string().optional(),
 });
 export type CreateRoomPayload = z.infer<typeof CreateRoomPayload>;
 
@@ -86,13 +88,25 @@ export const RoomUpdatePayload = z.object({
     })
   ),
   hostId: z.string().optional(),
+  chatMutedAll: z.boolean().optional(),
+  chatMutedPlayerIds: z.array(z.string()).optional(),
 });
 export type RoomUpdatePayload = z.infer<typeof RoomUpdatePayload>;
+
+/** Join/create ack includes a per-seat secret for reconnect (not broadcast to other clients). */
+export const RoomJoinAck = RoomUpdatePayload.extend({
+  joinSessionToken: z.string().min(16).optional(),
+});
+export type RoomJoinAck = z.infer<typeof RoomJoinAck>;
 
 export const JoinRoomPayload = z.object({
   roomId: z.string().min(1), // Room id or public code (case-insensitive)
   player: PlayerIdentity,
   password: z.string().optional(),
+  /** Required to reclaim an existing seat after disconnect grace */
+  joinSessionToken: z.string().min(16).optional(),
+  /** Optional JWT — binds seat to logged-in account */
+  authToken: z.string().optional(),
 });
 export type JoinRoomPayload = z.infer<typeof JoinRoomPayload>;
 
@@ -139,6 +153,8 @@ export const JoinAsSpectatorPayload = z.object({
   roomId: z.string().min(3),
   spectator: PlayerIdentity,
   password: z.string().optional(),
+  joinSessionToken: z.string().min(16).optional(),
+  authToken: z.string().optional(),
 });
 export type JoinAsSpectatorPayload = z.infer<typeof JoinAsSpectatorPayload>;
 

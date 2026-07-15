@@ -4,7 +4,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { CreateRoomPayload, JoinRoomPayload, ClientIntent, StartRoomPayload, JoinAsSpectatorPayload } from "@kouppi/protocol";
 import { 
-  createRoomWithCreator, joinRoom, leaveRoom, closeRoom, handleClientIntent, applySystemIntent, snapshot, getRoom, roomsInfo, startRoom,
+  createRoomWithCreator, joinRoom, joinSpectator, leaveRoom, closeRoom, handleClientIntent, applySystemIntent, snapshot, getRoom, roomsInfo, startRoom,
   startTurnTimer, clearTurnTimer, getTurnTimerInfo, resetAfkCount, incrementAfkCount, shouldKickForAfk,
   startFirstTurn, getCurrentPlayerId, syncGamePlayersToRoom, findPlayerBySocket, promoteHost,
   beginDisconnectGrace, cancelDisconnectGrace, RECONNECT_GRACE_MS,
@@ -15,6 +15,7 @@ import {
   startGraceTickBroadcast, stopGraceTickBroadcast, generateRoomCode,
   addSystemChatMessage, checkChatRateLimit, recordChatSend,
   trackSessionPot, buildSessionSummary, resetRoomForPlayAgain,
+  getPlayerJoinSessionToken, getSpectatorJoinSessionToken,
 } from "./rooms.js";
 import type { TableConfig } from "@kouppi/game-core";
 import { applyAction } from "@kouppi/game-core";
@@ -27,8 +28,41 @@ import { registerCareerHandlers } from "./career/careerSocketHandlers.js";
 import { isCareerGame, handleCareerGameEnd, getCareerRoomByGameId } from "./career/careerRoomManager.js";
 import { verifyRoomPassword, roomRequiresPassword } from "./security/password.js";
 import { sanitizeDisplayName, sanitizeChatText, sanitizeEmote } from "./security/sanitize.js";
-import { checkEventRateLimit, recordEvent } from "./security/rateLimit.js";
+import { checkEventRateLimit, recordEvent, clearRateLimitsForSocket } from "./security/rateLimit.js";
 import { logServerEvent } from "./security/log.js";
+import { verifyToken } from "./auth/jwt.js";
+import { getUserById } from "@kouppi/database";
+import type { AvatarConfig } from "./types.js";
+
+function resolveJoinIdentity(
+  identity: { id: string; name: string; avatar?: AvatarConfig },
+  authToken: string | undefined,
+  skipCareerDatabase: boolean
+): { identity: { id: string; name: string; avatar?: AvatarConfig } } | { error: string } {
+  if (!authToken) {
+    return { identity: { id: identity.id, name: identity.name, avatar: identity.avatar } };
+  }
+  const payload = verifyToken(authToken);
+  if (!payload) return { error: "invalid_auth_token" };
+  if (!skipCareerDatabase) {
+    const user = getUserById(payload.userId);
+    if (!user) return { error: "invalid_auth_token" };
+    return {
+      identity: {
+        id: user.id,
+        name: identity.name || user.username,
+        avatar: identity.avatar,
+      },
+    };
+  }
+  return {
+    identity: {
+      id: payload.userId,
+      name: identity.name || payload.username,
+      avatar: identity.avatar,
+    },
+  };
+}
 
 export function createKouppiServer(opts?: {
   corsOrigin?: string;
@@ -225,6 +259,19 @@ export function createKouppiServer(opts?: {
       return buildRoomUpdatePayload(room);
     }
 
+    function buildJoinAck(
+      room: NonNullable<ReturnType<typeof getRoom>>,
+      memberId: string,
+      role: "player" | "spectator" = "player"
+    ) {
+      const base = buildRoomData(room);
+      const joinSessionToken =
+        role === "spectator"
+          ? getSpectatorJoinSessionToken(room.id, memberId)
+          : getPlayerJoinSessionToken(room.id, memberId);
+      return joinSessionToken ? { ...base, joinSessionToken } : base;
+    }
+
     /** Remove player, promote host if needed, sync state, or close empty room. */
     function finalizePlayerRemoval(roomId: string, removedPlayerId?: string): boolean {
       const room = getRoom(roomId);
@@ -317,7 +364,22 @@ export function createKouppiServer(opts?: {
           cb ? cb(err) : socket.emit("error", err);
           return;
         }
-        const creator = { id: data.creator.id, name: creatorName, socketId: socket.id, avatar: data.creator.avatar };
+        const creatorResolved = resolveJoinIdentity(
+          { id: data.creator.id, name: creatorName, avatar: data.creator.avatar },
+          data.authToken,
+          !!opts?.skipCareerDatabase
+        );
+        if ("error" in creatorResolved) {
+          const err = { code: creatorResolved.error, message: creatorResolved.error };
+          cb ? cb(err) : socket.emit("error", err);
+          return;
+        }
+        const creator = {
+          id: creatorResolved.identity.id,
+          name: creatorResolved.identity.name,
+          socketId: socket.id,
+          avatar: creatorResolved.identity.avatar,
+        };
         createRoomWithCreator(
           roomId,
           creator,
@@ -330,7 +392,7 @@ export function createKouppiServer(opts?: {
         socket.join(roomId);
         const room = getRoom(roomId)!;
         const ackSnap = snapshot(roomId) ?? null;
-        const roomData = buildRoomData(room);
+        const roomData = buildJoinAck(room, creator.id, "player");
         logServerEvent("room_created", { roomId, code: room.code, socketId: socket.id });
         markRateLimit("createRoom");
         cb ? cb(null, ackSnap, roomData) : socket.emit("state", ackSnap);
@@ -362,9 +424,29 @@ export function createKouppiServer(opts?: {
           cb ? cb(err) : socket.emit("error", err);
           return;
         }
+        const playerResolved = resolveJoinIdentity(
+          { id: data.player.id, name: playerName, avatar: data.player.avatar },
+          data.authToken,
+          !!opts?.skipCareerDatabase
+        );
+        if ("error" in playerResolved) {
+          const err = { code: playerResolved.error, message: playerResolved.error };
+          cb ? cb(err) : socket.emit("error", err);
+          return;
+        }
+        const resolvedPlayer = playerResolved.identity;
         
         try {
-          joinRoom(data.roomId, { id: data.player.id, name: playerName, socketId: socket.id, avatar: data.player.avatar });
+          joinRoom(
+            data.roomId,
+            {
+              id: resolvedPlayer.id,
+              name: resolvedPlayer.name,
+              socketId: socket.id,
+              avatar: resolvedPlayer.avatar,
+            },
+            { joinSessionToken: data.joinSessionToken }
+          );
         } catch (err: any) {
           const msg = err?.message || String(err);
           const code =
@@ -373,6 +455,7 @@ export function createKouppiServer(opts?: {
             : msg === "room_not_found" ? "room_not_found"
             : msg === "slot_taken" ? "slot_taken"
             : msg === "player_banned" ? "player_banned"
+            : msg === "invalid_session_token" ? "invalid_session_token"
             : "bad_request";
           const e2 = { code, message: msg };
           cb ? cb(e2) : socket.emit("error", e2);
@@ -382,12 +465,12 @@ export function createKouppiServer(opts?: {
         const room = getRoom(resolvedId!)!;
         const snap = snapshot(resolvedId!);
         const ackSnap = snap ?? null;
-        const roomData = buildRoomData(room);
-        io.to(resolvedId!).emit("roomUpdate", roomData);
+        const roomData = buildJoinAck(room, resolvedPlayer.id, "player");
+        io.to(resolvedId!).emit("roomUpdate", buildRoomData(room));
         if (snap) {
           io.to(resolvedId!).emit("state", snap);
         }
-        emitSystemMessage(resolvedId!, `${playerName} joined the room`);
+        emitSystemMessage(resolvedId!, `${resolvedPlayer.name} joined the room`);
         markRateLimit("joinRoom");
         cb ? cb(null, ackSnap, roomData) : socket.emit("state", ackSnap);
       } catch (e: any) {
@@ -1288,6 +1371,18 @@ export function createKouppiServer(opts?: {
           cb ? cb(err) : socket.emit("error", err);
           return;
         }
+
+        const spectatorResolved = resolveJoinIdentity(
+          { id: spectator.id, name: spectatorName, avatar: spectator.avatar },
+          data.authToken,
+          !!opts?.skipCareerDatabase
+        );
+        if ("error" in spectatorResolved) {
+          const err = { code: spectatorResolved.error, message: spectatorResolved.error };
+          cb ? cb(err) : socket.emit("error", err);
+          return;
+        }
+        const resolvedSpectator = spectatorResolved.identity;
         
         // Check if spectators are allowed
         if (!room.config.spectatorsAllowed) {
@@ -1297,41 +1392,36 @@ export function createKouppiServer(opts?: {
         }
         
         // Check if already a player
-        if (room.players.some((p: any) => p.id === spectator.id)) {
+        if (room.players.some((p: any) => p.id === resolvedSpectator.id)) {
           const err = { code: "already_player", message: "You are already a player in this room" };
           cb ? cb(err) : socket.emit("error", err);
           return;
         }
         
-        // Check if already a spectator
-        if (room.spectators?.some((s: any) => s.id === spectator.id)) {
-          const existing = room.spectators!.find((s: any) => s.id === spectator.id)!;
-          const hasActiveSocket =
-            !!existing.socketId && existing.socketId !== socket.id && !existing.disconnectedAt;
-          if (hasActiveSocket) {
-            const err = { code: "slot_taken", message: "Spectator slot already active" };
-            cb ? cb(err) : socket.emit("error", err);
-            return;
-          }
-          cancelSpectatorDisconnectGrace(existing);
-          existing.socketId = socket.id;
-          if (spectatorName) existing.name = spectatorName;
-          if (spectator.avatar) existing.avatar = spectator.avatar;
-        } else {
-          if (!room.spectators) room.spectators = [];
-          room.spectators.push({
-            id: spectator.id,
-            name: spectatorName,
-            socketId: socket.id,
-            avatar: spectator.avatar,
-          });
+        try {
+          joinSpectator(
+            room,
+            {
+              id: resolvedSpectator.id,
+              name: resolvedSpectator.name,
+              socketId: socket.id,
+              avatar: resolvedSpectator.avatar,
+            },
+            { joinSessionToken: data.joinSessionToken }
+          );
+        } catch (err: any) {
+          const msg = err?.message || String(err);
+          const code = msg === "slot_taken" ? "slot_taken" : msg === "invalid_session_token" ? "invalid_session_token" : "bad_request";
+          const e2 = { code, message: msg };
+          cb ? cb(e2) : socket.emit("error", e2);
+          return;
         }
         bumpRoomRevision(room);
         
         socket.join(resolvedId!);
-        const roomData = buildRoomData(room);
+        const roomData = buildJoinAck(room, resolvedSpectator.id, "spectator");
         
-        io.to(resolvedId!).emit("roomUpdate", roomData);
+        io.to(resolvedId!).emit("roomUpdate", buildRoomData(room));
         
         const ackState = buildStatePayload(room);
         markRateLimit("joinAsSpectator");
@@ -1374,6 +1464,7 @@ export function createKouppiServer(opts?: {
 
     // Handle disconnect
     socket.on("disconnect", () => {
+      clearRateLimitsForSocket(socket.id);
       // Find any rooms this socket is in and remove them
       const allRooms = roomsInfo();
       for (const roomInfo of allRooms) {

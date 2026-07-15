@@ -48,6 +48,15 @@ export function recordEvent(socketId: string, event: string): void {
   bucket.timestamps.push(now);
 }
 
+/** Remove all rate-limit buckets for a disconnected socket. */
+export function clearRateLimitsForSocket(socketId: string): void {
+  for (const key of Array.from(buckets.keys())) {
+    if (key.startsWith(`${socketId}:`)) {
+      buckets.delete(key);
+    }
+  }
+}
+
 /** Test helper — clear all buckets between tests. */
 export function resetRateLimits(): void {
   buckets.clear();

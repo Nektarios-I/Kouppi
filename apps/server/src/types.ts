@@ -16,6 +16,8 @@ export type PlayerSession = {
   ready?: boolean;
   disconnectedAt?: number;
   pendingRemovalTimer?: ReturnType<typeof setTimeout>;
+  /** Server-issued secret required to reclaim this seat after disconnect */
+  joinSessionToken?: string;
   /** Timestamps of recent chat sends for rate limiting */
   chatSendTimestamps?: number[];
 };
@@ -46,6 +48,8 @@ export type SpectatorSession = {
   avatar?: AvatarConfig;
   disconnectedAt?: number;
   pendingRemovalTimer?: ReturnType<typeof setTimeout>;
+  /** Server-issued secret required to reclaim spectator slot after disconnect */
+  joinSessionToken?: string;
 };
 
 export type Room = {
