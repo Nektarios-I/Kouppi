@@ -17,7 +17,15 @@ import { HudButton } from "./game/HudButton";
 import CasinoBackground from "./game/CasinoBackground";
 import TableThemeSelector from "./game/TableThemeSelector";
 import ConnectionStatusBanner from "./game/ConnectionStatusBanner";
+import ConfirmDialog from "./game/ConfirmDialog";
 import { useTableTheme } from "@/hooks/useTableTheme";
+
+type PendingConfirm =
+  | { type: "closeRoom" }
+  | { type: "kouppi" }
+  | { type: "shistri"; amount: number }
+  | { type: "kick"; targetId: string; targetName: string }
+  | null;
 
 export default function MultiplayerTableGraphics() {
   const router = useRouter();
@@ -41,6 +49,7 @@ export default function MultiplayerTableGraphics() {
     decideStay,
     decideLeave,
     requestNewRound,
+    pendingIntent,
   } = useRemoteGameStore();
   const { theme } = useTableTheme();
 
@@ -52,6 +61,7 @@ export default function MultiplayerTableGraphics() {
   const [startingRound, setStartingRound] = useState(false);
   const [leaveError, setLeaveError] = useState<string | null>(null);
   const [hostActionError, setHostActionError] = useState<string | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm>(null);
 
   const sounds = useGameSounds();
   const prevIsMyTurn = useRef<boolean>(false);
@@ -199,6 +209,15 @@ export default function MultiplayerTableGraphics() {
   };
 
   const handleKickPlayer = async (targetId: string) => {
+    const target = playersInRoom.find((p) => p.id === targetId);
+    setPendingConfirm({
+      type: "kick",
+      targetId,
+      targetName: target?.name || "this player",
+    });
+  };
+
+  const runKickPlayer = async (targetId: string) => {
     setHostActionError(null);
     const result = await kickPlayer(targetId);
     if (!result.success) {
@@ -210,8 +229,11 @@ export default function MultiplayerTableGraphics() {
     }
   };
 
-  const handleCloseRoom = async () => {
-    if (!window.confirm("Close this room for everyone?")) return;
+  const handleCloseRoom = () => {
+    setPendingConfirm({ type: "closeRoom" });
+  };
+
+  const runCloseRoom = async () => {
     setHostActionError(null);
     const result = await closeRoomAsHost();
     if (!result.success) {
@@ -531,6 +553,7 @@ export default function MultiplayerTableGraphics() {
             canKouppi={!!canKouppi}
             shistriEligible={!!shistriEligible}
             shistriAmount={shistriBetAmount}
+            disabled={!!pendingIntent}
             showPairWarning={
               !!(up.a && up.b && (up.a.rank === up.b.rank || Math.abs(up.a.rank - up.b.rank) === 1))
             }
@@ -546,22 +569,75 @@ export default function MultiplayerTableGraphics() {
               sendIntent({ type: "bet", amount: bet });
             }}
             onKouppi={() => {
-              sounds.chips();
-              setChipFlyAmount(gameState.round.pot);
-              setShowChipFly(true);
-              sendIntent({ type: "kouppi" });
+              setPendingConfirm({ type: "kouppi" });
             }}
             onShistri={() => {
-              sounds.chips();
-              setChipFlyAmount(shistriBetAmount);
-              setShowChipFly(true);
-              sendIntent({ type: "shistri" });
+              setPendingConfirm({ type: "shistri", amount: shistriBetAmount });
             }}
           />
         )}
 
         <GameLog entries={gameState.history} />
       </div>
+
+      {pendingConfirm?.type === "closeRoom" && (
+        <ConfirmDialog
+          title="Close Room?"
+          message="This will end the session for everyone in the room."
+          confirmLabel="Close Room"
+          onConfirm={() => {
+            setPendingConfirm(null);
+            void runCloseRoom();
+          }}
+          onCancel={() => setPendingConfirm(null)}
+        />
+      )}
+      {pendingConfirm?.type === "kouppi" && (
+        <ConfirmDialog
+          title="KOUPPI — All In"
+          message={`Bet the full pot (${gameState.round.pot})? You cannot undo this.`}
+          confirmLabel="KOUPPI"
+          confirmVariant="kouppi"
+          onConfirm={() => {
+            setPendingConfirm(null);
+            sounds.chips();
+            setChipFlyAmount(gameState.round.pot);
+            setShowChipFly(true);
+            sendIntent({ type: "kouppi" });
+          }}
+          onCancel={() => setPendingConfirm(null)}
+        />
+      )}
+      {pendingConfirm?.type === "shistri" && (
+        <ConfirmDialog
+          title="SHISTRI"
+          message={`Place a SHISTRI bet of ${pendingConfirm.amount}?`}
+          confirmLabel="SHISTRI"
+          confirmVariant="shistri"
+          onConfirm={() => {
+            const amount = pendingConfirm.amount;
+            setPendingConfirm(null);
+            sounds.chips();
+            setChipFlyAmount(amount);
+            setShowChipFly(true);
+            sendIntent({ type: "shistri" });
+          }}
+          onCancel={() => setPendingConfirm(null)}
+        />
+      )}
+      {pendingConfirm?.type === "kick" && (
+        <ConfirmDialog
+          title="Kick Player?"
+          message={`Remove ${pendingConfirm.targetName} from the room?`}
+          confirmLabel="Kick"
+          onConfirm={() => {
+            const targetId = pendingConfirm.targetId;
+            setPendingConfirm(null);
+            void runKickPlayer(targetId);
+          }}
+          onCancel={() => setPendingConfirm(null)}
+        />
+      )}
     </CasinoBackground>
   );
 }

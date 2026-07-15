@@ -1,6 +1,6 @@
 import { initGame, applyAction } from "@kouppi/game-core";
 import type { Action } from "@kouppi/game-core";
-import type { Room, PlayerSession, AvatarConfig } from "./types.js";
+import type { Room, PlayerSession, SpectatorSession, AvatarConfig } from "./types.js";
 
 const rooms = new Map<string, Room>();
 /** Normalized uppercase code → room id */
@@ -50,19 +50,42 @@ export type RoomPlayerPayload = {
   reconnectRemainingSec: number | null;
 };
 
+export type RoomSpectatorPayload = {
+  id: string;
+  name: string;
+  avatar?: AvatarConfig;
+  connected: boolean;
+  reconnectRemainingSec: number | null;
+};
+
+export function bumpRoomRevision(room: Room): number {
+  room.revision = (room.revision ?? 0) + 1;
+  return room.revision;
+}
+
+export function bumpStateRevision(room: Room): number {
+  room.stateRevision = (room.stateRevision ?? 0) + 1;
+  return room.stateRevision;
+}
+
+export function buildStatePayload(room: Room): (NonNullable<Room["state"]> & { version: number }) | undefined {
+  if (!room.state) return undefined;
+  return { ...room.state, version: room.stateRevision ?? 0 };
+}
+
 export function buildRoomUpdatePayload(room: Room): {
   roomId: string;
   code: string;
   version: number;
   players: RoomPlayerPayload[];
-  spectators: Array<{ id: string; name: string; avatar?: AvatarConfig }>;
+  spectators: RoomSpectatorPayload[];
   hostId?: string;
 } {
   const now = Date.now();
   return {
     roomId: room.id,
     code: room.code,
-    version: roomUpdateVersion(room),
+    version: room.revision ?? 0,
     players: room.players.map((p) => ({
       id: p.id,
       name: p.name,
@@ -74,24 +97,30 @@ export function buildRoomUpdatePayload(room: Room): {
         : null,
     })),
     spectators:
-      room.spectators?.map((s) => ({ id: s.id, name: s.name, avatar: s.avatar })) || [],
+      room.spectators?.map((s) => ({
+        id: s.id,
+        name: s.name,
+        avatar: s.avatar,
+        connected: !!s.socketId && !s.disconnectedAt,
+        reconnectRemainingSec: s.disconnectedAt
+          ? Math.max(0, Math.ceil((s.disconnectedAt + RECONNECT_GRACE_MS - now) / 1000))
+          : null,
+      })) || [],
     hostId: room.hostId,
   };
 }
 
-function roomUpdateVersion(room: Room): number {
+function hasReconnectGrace(room: Room): boolean {
   return (
-    room.players.reduce((sum, p) => sum + (p.ready ? 1 : 0) + (p.disconnectedAt ? 2 : 0), 0) +
-    room.players.length * 10 +
-    (room.started ? 1000 : 0)
+    room.players.some((p) => p.disconnectedAt) ||
+    !!room.spectators?.some((s) => s.disconnectedAt)
   );
 }
 
 export function startGraceTickBroadcast(room: Room, onTick: () => void): void {
   if (room.graceTickInterval) return;
   room.graceTickInterval = setInterval(() => {
-    const hasGrace = room.players.some((p) => p.disconnectedAt);
-    if (!hasGrace) {
+    if (!hasReconnectGrace(room)) {
       stopGraceTickBroadcast(room);
       return;
     }
@@ -128,6 +157,8 @@ export function createRoom(id: string, config: Room["config"], seed: number, max
     state: undefined, 
     started: false,
     turnTimeout: DEFAULT_TURN_TIMEOUT,
+    revision: 0,
+    stateRevision: 0,
   };
   rooms.set(id, room);
   registerRoomCode(room);
@@ -200,6 +231,7 @@ export function joinRoom(id: string, player: PlayerSession): Room {
     if (player.name) exists.name = player.name;
     if (player.avatar) exists.avatar = player.avatar;
   }
+  bumpRoomRevision(room);
   return room;
 }
 
@@ -212,6 +244,7 @@ export function setPlayerReady(roomId: string, playerId: string, ready: boolean)
   if (!player) throw new Error("not_in_room");
   if (player.disconnectedAt) throw new Error("player_disconnected");
   player.ready = ready;
+  bumpRoomRevision(room);
   return room;
 }
 
@@ -229,6 +262,7 @@ export function kickPlayer(roomId: string, hostId: string, targetId: string): Ro
   }
   cancelDisconnectGrace(target);
   room.players = room.players.filter((p) => p.id !== targetId);
+  bumpRoomRevision(room);
   return room;
 }
 
@@ -242,6 +276,7 @@ export function transferHost(roomId: string, hostId: string, newHostId: string):
   if (!target) throw new Error("player_not_found");
   if (target.disconnectedAt) throw new Error("player_disconnected");
   room.hostId = newHostId;
+  bumpRoomRevision(room);
   return room;
 }
 
@@ -299,6 +334,29 @@ export function cancelDisconnectGrace(player: PlayerSession | undefined): void {
   }
 }
 
+export function cancelSpectatorDisconnectGrace(spectator: SpectatorSession | undefined): void {
+  if (!spectator) return;
+  spectator.disconnectedAt = undefined;
+  if (spectator.pendingRemovalTimer) {
+    clearTimeout(spectator.pendingRemovalTimer);
+    spectator.pendingRemovalTimer = undefined;
+  }
+}
+
+export function beginSpectatorDisconnectGrace(
+  room: Room,
+  spectatorId: string,
+  graceMs: number,
+  onExpire: () => void
+): void {
+  const spectator = room.spectators?.find((s) => s.id === spectatorId);
+  if (!spectator) return;
+  cancelSpectatorDisconnectGrace(spectator);
+  spectator.disconnectedAt = Date.now();
+  spectator.socketId = "";
+  spectator.pendingRemovalTimer = setTimeout(onExpire, graceMs);
+}
+
 export function beginDisconnectGrace(
   room: Room,
   playerId: string,
@@ -317,7 +375,16 @@ export function leaveRoom(id: string, playerId: string): Room | undefined {
   const room = rooms.get(id);
   if (!room) return undefined;
   room.players = room.players.filter(p => p.id !== playerId);
+  bumpRoomRevision(room);
   return room;
+}
+
+export function removeSpectator(room: Room, spectatorId: string): void {
+  if (!room.spectators) return;
+  const spectator = room.spectators.find((s) => s.id === spectatorId);
+  cancelSpectatorDisconnectGrace(spectator);
+  room.spectators = room.spectators.filter((s) => s.id !== spectatorId);
+  bumpRoomRevision(room);
 }
 
 /** Sync the game state's players to match the current room players order, preserving bankrolls.
@@ -382,6 +449,7 @@ export function syncGamePlayersToRoom(id: string): void {
       room.state.history.push(`${removed.name} left the game`);
     }
     room.state.history.push("Players synced to room");
+    bumpStateRevision(room);
   }
 }
 
@@ -413,6 +481,7 @@ export function applySystemIntent(id: string, intent: Action): Room {
   if (!room) throw new Error("room_not_found");
   if (!room.state) throw new Error("room_not_ready");
   room.state = applyAction(room.state, intent);
+  bumpStateRevision(room);
   return room;
 }
 
@@ -426,6 +495,7 @@ export function handleIntent(id: string, playerId: string, intent: Action): Room
     throw new Error("not_current_player");
   }
   room.state = applyAction(room.state, intent);
+  bumpStateRevision(room);
   return room;
 }
 
@@ -561,6 +631,8 @@ export function startRoom(id: string, by: string): Room {
   room.started = true;
   // Reset all AFK counts
   room.players.forEach(p => p.afkCount = 0);
+  bumpStateRevision(room);
+  bumpRoomRevision(room);
   return room;
 }
 
@@ -569,6 +641,7 @@ export function startFirstTurn(id: string): Room {
   const room = rooms.get(id);
   if (!room || !room.state) throw new Error("room_not_found");
   room.state = applyAction(room.state, { type: "startTurn" });
+  bumpStateRevision(room);
   return room;
 }
 

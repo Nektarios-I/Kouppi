@@ -44,6 +44,8 @@ export type SpectatorSession = {
   name: string;
   socketId: string;
   avatar?: AvatarConfig;
+  disconnectedAt?: number;
+  pendingRemovalTimer?: ReturnType<typeof setTimeout>;
 };
 
 export type Room = {
@@ -78,4 +80,8 @@ export type Room = {
   chatMessages?: ChatMessage[];
   /** Broadcasts reconnect countdown while any player is in grace */
   graceTickInterval?: ReturnType<typeof setInterval>;
+  /** Monotonic counter for room metadata updates */
+  revision?: number;
+  /** Monotonic counter for game state snapshots */
+  stateRevision?: number;
 };

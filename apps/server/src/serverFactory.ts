@@ -8,8 +8,9 @@ import {
   startTurnTimer, clearTurnTimer, getTurnTimerInfo, resetAfkCount, incrementAfkCount, shouldKickForAfk,
   startFirstTurn, getCurrentPlayerId, syncGamePlayersToRoom, findPlayerBySocket, promoteHost,
   beginDisconnectGrace, cancelDisconnectGrace, RECONNECT_GRACE_MS,
+  beginSpectatorDisconnectGrace, cancelSpectatorDisconnectGrace, removeSpectator,
   addChatMessage, getChatMessages, clearChatMessages, cleanupEmptyRooms,
-  resolveRoomIdentifier, buildRoomUpdatePayload, setPlayerReady, kickPlayer, transferHost,
+  resolveRoomIdentifier, buildRoomUpdatePayload, buildStatePayload, bumpStateRevision, bumpRoomRevision, setPlayerReady, kickPlayer, transferHost,
   startGraceTickBroadcast, stopGraceTickBroadcast, generateRoomCode,
   addSystemChatMessage, checkChatRateLimit, recordChatSend,
 } from "./rooms.js";
@@ -138,6 +139,15 @@ export function createKouppiServer(opts?: {
       io.to(roomId).emit("roomUpdate", buildRoomUpdatePayload(room));
     }
 
+    function emitState(roomId: string, targetSocket?: import("socket.io").Socket) {
+      const room = getRoom(roomId);
+      if (!room) return;
+      const payload = buildStatePayload(room);
+      if (!payload) return;
+      if (targetSocket) targetSocket.emit("state", payload);
+      else io.to(roomId).emit("state", payload);
+    }
+
     function emitSystemMessage(roomId: string, message: string) {
       const msg = addSystemChatMessage(roomId, message);
       if (msg) io.to(roomId).emit("chatMessage", msg);
@@ -194,7 +204,7 @@ export function createKouppiServer(opts?: {
       } catch {}
 
       const snap = snapshot(roomId);
-      if (snap) io.to(roomId).emit("state", snap);
+      if (snap) emitState(roomId);
       io.to(roomId).emit("roomUpdate", buildRoomData(room));
       return false;
     }
@@ -498,9 +508,10 @@ export function createKouppiServer(opts?: {
         }
 
         handleClientIntent(roomId, playerId, i);
-        const snap = snapshot(roomId);
-        io.to(roomId).emit("state", snap);
-        cb ? cb(null, snap) : socket.emit("state", snap);
+        emitState(roomId);
+        const updated = getRoom(roomId);
+        const ackState = updated ? buildStatePayload(updated) : undefined;
+        cb ? cb(null, ackState) : (ackState ? socket.emit("state", ackState) : undefined);
         
         // For career games, update bankroll in database after each action
         const r = getRoom(roomId);
@@ -602,17 +613,16 @@ export function createKouppiServer(opts?: {
           return;
         }
 
-        const r = startRoom(data.roomId, sessionPlayer.id);
+        startRoom(data.roomId, sessionPlayer.id);
         
         // Start the first turn with eligibility
         startEligibleTurn(data.roomId);
         
-        const snap = snapshot(data.roomId);
-        io.to(data.roomId).emit("state", snap);
-        
         emitSystemMessage(data.roomId, "Game started!");
         
-        cb ? cb(null, snap) : socket.emit("state", snap);
+        const updated = getRoom(data.roomId);
+        const ackState = updated ? buildStatePayload(updated) : undefined;
+        cb ? cb(null, ackState) : (ackState ? socket.emit("state", ackState) : undefined);
       } catch (e: any) {
         const code = e?.message === "not_host" ? "not_host" : e?.message === "not_enough_players" ? "not_enough_players" : e?.message === "not_all_ready" ? "not_all_ready" : "bad_request";
         const err = { code, message: e?.message || String(e) };
@@ -701,8 +711,7 @@ export function createKouppiServer(opts?: {
 
       // Start a turn
       applySystemIntent(roomId, { type: "startTurn" });
-      const snap = snapshot(roomId);
-      io.to(roomId).emit("state", snap);
+      emitState(roomId);
 
       // If round ended during startTurn, enter decision phase
       if (room.state.phase === "RoundEnd") {
@@ -1002,11 +1011,19 @@ export function createKouppiServer(opts?: {
         
         // Check if already a spectator
         if (room.spectators?.some((s: any) => s.id === spectator.id)) {
-          // Update socket ID if reconnecting
-          const existing = room.spectators.find((s: any) => s.id === spectator.id);
-          if (existing) existing.socketId = socket.id;
+          const existing = room.spectators!.find((s: any) => s.id === spectator.id)!;
+          const hasActiveSocket =
+            !!existing.socketId && existing.socketId !== socket.id && !existing.disconnectedAt;
+          if (hasActiveSocket) {
+            const err = { code: "slot_taken", message: "Spectator slot already active" };
+            cb ? cb(err) : socket.emit("error", err);
+            return;
+          }
+          cancelSpectatorDisconnectGrace(existing);
+          existing.socketId = socket.id;
+          if (spectator.name) existing.name = spectator.name;
+          if (spectator.avatar) existing.avatar = spectator.avatar;
         } else {
-          // Add as new spectator
           if (!room.spectators) room.spectators = [];
           room.spectators.push({
             id: spectator.id,
@@ -1015,14 +1032,15 @@ export function createKouppiServer(opts?: {
             avatar: spectator.avatar,
           });
         }
+        bumpRoomRevision(room);
         
         socket.join(resolvedId!);
-        const snap = snapshot(resolvedId!);
         const roomData = buildRoomData(room);
         
         io.to(resolvedId!).emit("roomUpdate", roomData);
         
-        cb ? cb(null, snap, roomData) : socket.emit("state", snap);
+        const ackState = buildStatePayload(room);
+        cb ? cb(null, ackState, roomData) : (ackState ? socket.emit("state", ackState) : undefined);
       } catch (e: any) {
         console.error("joinAsSpectator error", e);
         const err = { code: "error", message: e.message };
@@ -1041,16 +1059,10 @@ export function createKouppiServer(opts?: {
         
         const spectatorIndex = room.spectators?.findIndex((s: any) => s.socketId === socket.id) ?? -1;
         if (spectatorIndex >= 0) {
-          room.spectators?.splice(spectatorIndex, 1);
+          const spectator = room.spectators![spectatorIndex];
+          removeSpectator(room, spectator.id);
           socket.leave(roomId);
-          
-          // Notify everyone about the spectator leaving
-          const roomData = {
-            players: room.players.map((p: any) => ({ id: p.id, name: p.name, avatar: p.avatar })),
-            spectators: room.spectators?.map((s: any) => ({ id: s.id, name: s.name, avatar: s.avatar })) || [],
-            hostId: room.hostId,
-          };
-          io.to(roomId).emit("roomUpdate", roomData);
+          emitRoomUpdate(roomId);
         }
         
         cb ? cb(null) : undefined;
@@ -1071,13 +1083,15 @@ export function createKouppiServer(opts?: {
         // Check if this is a spectator disconnecting
         const spectatorIndex = room.spectators?.findIndex((s: any) => s.socketId === socket.id) ?? -1;
         if (spectatorIndex >= 0) {
-          room.spectators?.splice(spectatorIndex, 1);
-          // Notify about spectator leaving
-          io.to(roomInfo.id).emit("roomUpdate", {
-            players: room.players.map((p: any) => ({ id: p.id, name: p.name, avatar: p.avatar })),
-            spectators: room.spectators?.map((s: any) => ({ id: s.id, name: s.name, avatar: s.avatar })) || [],
-            hostId: room.hostId,
+          const spectator = room.spectators![spectatorIndex];
+          const rid = roomInfo.id;
+          const spectatorId = spectator.id;
+          beginSpectatorDisconnectGrace(room, spectatorId, RECONNECT_GRACE_MS, () => {
+            removeSpectator(room, spectatorId);
+            emitRoomUpdate(rid);
           });
+          emitRoomUpdate(rid);
+          startGraceTickBroadcast(room, () => emitRoomUpdate(rid));
           continue;
         }
         

@@ -144,7 +144,11 @@ describe("Sprint 2 — host control and chat polish", () => {
     const kickErr = await new Promise<any>((resolve) => {
       host.emit("kickPlayer", { roomId: code, targetId: currentId }, (err: any) => resolve(err));
     });
-    expect(kickErr?.code).toBe("cannot_kick_current_player");
+    if (currentId === "host-1") {
+      expect(kickErr?.code).toBe("cannot_kick_self");
+    } else {
+      expect(kickErr?.code).toBe("cannot_kick_current_player");
+    }
 
     host.close();
     p2.close();

@@ -72,7 +72,10 @@ export default function GameActionPanel({
           <div className="game-action-warning font-ui" role="alert">
             {pairIsConsecutive
               ? "Consecutive cards — no winning card exists. Consider passing."
-              : "Pair — no winning card exists. Consider passing."}
+              : "Pair — no winning card exists. Consider passing."}{" "}
+            <a href="/how-to-play" className="text-gold-light underline ml-1">
+              Rules
+            </a>
           </div>
         )}
 

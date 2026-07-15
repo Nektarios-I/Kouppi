@@ -216,6 +216,11 @@ export default function WaitingRoom({
       </div>
 
       <LobbyFooterLink href="/lobby">← Back to Lobby</LobbyFooterLink>
+      <p className="text-center mt-3">
+        <a href="/how-to-play" className="text-sm text-gray-400 hover:text-gold-light font-ui underline">
+          How to Play KOUPPI
+        </a>
+      </p>
     </div>
   );
 }

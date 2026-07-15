@@ -74,7 +74,15 @@ export const RoomUpdatePayload = z.object({
   code: z.string(),
   version: z.number().int(),
   players: z.array(RoomPlayerInfo),
-  spectators: z.array(z.object({ id: z.string(), name: z.string(), avatar: AvatarConfig.optional() })),
+  spectators: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      avatar: AvatarConfig.optional(),
+      connected: z.boolean().optional(),
+      reconnectRemainingSec: z.number().int().nullable().optional(),
+    })
+  ),
   hostId: z.string().optional(),
 });
 export type RoomUpdatePayload = z.infer<typeof RoomUpdatePayload>;

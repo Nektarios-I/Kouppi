@@ -71,6 +71,9 @@ export function LobbyHeader({
             Refresh
           </HudButton>
         )}
+        <Link href="/how-to-play" className="text-sm text-gray-400 hover:text-gold-light font-ui underline">
+          How to Play
+        </Link>
       </div>
     </header>
   );

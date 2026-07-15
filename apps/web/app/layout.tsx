@@ -1,5 +1,5 @@
 import "./globals.css";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Oswald, Inter } from "next/font/google";
 import Providers from "@/components/Providers";
 
@@ -15,6 +15,13 @@ const fontUi = Inter({
 });
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://kouppi-web.vercel.app";
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#060612",
+};
 
 export const metadata: Metadata = {
   title: "KOUPPI",

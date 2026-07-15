@@ -51,25 +51,31 @@ export type AvatarConfig = {
 
 const SESSION_ROOM_KEY = "kouppi_active_room_code";
 const SESSION_ROOM_ID_KEY = "kouppi_active_room_id";
+const SESSION_SPECTATOR_KEY = "kouppi_active_room_spectator";
 
-function persistActiveRoom(code: string, roomId: string) {
+let joinRoomInFlight: Promise<{ success: boolean; error?: string; code?: string }> | null = null;
+let joinSpectatorInFlight: Promise<{ success: boolean; error?: string; code?: string }> | null = null;
+
+function persistActiveRoom(code: string, roomId: string, isSpectator = false) {
   if (typeof sessionStorage === "undefined") return;
   sessionStorage.setItem(SESSION_ROOM_KEY, code);
   sessionStorage.setItem(SESSION_ROOM_ID_KEY, roomId);
+  sessionStorage.setItem(SESSION_SPECTATOR_KEY, isSpectator ? "1" : "0");
 }
 
 function clearActiveRoomSession() {
   if (typeof sessionStorage === "undefined") return;
   sessionStorage.removeItem(SESSION_ROOM_KEY);
   sessionStorage.removeItem(SESSION_ROOM_ID_KEY);
+  sessionStorage.removeItem(SESSION_SPECTATOR_KEY);
 }
 
-export function getPersistedActiveRoom(): { code: string; roomId: string } | null {
+export function getPersistedActiveRoom(): { code: string; roomId: string; isSpectator: boolean } | null {
   if (typeof sessionStorage === "undefined") return null;
   const code = sessionStorage.getItem(SESSION_ROOM_KEY);
   const roomId = sessionStorage.getItem(SESSION_ROOM_ID_KEY);
   if (!code || !roomId) return null;
-  return { code, roomId };
+  return { code, roomId, isSpectator: sessionStorage.getItem(SESSION_SPECTATOR_KEY) === "1" };
 }
 
 export type TurnTimerInfo = {
@@ -102,6 +108,8 @@ type RemoteStore = {
   connected: boolean;
   connectionStatus: ConnectionStatus;
   roomUpdateVersion: number;
+  gameStateVersion: number;
+  pendingIntent: string | null;
   
   // Player identity
   playerId: string | null;
@@ -185,6 +193,8 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
   connected: false,
   connectionStatus: "disconnected" as ConnectionStatus,
   roomUpdateVersion: 0,
+  gameStateVersion: 0,
+  pendingIntent: null,
   playerId: null,
   playerName: null,
   roomId: null,
@@ -274,22 +284,28 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     s.on("disconnect", () => set({ connected: false, connectionStatus: "reconnecting" }));
     
     s.on("state", (snapshot: any) => {
-      if (snapshot) {
-        const existingPlayers = get().playersInRoom;
-        const avatarById = new Map(existingPlayers.map((p) => [p.id, p.avatar]));
-        const players: PlayerInfo[] =
-          snapshot.players?.map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            avatar: avatarById.get(p.id),
-          })) || [];
-        set({ 
-          state: snapshot, 
-          playersInRoom: players,
-          gameStarted: snapshot.phase !== "Lobby" && snapshot.phase !== undefined,
-          roundEnded: snapshot.phase === "RoundEnd",
-        });
-      }
+      if (!snapshot) return;
+      const incomingVersion = typeof snapshot.version === "number" ? snapshot.version : undefined;
+      const currentVersion = get().gameStateVersion;
+      if (incomingVersion !== undefined && incomingVersion < currentVersion) return;
+
+      const { version: _version, ...gameState } = snapshot;
+      const existingPlayers = get().playersInRoom;
+      const avatarById = new Map(existingPlayers.map((p) => [p.id, p.avatar]));
+      const players: PlayerInfo[] =
+        gameState.players?.map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          avatar: avatarById.get(p.id),
+        })) || [];
+      set({
+        state: gameState as GameState,
+        gameStateVersion: incomingVersion ?? currentVersion,
+        pendingIntent: null,
+        playersInRoom: players,
+        gameStarted: gameState.phase !== "Lobby" && gameState.phase !== undefined,
+        roundEnded: gameState.phase === "RoundEnd",
+      });
     });
     
     s.on("roomUpdate", (data: {
@@ -590,12 +606,14 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     });
   },
 
-  joinRoom: async (roomIdOrCode, password) => {
+  joinRoom: async (roomIdOrCode, password): Promise<{ success: boolean; error?: string; code?: string }> => {
+    if (joinRoomInFlight) return await joinRoomInFlight;
+
+    const promise = (async (): Promise<{ success: boolean; error?: string; code?: string }> => {
     const { socket, playerId, playerName, playerAvatar, roomId: currentRoomId } = get();
     if (!socket) return { success: false, error: "Not connected" };
     if (!playerId || !playerName) return { success: false, error: "Identity not set" };
     
-    // Clear any previous room state first
     if (currentRoomId && currentRoomId !== roomIdOrCode) {
       get().clearRoomState();
     }
@@ -615,7 +633,9 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
           const players: PlayerInfo[] = roomData?.players || [];
           const resolvedRoomId = roomData?.roomId || roomIdOrCode;
           const resolvedCode = roomData?.code || roomIdOrCode.toUpperCase();
-          persistActiveRoom(resolvedCode, resolvedRoomId);
+          persistActiveRoom(resolvedCode, resolvedRoomId, false);
+          const incomingVersion = typeof snap?.version === "number" ? snap.version : 0;
+          const { version: _v, ...gameState } = snap || {};
           
           set({ 
             roomId: resolvedRoomId,
@@ -623,7 +643,8 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
             isHost,
             hostId: roomData?.hostId || null,
             isSpectator: false,
-            state: snap || null,
+            state: snap ? (gameState as GameState) : null,
+            gameStateVersion: incomingVersion,
             playersInRoom: players,
             spectatorsInRoom: roomData?.spectators || [],
             gameStarted: snap?.phase !== "Lobby" && snap?.phase !== undefined,
@@ -634,6 +655,14 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
         }
       });
     });
+    })();
+
+    joinRoomInFlight = promise;
+    try {
+      return await promise;
+    } finally {
+      joinRoomInFlight = null;
+    }
   },
 
   setReady: async (ready) => {
@@ -721,6 +750,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     const { playerId, playerName, roomId } = get();
     if (!playerId || !playerName) return { success: false, error: "Identity not set" };
     if (roomId) return { success: true };
+    if (persisted.isSpectator) return get().joinAsSpectator(persisted.code);
     return get().joinRoom(persisted.code);
   },
 
@@ -850,9 +880,14 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
   },
 
   sendIntent: (intent) => {
-    const { socket, roomId } = get();
-    if (!socket || !roomId) return;
-    socket.emit("intent", { roomId, intent });
+    const { socket, roomId, pendingIntent } = get();
+    if (!socket || !roomId || pendingIntent) return;
+    set({ pendingIntent: intent.type });
+    socket.emit("intent", { roomId, intent }, (err: any) => {
+      if (err) {
+        set({ pendingIntent: null, lastError: err.message || "Action failed" });
+      }
+    });
   },
   
   requestNewRound: async () => {
@@ -949,7 +984,10 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
   },
   
   // Spectator actions
-  joinAsSpectator: async (roomId, password) => {
+  joinAsSpectator: async (roomId, password): Promise<{ success: boolean; error?: string; code?: string }> => {
+    if (joinSpectatorInFlight) return await joinSpectatorInFlight;
+
+    const promise = (async (): Promise<{ success: boolean; error?: string; code?: string }> => {
     const { socket, playerId, playerName, playerAvatar, roomId: currentRoomId } = get();
     if (!socket) return { success: false, error: "Not connected" };
     if (!playerId || !playerName) return { success: false, error: "Identity not set" };
@@ -968,23 +1006,39 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
           set({ lastError: err.message || "Join as spectator failed" });
           resolve({ success: false, error: err.message || err.code, code: err.code });
         } else {
+          const resolvedRoomId = roomData?.roomId || roomId;
+          const resolvedCode = roomData?.code || roomId.toUpperCase();
+          persistActiveRoom(resolvedCode, resolvedRoomId, true);
+          const incomingVersion = typeof snap?.version === "number" ? snap.version : 0;
+          const { version: _v, ...gameState } = snap || {};
           const players: PlayerInfo[] = roomData?.players || [];
           const spectators: PlayerInfo[] = roomData?.spectators || [];
           
           set({ 
-            roomId, 
+            roomId: resolvedRoomId,
+            roomCode: resolvedCode,
             isHost: false,
             isSpectator: true,
-            state: snap || null,
+            state: snap ? (gameState as GameState) : null,
+            gameStateVersion: incomingVersion,
             playersInRoom: players,
             spectatorsInRoom: spectators,
             gameStarted: snap?.phase !== "Lobby" && snap?.phase !== undefined,
             lastError: null,
+            roomUpdateVersion: roomData?.version ?? 0,
           });
           resolve({ success: true });
         }
       });
     });
+    })();
+
+    joinSpectatorInFlight = promise;
+    try {
+      return await promise;
+    } finally {
+      joinSpectatorInFlight = null;
+    }
   },
   
   leaveSpectator: () => {
