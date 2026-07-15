@@ -11,6 +11,7 @@ import {
   beginSpectatorDisconnectGrace, cancelSpectatorDisconnectGrace, removeSpectator,
   addChatMessage, getChatMessages, clearChatMessages, cleanupEmptyRooms,
   resolveRoomIdentifier, buildRoomUpdatePayload, buildStatePayload, bumpStateRevision, bumpRoomRevision, setPlayerReady, kickPlayer, transferHost,
+  banPlayerFromRoom, setRoomChatMuted, setPlayerChatMuted, isChatSendBlocked, isPlayerBanned,
   startGraceTickBroadcast, stopGraceTickBroadcast, generateRoomCode,
   addSystemChatMessage, checkChatRateLimit, recordChatSend,
 } from "./rooms.js";
@@ -311,7 +312,7 @@ export function createKouppiServer(opts?: {
         const cfg: TableConfig = { ...defaultConfig, ...(data.config as any) };
         const creatorName = sanitizeDisplayName(data.creator.name);
         if (!creatorName) {
-          const err = { code: "invalid_name", message: "Player name is required" };
+          const err = { code: "inappropriate_name", message: "That name is not allowed" };
           cb ? cb(err) : socket.emit("error", err);
           return;
         }
@@ -348,7 +349,7 @@ export function createKouppiServer(opts?: {
 
         const playerName = sanitizeDisplayName(data.player.name);
         if (!playerName) {
-          const err = { code: "invalid_name", message: "Player name is required" };
+          const err = { code: "inappropriate_name", message: "That name is not allowed" };
           cb ? cb(err) : socket.emit("error", err);
           return;
         }
@@ -362,6 +363,7 @@ export function createKouppiServer(opts?: {
             : msg === "game_in_progress" ? "game_in_progress"
             : msg === "room_not_found" ? "room_not_found"
             : msg === "slot_taken" ? "slot_taken"
+            : msg === "player_banned" ? "player_banned"
             : "bad_request";
           const e2 = { code, message: msg };
           cb ? cb(e2) : socket.emit("error", e2);
@@ -502,6 +504,138 @@ export function createKouppiServer(opts?: {
       }
     });
 
+    socket.on("banPlayer", (payload: { roomId: string; targetId: string }, cb?: (err: any|null) => void) => {
+      try {
+        const resolvedId = resolveRoomIdentifier(payload.roomId);
+        if (!resolvedId) {
+          cb?.({ code: "room_not_found", message: "Room not found" });
+          return;
+        }
+        const room = getRoom(resolvedId)!;
+        const sessionPlayer = findPlayerBySocket(room, socket.id);
+        if (!sessionPlayer) {
+          cb?.({ code: "not_in_room", message: "Not in room" });
+          return;
+        }
+        const target = room.players.find((p) => p.id === payload.targetId);
+        const targetName = target?.name || "Player";
+        const targetSocketId = target?.socketId;
+        banPlayerFromRoom(resolvedId, sessionPlayer.id, payload.targetId);
+        logServerEvent("player_banned", {
+          roomId: resolvedId,
+          hostId: sessionPlayer.id,
+          targetId: payload.targetId,
+        });
+        if (targetSocketId) {
+          const bannedSocket = io.sockets.sockets.get(targetSocketId);
+          bannedSocket?.emit("playerKicked", { playerId: payload.targetId, reason: "banned_by_host" });
+          bannedSocket?.leave(resolvedId);
+        }
+        emitSystemMessage(resolvedId, `${targetName} was banned by the host`);
+        const closed = finalizePlayerRemoval(resolvedId);
+        if (!closed) emitRoomUpdate(resolvedId);
+        cb?.(null);
+      } catch (e: any) {
+        const code =
+          e?.message === "not_host" ? "not_host"
+          : e?.message === "cannot_kick_self" ? "cannot_kick_self"
+          : e?.message === "player_not_found" ? "player_not_found"
+          : "ban_failed";
+        cb?.({ code, message: e?.message || String(e) });
+      }
+    });
+
+    socket.on("setRoomChatMuted", (payload: { roomId: string; muted: boolean }, cb?: (err: any|null, roomData?: any) => void) => {
+      try {
+        const resolvedId = resolveRoomIdentifier(payload.roomId);
+        if (!resolvedId) {
+          cb?.({ code: "room_not_found", message: "Room not found" });
+          return;
+        }
+        const room = getRoom(resolvedId)!;
+        const sessionPlayer = findPlayerBySocket(room, socket.id);
+        if (!sessionPlayer) {
+          cb?.({ code: "not_in_room", message: "Not in room" });
+          return;
+        }
+        setRoomChatMuted(resolvedId, sessionPlayer.id, !!payload.muted);
+        emitSystemMessage(resolvedId, payload.muted ? "The host muted chat for everyone" : "The host unmuted chat");
+        const roomData = buildRoomData(getRoom(resolvedId)!);
+        io.to(resolvedId).emit("roomUpdate", roomData);
+        cb?.(null, roomData);
+      } catch (e: any) {
+        cb?.({ code: e?.message === "not_host" ? "not_host" : "bad_request", message: e?.message || String(e) });
+      }
+    });
+
+    socket.on("mutePlayerChat", (payload: { roomId: string; targetId: string; muted: boolean }, cb?: (err: any|null, roomData?: any) => void) => {
+      try {
+        const resolvedId = resolveRoomIdentifier(payload.roomId);
+        if (!resolvedId) {
+          cb?.({ code: "room_not_found", message: "Room not found" });
+          return;
+        }
+        const room = getRoom(resolvedId)!;
+        const sessionPlayer = findPlayerBySocket(room, socket.id);
+        if (!sessionPlayer) {
+          cb?.({ code: "not_in_room", message: "Not in room" });
+          return;
+        }
+        const target = room.players.find((p) => p.id === payload.targetId);
+        setPlayerChatMuted(resolvedId, sessionPlayer.id, payload.targetId, !!payload.muted);
+        if (target) {
+          emitSystemMessage(
+            resolvedId,
+            payload.muted ? `${target.name}'s chat was muted by the host` : `${target.name}'s chat was unmuted`
+          );
+        }
+        const roomData = buildRoomData(getRoom(resolvedId)!);
+        io.to(resolvedId).emit("roomUpdate", roomData);
+        cb?.(null, roomData);
+      } catch (e: any) {
+        cb?.({ code: e?.message === "not_host" ? "not_host" : "bad_request", message: e?.message || String(e) });
+      }
+    });
+
+    socket.on(
+      "reportPlayer",
+      (payload: { roomId: string; targetId: string; reason: string; details?: string }, cb?: (err: any|null) => void) => {
+        try {
+          const resolvedId = resolveRoomIdentifier(payload.roomId);
+          if (!resolvedId) {
+            cb?.({ code: "room_not_found", message: "Room not found" });
+            return;
+          }
+          const room = getRoom(resolvedId)!;
+          const reporter = findPlayerBySocket(room, socket.id);
+          if (!reporter) {
+            cb?.({ code: "not_in_room", message: "Not in room" });
+            return;
+          }
+          const target =
+            room.players.find((p) => p.id === payload.targetId) ||
+            room.spectators?.find((s) => s.id === payload.targetId);
+          const validReasons = new Set(["harassment", "spam", "inappropriate", "cheating", "other"]);
+          if (!validReasons.has(payload.reason)) {
+            cb?.({ code: "bad_request", message: "Invalid report reason" });
+            return;
+          }
+          logServerEvent("player_reported", {
+            roomId: resolvedId,
+            reporterId: reporter.id,
+            reporterName: reporter.name,
+            targetId: payload.targetId,
+            targetName: target?.name || "unknown",
+            reason: payload.reason,
+            details: payload.details?.slice(0, 200) || null,
+          });
+          cb?.(null);
+        } catch (e: any) {
+          cb?.({ code: "report_failed", message: e?.message || String(e) });
+        }
+      }
+    );
+
     // Subscribe to career room - player already added server-side during game start
     socket.on("subscribeCareerRoom", (
       payload: { roomId: string; playerId: string; playerName: string; avatar?: any },
@@ -589,6 +723,7 @@ export function createKouppiServer(opts?: {
         emitState(roomId);
         const updated = getRoom(roomId);
         const ackState = updated ? buildStatePayload(updated) : undefined;
+        markRateLimit("intent");
         cb ? cb(null, ackState) : (ackState ? socket.emit("state", ackState) : undefined);
         
         // For career games, update bankroll in database after each action
@@ -1070,7 +1205,13 @@ export function createKouppiServer(opts?: {
 
         const spectatorName = sanitizeDisplayName(spectator.name);
         if (!spectatorName) {
-          const err = { code: "invalid_name", message: "Spectator name is required" };
+          const err = { code: "inappropriate_name", message: "That name is not allowed" };
+          cb ? cb(err) : socket.emit("error", err);
+          return;
+        }
+
+        if (isPlayerBanned(room, spectator.id)) {
+          const err = { code: "player_banned", message: "You are banned from this room" };
           cb ? cb(err) : socket.emit("error", err);
           return;
         }
@@ -1207,6 +1348,15 @@ export function createKouppiServer(opts?: {
           cb ? cb(err) : socket.emit("error", err);
           return;
         }
+
+        if (isChatSendBlocked(room, player.id)) {
+          const err = {
+            code: room.chatMutedAll ? "chat_muted_all" : "chat_muted",
+            message: room.chatMutedAll ? "Chat is muted for this room" : "Chat is muted for you",
+          };
+          cb ? cb(err) : socket.emit("error", err);
+          return;
+        }
         
         // Validate message
         if (!message || typeof message !== "string" || message.trim().length === 0) {
@@ -1294,6 +1444,15 @@ export function createKouppiServer(opts?: {
         const player = room.players.find((p: any) => p.socketId === socket.id);
         if (!player) {
           const err = { code: "not_in_room", message: "You are not in this room" };
+          cb ? cb(err) : socket.emit("error", err);
+          return;
+        }
+
+        if (isChatSendBlocked(room, player.id)) {
+          const err = {
+            code: room.chatMutedAll ? "chat_muted_all" : "chat_muted",
+            message: room.chatMutedAll ? "Chat is muted for this room" : "Chat is muted for you",
+          };
           cb ? cb(err) : socket.emit("error", err);
           return;
         }

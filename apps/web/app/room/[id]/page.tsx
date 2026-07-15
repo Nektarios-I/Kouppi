@@ -65,6 +65,13 @@ export default function RoomPage() {
     leaveRoom,
     lastError,
     clearError,
+    chatMessages,
+    reportPlayer,
+    banPlayer,
+    setRoomChatMuted,
+    mutePlayerChat,
+    chatMutedAll,
+    chatMutedPlayerIds,
   } = useRemoteGameStore();
 
   const [starting, setStarting] = useState(false);
@@ -84,6 +91,15 @@ export default function RoomPage() {
 
   const roomSessionRef = useRef({ roomId, isSpectator, leaveRoom, leaveSpectator });
   roomSessionRef.current = { roomId, isSpectator, leaveRoom, leaveSpectator };
+  const lastSystemChatIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!Array.isArray(chatMessages) || chatMessages.length === 0) return;
+    const latest = [...chatMessages].reverse().find((m) => m.isSystem || m.playerId === "system");
+    if (!latest || latest.id === lastSystemChatIdRef.current) return;
+    lastSystemChatIdRef.current = latest.id;
+    showToast(latest.message, "info");
+  }, [chatMessages, showToast]);
 
   useEffect(() => {
     connect();
@@ -329,6 +345,30 @@ export default function RoomPage() {
     router.push("/lobby");
   };
 
+  const handleReportPlayer = async (targetId: string, reason: string) => {
+    const result = await reportPlayer(targetId, reason);
+    if (result.success) showToast("Report submitted — thank you", "success");
+    else showToast(result.error || "Could not submit report", "error");
+  };
+
+  const handleBanPlayer = async (targetId: string) => {
+    if (!window.confirm("Ban this player from rejoining this room?")) return;
+    const result = await banPlayer(targetId);
+    if (result.success) showToast("Player banned from room", "warning");
+    else showToast(result.error || "Could not ban player", "error");
+  };
+
+  const handleMutePlayerChat = async (targetId: string, muted: boolean) => {
+    const result = await mutePlayerChat(targetId, muted);
+    if (!result.success) showToast(result.error || "Could not update chat mute", "error");
+  };
+
+  const handleToggleRoomChatMuted = async (muted: boolean) => {
+    const result = await setRoomChatMuted(muted);
+    if (result.success) showToast(muted ? "Chat muted for everyone" : "Chat unmuted", "info");
+    else showToast(result.error || "Could not update chat mute", "error");
+  };
+
   if (!playerName && !isCareerGame) {
     return (
       <PreGameShell>
@@ -454,6 +494,12 @@ export default function RoomPage() {
         onTransferHost={handleTransferHost}
         onCloseRoom={handleCloseRoom}
         onClearError={clearError}
+        onReportPlayer={handleReportPlayer}
+        onBanPlayer={handleBanPlayer}
+        onMutePlayerChat={handleMutePlayerChat}
+        onToggleRoomChatMuted={handleToggleRoomChatMuted}
+        chatMutedAll={chatMutedAll}
+        chatMutedPlayerIds={chatMutedPlayerIds}
       />
       <Chat />
 

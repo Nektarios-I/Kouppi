@@ -84,4 +84,10 @@ export type Room = {
   revision?: number;
   /** Monotonic counter for game state snapshots */
   stateRevision?: number;
+  /** Players banned from rejoining this room session */
+  bannedPlayerIds?: string[];
+  /** Host muted all chat and emotes */
+  chatMutedAll?: boolean;
+  /** Host-muted individual players (cannot send chat/emotes) */
+  chatMutedPlayerIds?: string[];
 };

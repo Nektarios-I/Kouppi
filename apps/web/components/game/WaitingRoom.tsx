@@ -5,6 +5,7 @@ import type { AvatarConfig, PlayerInfo } from "@/store/remoteGameStore";
 import AvatarPicker, { Avatar } from "@/components/AvatarPicker";
 import { HudButton } from "./HudButton";
 import RoomInvitePanel from "./RoomInvitePanel";
+import PlayerModerationMenu, { type ReportReason } from "./PlayerModerationMenu";
 import {
   LobbyCard,
   LobbyAlert,
@@ -31,6 +32,12 @@ export interface WaitingRoomProps {
   onTransferHost: (targetId: string) => void;
   onCloseRoom: () => void;
   onClearError?: () => void;
+  onReportPlayer?: (targetId: string, reason: ReportReason) => void;
+  onBanPlayer?: (targetId: string) => void;
+  onMutePlayerChat?: (targetId: string, muted: boolean) => void;
+  onToggleRoomChatMuted?: (muted: boolean) => void;
+  chatMutedAll?: boolean;
+  chatMutedPlayerIds?: string[];
 }
 
 export default function WaitingRoom({
@@ -53,6 +60,12 @@ export default function WaitingRoom({
   onTransferHost,
   onCloseRoom,
   onClearError,
+  onReportPlayer,
+  onBanPlayer,
+  onMutePlayerChat,
+  onToggleRoomChatMuted,
+  chatMutedAll,
+  chatMutedPlayerIds = [],
 }: WaitingRoomProps) {
   const me = players.find((p) => p.id === playerId);
   const allReady = players.length >= 2 && players.every((p) => p.ready && p.connected !== false);
@@ -135,6 +148,17 @@ export default function WaitingRoom({
                       </HudButton>
                     </>
                   )}
+                  {player.id !== playerId && onReportPlayer && (
+                    <PlayerModerationMenu
+                      playerId={player.id}
+                      playerName={player.name}
+                      isHost={isHost}
+                      onReport={onReportPlayer}
+                      onBan={isHost ? onBanPlayer : undefined}
+                      onMuteChat={isHost ? onMutePlayerChat : undefined}
+                      chatMutedByHost={chatMutedPlayerIds.includes(player.id)}
+                    />
+                  )}
                 </div>
               </div>
             ))}
@@ -175,6 +199,18 @@ export default function WaitingRoom({
       <LobbyCard title="Invite Friends" icon="⛓">
         <RoomInvitePanel roomCode={roomCode} onCopyLink={onCopyLink} />
       </LobbyCard>
+
+      {isHost && onToggleRoomChatMuted && (
+        <LobbyCard title="Chat Controls" icon="🔇">
+          <HudButton
+            variant={chatMutedAll ? "success" : "ghost"}
+            fullWidth
+            onClick={() => onToggleRoomChatMuted(!chatMutedAll)}
+          >
+            {chatMutedAll ? "Unmute chat for everyone" : "Mute chat for everyone"}
+          </HudButton>
+        </LobbyCard>
+      )}
 
       <div className="flex flex-col gap-3 mt-2">
         {me && (

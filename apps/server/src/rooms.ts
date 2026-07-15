@@ -81,6 +81,8 @@ export function buildRoomUpdatePayload(room: Room): {
   players: RoomPlayerPayload[];
   spectators: RoomSpectatorPayload[];
   hostId?: string;
+  chatMutedAll?: boolean;
+  chatMutedPlayerIds?: string[];
 } {
   const now = Date.now();
   return {
@@ -108,6 +110,8 @@ export function buildRoomUpdatePayload(room: Room): {
           : null,
       })) || [],
     hostId: room.hostId,
+    chatMutedAll: !!room.chatMutedAll,
+    chatMutedPlayerIds: room.chatMutedPlayerIds ? [...room.chatMutedPlayerIds] : [],
   };
 }
 
@@ -214,6 +218,7 @@ export function joinRoom(id: string, player: PlayerSession): Room {
   const roomId = resolveRoomIdentifier(id);
   if (!roomId) throw new Error("room_not_found");
   const room = rooms.get(roomId)!;
+  if (isPlayerBanned(room, player.id)) throw new Error("player_banned");
   const exists = room.players.find(p => p.id === player.id);
   if (room.started && !exists) {
     throw new Error("game_in_progress");
@@ -279,6 +284,57 @@ export function transferHost(roomId: string, hostId: string, newHostId: string):
   room.hostId = newHostId;
   bumpRoomRevision(room);
   return room;
+}
+
+export function isPlayerBanned(room: Room, playerId: string): boolean {
+  return (room.bannedPlayerIds || []).includes(playerId);
+}
+
+export function banPlayerFromRoom(roomId: string, hostId: string, targetId: string): Room {
+  const resolved = resolveRoomIdentifier(roomId);
+  if (!resolved) throw new Error("room_not_found");
+  const room = rooms.get(resolved)!;
+  if (room.hostId !== hostId) throw new Error("not_host");
+  if (targetId === hostId) throw new Error("cannot_kick_self");
+  const target = room.players.find((p) => p.id === targetId);
+  if (!target) throw new Error("player_not_found");
+  if (!room.bannedPlayerIds) room.bannedPlayerIds = [];
+  if (!room.bannedPlayerIds.includes(targetId)) room.bannedPlayerIds.push(targetId);
+  cancelDisconnectGrace(target);
+  room.players = room.players.filter((p) => p.id !== targetId);
+  bumpRoomRevision(room);
+  return room;
+}
+
+export function setRoomChatMuted(roomId: string, hostId: string, muted: boolean): Room {
+  const resolved = resolveRoomIdentifier(roomId);
+  if (!resolved) throw new Error("room_not_found");
+  const room = rooms.get(resolved)!;
+  if (room.hostId !== hostId) throw new Error("not_host");
+  room.chatMutedAll = muted;
+  bumpRoomRevision(room);
+  return room;
+}
+
+export function setPlayerChatMuted(roomId: string, hostId: string, targetId: string, muted: boolean): Room {
+  const resolved = resolveRoomIdentifier(roomId);
+  if (!resolved) throw new Error("room_not_found");
+  const room = rooms.get(resolved)!;
+  if (room.hostId !== hostId) throw new Error("not_host");
+  if (!room.players.some((p) => p.id === targetId)) throw new Error("player_not_found");
+  if (!room.chatMutedPlayerIds) room.chatMutedPlayerIds = [];
+  if (muted) {
+    if (!room.chatMutedPlayerIds.includes(targetId)) room.chatMutedPlayerIds.push(targetId);
+  } else {
+    room.chatMutedPlayerIds = room.chatMutedPlayerIds.filter((id) => id !== targetId);
+  }
+  bumpRoomRevision(room);
+  return room;
+}
+
+export function isChatSendBlocked(room: Room, playerId: string): boolean {
+  if (room.chatMutedAll && playerId !== room.hostId) return true;
+  return (room.chatMutedPlayerIds || []).includes(playerId);
 }
 
 export const CHAT_MIN_INTERVAL_MS = 1000;

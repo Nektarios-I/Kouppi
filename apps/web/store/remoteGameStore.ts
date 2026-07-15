@@ -2,6 +2,8 @@
 import { create } from "zustand";
 import { io, Socket } from "socket.io-client";
 import type { GameState } from "@kouppi/game-core";
+import { formatSocketError } from "@/lib/errorMessages";
+import { isPlayerMuted } from "@/lib/mutedPlayers";
 
 // Local Intent type to avoid cross-package type resolution issues in dev
 type Intent =
@@ -152,6 +154,11 @@ type RemoteStore = {
   
   // Error handling
   lastError: string | null;
+  emoteCooldownUntil: number | null;
+
+  // Moderation (from server room state)
+  chatMutedAll: boolean;
+  chatMutedPlayerIds: string[];
   
   // Actions
   connect: (url?: string) => void;
@@ -185,6 +192,10 @@ type RemoteStore = {
   // Spectator actions
   joinAsSpectator: (roomId: string, password?: string) => Promise<{ success: boolean; error?: string; code?: string }>;
   leaveSpectator: () => void;
+  reportPlayer: (targetId: string, reason: string) => Promise<{ success: boolean; error?: string }>;
+  banPlayer: (targetId: string) => Promise<{ success: boolean; error?: string; code?: string }>;
+  setRoomChatMuted: (muted: boolean) => Promise<{ success: boolean; error?: string }>;
+  mutePlayerChat: (targetId: string, muted: boolean) => Promise<{ success: boolean; error?: string }>;
 };
 
 export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
@@ -216,6 +227,9 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
   playerAvatar: null,
   rooms: [],
   lastError: null,
+  emoteCooldownUntil: null,
+  chatMutedAll: false,
+  chatMutedPlayerIds: [],
 
   connect: (url?: string) => {
     // Use provided URL, or environment variable, or default to localhost
@@ -315,6 +329,8 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
       players: PlayerInfo[];
       spectators?: PlayerInfo[];
       hostId: string;
+      chatMutedAll?: boolean;
+      chatMutedPlayerIds?: string[];
     } | null) => {
       if (!data) return;
       const current = get().roomUpdateVersion;
@@ -359,6 +375,8 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
         hostId: data.hostId || null,
         isSpectator: stillInRoomAsSpectator && !stillInRoomAsPlayer,
         roomUpdateVersion: typeof data.version === "number" ? data.version : current,
+        chatMutedAll: !!data.chatMutedAll,
+        chatMutedPlayerIds: data.chatMutedPlayerIds || [],
       });
     });
     
@@ -425,6 +443,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
         afk: "You were kicked for being AFK",
         no_decision: "You were removed for not choosing stay or leave",
         kicked_by_host: "You were removed by the host",
+        banned_by_host: "You were banned from this room",
       };
 
       clearActiveRoomSession();
@@ -453,18 +472,23 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     
     // Chat message received
     s.on("chatMessage", (msg: ChatMessage) => {
+      if (!msg.isSystem && msg.playerId !== "system" && isPlayerMuted(msg.playerId)) return;
       set((prev) => ({ 
-        chatMessages: [...prev.chatMessages, msg].slice(-100) // Keep last 100 messages
+        chatMessages: [...prev.chatMessages, msg].slice(-100)
       }));
     });
     
     // Chat history received
     s.on("chatHistory", (messages: ChatMessage[]) => {
-      set({ chatMessages: messages || [] });
+      const filtered = (messages || []).filter(
+        (msg) => msg.isSystem || msg.playerId === "system" || !isPlayerMuted(msg.playerId)
+      );
+      set({ chatMessages: filtered });
     });
     
     // Emote received
     s.on("emote", (emoteEvent: EmoteEvent) => {
+      if (isPlayerMuted(emoteEvent.playerId)) return;
       // Add emote to active list
       set((prev) => ({
         activeEmotes: [...prev.activeEmotes, emoteEvent]
@@ -479,7 +503,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     
     s.on("error", (err: any) => {
       console.warn("server error", err);
-      set({ lastError: err?.message || "Unknown error" });
+      set({ lastError: formatSocketError(err?.code, err?.message) });
     });
     
     s.on("connect_error", (err: any) => {
@@ -582,8 +606,8 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
         password: password?.trim() || undefined,
       }, (err: any, snap: any, roomData: any) => {
         if (err) {
-          set({ lastError: err.message || "Create failed" });
-          resolve({ success: false, error: err.message || err.code });
+          set({ lastError: formatSocketError(err.code, err.message) });
+          resolve({ success: false, error: formatSocketError(err.code, err.message), code: err.code });
         } else {
           const resolvedCode = roomData?.code || publicCode || "";
           const resolvedRoomId = roomData?.roomId || publicCode || "";
@@ -625,9 +649,9 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
         password: password?.trim() || undefined,
       }, (err: any, snap: any, roomData: any) => {
         if (err) {
-          set({ lastError: err.message || "Join failed" });
+          set({ lastError: formatSocketError(err.code, err.message) });
           const errorCode = err.code || (err.message?.includes("password") ? "wrong_password" : "join_failed");
-          resolve({ success: false, error: err.message || err.code, code: errorCode });
+          resolve({ success: false, error: formatSocketError(errorCode, err.message), code: errorCode });
         } else {
           const isHost = roomData?.hostId === playerId;
           const players: PlayerInfo[] = roomData?.players || [];
@@ -946,8 +970,8 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     if (!socket || !roomId) return;
     if (!message || message.trim().length === 0) return;
     socket.emit("chatMessage", { roomId, message: message.trim() }, (err: any) => {
-      if (err?.code === "rate_limited") {
-        set({ lastError: err.message || "Slow down — too many messages" });
+      if (err) {
+        set({ lastError: formatSocketError(err.code, err.message) });
       }
     });
   },
@@ -969,7 +993,19 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     const { socket, roomId } = get();
     if (!socket || !roomId) return;
     if (!emote || emote.trim().length === 0 || emote.length > 32) return;
-    socket.emit("sendEmote", { roomId, emote: emote.trim() });
+    const now = Date.now();
+    if (get().emoteCooldownUntil && now < (get().emoteCooldownUntil || 0)) return;
+    socket.emit("sendEmote", { roomId, emote: emote.trim() }, (err: any) => {
+      if (err?.code === "rate_limited") {
+        set({
+          lastError: formatSocketError(err.code, err.message),
+          emoteCooldownUntil: now + 500,
+        });
+        setTimeout(() => set({ emoteCooldownUntil: null }), 500);
+      } else if (err) {
+        set({ lastError: formatSocketError(err.code, err.message) });
+      }
+    });
   },
   
   // Avatar actions
@@ -1046,7 +1082,6 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     if (socket && roomId) {
       socket.emit("leaveSpectator", { roomId });
     }
-    // Reset ALL room-related state to prevent leaking into next session
     set({
       roomId: null,
       isHost: false,
@@ -1064,6 +1099,64 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
       chatMessages: [],
       activeEmotes: [],
       lastError: null,
+      chatMutedAll: false,
+      chatMutedPlayerIds: [],
+    });
+  },
+
+  reportPlayer: (targetId, reason) => {
+    const { socket, roomId } = get();
+    if (!socket || !roomId) return Promise.resolve({ success: false, error: "Not in a room" });
+    return new Promise((resolve) => {
+      socket.emit("reportPlayer", { roomId, targetId, reason }, (err: any) => {
+        if (err) resolve({ success: false, error: formatSocketError(err.code, err.message) });
+        else resolve({ success: true });
+      });
+    });
+  },
+
+  banPlayer: (targetId) => {
+    const { socket, roomId } = get();
+    if (!socket || !roomId) return Promise.resolve({ success: false, error: "Not in a room" });
+    return new Promise((resolve) => {
+      socket.emit("banPlayer", { roomId, targetId }, (err: any) => {
+        if (err) resolve({ success: false, error: formatSocketError(err.code, err.message), code: err.code });
+        else resolve({ success: true });
+      });
+    });
+  },
+
+  setRoomChatMuted: (muted) => {
+    const { socket, roomId } = get();
+    if (!socket || !roomId) return Promise.resolve({ success: false, error: "Not in a room" });
+    return new Promise((resolve) => {
+      socket.emit("setRoomChatMuted", { roomId, muted }, (err: any, roomData: any) => {
+        if (err) resolve({ success: false, error: formatSocketError(err.code, err.message) });
+        else {
+          set({
+            chatMutedAll: !!roomData?.chatMutedAll,
+            chatMutedPlayerIds: roomData?.chatMutedPlayerIds || [],
+          });
+          resolve({ success: true });
+        }
+      });
+    });
+  },
+
+  mutePlayerChat: (targetId, muted) => {
+    const { socket, roomId } = get();
+    if (!socket || !roomId) return Promise.resolve({ success: false, error: "Not in a room" });
+    return new Promise((resolve) => {
+      socket.emit("mutePlayerChat", { roomId, targetId, muted }, (err: any, roomData: any) => {
+        if (err) resolve({ success: false, error: formatSocketError(err.code, err.message) });
+        else {
+          set({
+            chatMutedAll: !!roomData?.chatMutedAll,
+            chatMutedPlayerIds: roomData?.chatMutedPlayerIds || [],
+          });
+          resolve({ success: true });
+        }
+      });
     });
   },
 }));

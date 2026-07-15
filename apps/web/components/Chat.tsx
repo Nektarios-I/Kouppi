@@ -5,8 +5,18 @@ import { useRemoteGameStore, ChatMessage } from "@/store/remoteGameStore";
 import { HudButton, HudIconButton } from "@/components/game/HudButton";
 
 export default function Chat({ collapsed = false }: { collapsed?: boolean }) {
-  const { chatMessages, sendChatMessage, fetchChatHistory, playerId, roomId, lastError, clearError } =
-    useRemoteGameStore();
+  const {
+    chatMessages,
+    sendChatMessage,
+    fetchChatHistory,
+    playerId,
+    roomId,
+    lastError,
+    clearError,
+    chatMutedAll,
+    chatMutedPlayerIds,
+    isHost,
+  } = useRemoteGameStore();
   const [message, setMessage] = useState("");
   const [isOpen, setIsOpen] = useState(!collapsed);
   const [lastReadCount, setLastReadCount] = useState(0);
@@ -47,6 +57,11 @@ export default function Chat({ collapsed = false }: { collapsed?: boolean }) {
     const date = new Date(timestamp);
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
+
+  const chatBlocked =
+    chatMutedAll && !isHost
+      ? true
+      : !!playerId && (chatMutedPlayerIds || []).includes(playerId);
 
   if (!isOpen) {
     const unreadCount = Math.max(0, chatMessages.length - lastReadCount);
@@ -127,6 +142,11 @@ export default function Chat({ collapsed = false }: { collapsed?: boolean }) {
       </div>
 
       <div className="chat-input-bar">
+        {chatMutedAll && (
+          <p className="text-xs text-warning font-ui mb-2" role="status">
+            The host has muted chat for this room.
+          </p>
+        )}
         {lastError && (
           <p className="text-xs text-warning font-ui mb-2" role="alert">
             {lastError}
@@ -142,11 +162,12 @@ export default function Chat({ collapsed = false }: { collapsed?: boolean }) {
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Type a message…"
+            placeholder={chatBlocked ? "Chat is muted" : "Type a message…"}
             maxLength={500}
             className="lobby-input flex-1 !py-2 text-sm font-ui"
+            disabled={chatBlocked}
           />
-          <HudButton variant="bet" size="sm" onClick={handleSend} disabled={!message.trim()}>
+          <HudButton variant="bet" size="sm" onClick={handleSend} disabled={!message.trim() || chatBlocked}>
             Send
           </HudButton>
         </div>
