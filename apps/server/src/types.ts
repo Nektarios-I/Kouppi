@@ -90,4 +90,12 @@ export type Room = {
   chatMutedAll?: boolean;
   /** Host-muted individual players (cannot send chat/emotes) */
   chatMutedPlayerIds?: string[];
+  /** Visible in public lobby browser */
+  listedInLobby?: boolean;
+  createdAt?: number;
+  presetLabel?: string;
+  sessionStats?: {
+    handsPlayed: number;
+    biggestPot: number;
+  };
 };

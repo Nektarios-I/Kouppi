@@ -49,6 +49,8 @@ export default function MultiplayerTableGraphics() {
     decideStay,
     decideLeave,
     requestNewRound,
+    playAgain,
+    sessionSummary,
     pendingIntent,
   } = useRemoteGameStore();
   const { theme } = useTableTheme();
@@ -59,6 +61,7 @@ export default function MultiplayerTableGraphics() {
   const [showChipFly, setShowChipFly] = useState(false);
   const [chipFlyAmount, setChipFlyAmount] = useState(0);
   const [startingRound, setStartingRound] = useState(false);
+  const [resettingTable, setResettingTable] = useState(false);
   const [leaveError, setLeaveError] = useState<string | null>(null);
   const [hostActionError, setHostActionError] = useState<string | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm>(null);
@@ -249,6 +252,21 @@ export default function MultiplayerTableGraphics() {
     setStartingRound(false);
   };
 
+  const handlePlayAgain = async () => {
+    setResettingTable(true);
+    const result = await playAgain();
+    setResettingTable(false);
+    if (!result.success) setHostActionError(result.error || "Could not reset table");
+  };
+
+  const sessionStats = sessionSummary
+    ? {
+        handsPlayed: sessionSummary.handsPlayed,
+        biggestPot: sessionSummary.biggestPot,
+        mvpName: sessionSummary.mvp?.name,
+      }
+    : undefined;
+
   if (!gameState) return null;
 
   if ((roundEnded || gameState.phase === "RoundEnd") && roundDecision?.active) {
@@ -257,6 +275,7 @@ export default function MultiplayerTableGraphics() {
       return (
         <RoundEndPanel
           title="Round Ending"
+          sessionStats={sessionStats}
           subtitle={
             <>
               Players are deciding whether to stay. Auto-start in{" "}
@@ -290,6 +309,7 @@ export default function MultiplayerTableGraphics() {
     }
     return (
       <RoundEndPanel
+        sessionStats={sessionStats}
         subtitle={
           <>
             The pot is empty. Auto-start in{" "}
@@ -349,6 +369,7 @@ export default function MultiplayerTableGraphics() {
     return (
       <RoundEndPanel
         title="Round Complete"
+        sessionStats={sessionStats}
         standings={[...gameState.players]
           .sort((a, b) => b.bankroll - a.bankroll)
           .map((p) => ({
@@ -359,14 +380,24 @@ export default function MultiplayerTableGraphics() {
           }))}
       >
         {isHost ? (
-          <HudButton
-            variant="success"
-            fullWidth
-            onClick={handleStartNewRound}
-            disabled={startingRound}
-          >
-            {startingRound ? "Starting…" : "Start Next Round"}
-          </HudButton>
+          <>
+            <HudButton
+              variant="success"
+              fullWidth
+              onClick={handleStartNewRound}
+              disabled={startingRound}
+            >
+              {startingRound ? "Starting…" : "Start Next Round"}
+            </HudButton>
+            <HudButton
+              variant="bet"
+              fullWidth
+              onClick={handlePlayAgain}
+              disabled={resettingTable}
+            >
+              {resettingTable ? "Resetting…" : "Play Again (waiting room)"}
+            </HudButton>
+          </>
         ) : (
           <div className="flex-1 text-center text-gray-400 py-3 bg-black/25 rounded-xl font-ui text-sm border border-white/5">
             Waiting for host to start next round…

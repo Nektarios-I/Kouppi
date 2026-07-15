@@ -15,6 +15,11 @@ interface RoundEndPanelProps {
   title?: string;
   subtitle?: React.ReactNode;
   standings: StandingRow[];
+  sessionStats?: {
+    handsPlayed: number;
+    biggestPot: number;
+    mvpName?: string;
+  };
   children?: React.ReactNode;
 }
 
@@ -22,6 +27,7 @@ export function RoundEndPanel({
   title = "Round Complete",
   subtitle,
   standings,
+  sessionStats,
   children,
 }: RoundEndPanelProps) {
   return (
@@ -33,6 +39,22 @@ export function RoundEndPanel({
           </h2>
           {subtitle && (
             <p className="text-gray-300 text-center font-ui text-sm mt-2">{subtitle}</p>
+          )}
+          {sessionStats && (
+            <div className="mt-3 grid grid-cols-3 gap-2 text-center font-ui text-xs">
+              <div className="rounded-lg bg-black/25 border border-white/5 py-2 px-1">
+                <div className="text-gold/60 uppercase tracking-wide">Hands</div>
+                <div className="text-gold-light font-semibold tabular-nums">{sessionStats.handsPlayed}</div>
+              </div>
+              <div className="rounded-lg bg-black/25 border border-white/5 py-2 px-1">
+                <div className="text-gold/60 uppercase tracking-wide">Biggest pot</div>
+                <div className="text-gold-light font-semibold tabular-nums">{sessionStats.biggestPot}</div>
+              </div>
+              <div className="rounded-lg bg-black/25 border border-white/5 py-2 px-1">
+                <div className="text-gold/60 uppercase tracking-wide">MVP</div>
+                <div className="text-gold-light font-semibold truncate">{sessionStats.mvpName || "—"}</div>
+              </div>
+            </div>
           )}
         </div>
         <div className="game-modal-standings">

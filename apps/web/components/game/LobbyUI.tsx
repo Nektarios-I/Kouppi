@@ -141,6 +141,7 @@ export interface RoomRowData {
   isPrivate?: boolean;
   hostId?: string;
   spectatorCount?: number;
+  presetLabel?: string;
   live?: boolean;
 }
 
@@ -177,6 +178,9 @@ export function RoomRow({
             )}
             {room.live && (
               <span className="hud-badge hud-badge-live text-[10px] py-0">LIVE</span>
+            )}
+            {room.presetLabel && (
+              <span className="text-gray-500 text-[10px] font-ui">{room.presetLabel}</span>
             )}
           </div>
           <div className="text-xs sm:text-sm text-gray-400 flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">

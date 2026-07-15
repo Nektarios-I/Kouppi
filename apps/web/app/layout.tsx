@@ -30,6 +30,12 @@ export const metadata: Metadata = {
   alternates: {
     canonical: "/",
   },
+  appleWebApp: {
+    capable: true,
+    title: "KOUPPI",
+    statusBarStyle: "black-translucent",
+  },
+  manifest: "/manifest.webmanifest",
   openGraph: {
     title: "KOUPPI",
     description: "Fast, casual Cypriot card game playable on web and mobile.",

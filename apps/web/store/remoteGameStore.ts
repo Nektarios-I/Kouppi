@@ -31,6 +31,10 @@ export type RoomInfo = {
   spectatorsAllowed?: boolean;
   spectatorCount?: number;
   isPrivate?: boolean;
+  listedInLobby?: boolean;
+  seatsOpen?: boolean;
+  createdAt?: number;
+  presetLabel?: string;
 };
 
 export type ConnectionStatus = "connected" | "connecting" | "reconnecting" | "disconnected";
@@ -79,6 +83,12 @@ export function getPersistedActiveRoom(): { code: string; roomId: string; isSpec
   if (!code || !roomId) return null;
   return { code, roomId, isSpectator: sessionStorage.getItem(SESSION_SPECTATOR_KEY) === "1" };
 }
+
+export type SessionSummary = {
+  handsPlayed: number;
+  biggestPot: number;
+  mvp: { id: string; name: string; bankroll: number } | null;
+};
 
 export type TurnTimerInfo = {
   remaining: number;
@@ -134,6 +144,7 @@ type RemoteStore = {
   
   // Round end state
   roundEnded: boolean;
+  sessionSummary: SessionSummary | null;
   // Round decision state (stay/leave + countdown)
   roundDecision: { active: boolean; remaining: number; deadlineTs: number; choices: Record<string, "stay"|"leave"|null> } | null;
   
@@ -165,7 +176,12 @@ type RemoteStore = {
   disconnect: () => void;
   setIdentity: (playerId: string, name: string) => void;
   clearRoomState: () => void; // Clear all room-related state before joining/creating
-  createRoom: (config: Partial<RoomConfig>, password?: string, code?: string) => Promise<{ success: boolean; error?: string; code?: string; roomId?: string }>;
+  createRoom: (
+    config: Partial<RoomConfig>,
+    password?: string,
+    code?: string,
+    options?: { listedInLobby?: boolean; presetLabel?: string; turnTimeout?: number }
+  ) => Promise<{ success: boolean; error?: string; code?: string; roomId?: string }>;
   joinRoom: (roomIdOrCode: string, password?: string) => Promise<{ success: boolean; error?: string; code?: string }>;
   setReady: (ready: boolean) => Promise<{ success: boolean; error?: string }>;
   kickPlayer: (targetId: string) => Promise<{ success: boolean; error?: string; code?: string }>;
@@ -177,6 +193,7 @@ type RemoteStore = {
   startGame: () => Promise<{ success: boolean; error?: string; code?: string }>;
   sendIntent: (intent: Intent) => void;
   requestNewRound: () => Promise<{ success: boolean; error?: string }>;
+  playAgain: () => Promise<{ success: boolean; error?: string }>;
   decideStay: () => void;
   decideLeave: () => void;
   listRooms: () => void;
@@ -221,6 +238,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
   turnTimer: null,
   roundEnded: false,
   roundDecision: null,
+  sessionSummary: null,
   playerTimeout: null,
   chatMessages: [],
   activeEmotes: [],
@@ -298,7 +316,17 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     s.on("disconnect", () => set({ connected: false, connectionStatus: "reconnecting" }));
     
     s.on("state", (snapshot: any) => {
-      if (!snapshot) return;
+      if (!snapshot) {
+        set({
+          state: null,
+          gameStarted: false,
+          roundEnded: false,
+          roundDecision: null,
+          turnTimer: null,
+          pendingIntent: null,
+        });
+        return;
+      }
       const incomingVersion = typeof snapshot.version === "number" ? snapshot.version : undefined;
       const currentVersion = get().gameStateVersion;
       if (incomingVersion !== undefined && incomingVersion < currentVersion) return;
@@ -423,6 +451,22 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     // Round decision end
     s.on("roundDecisionEnd", (_data: { started: boolean; reason?: string }) => {
       set({ roundDecision: null, roundEnded: false });
+    });
+
+    s.on("sessionSummary", (summary: SessionSummary | null) => {
+      set({ sessionSummary: summary });
+    });
+
+    s.on("tableReset", () => {
+      set({
+        state: null,
+        gameStarted: false,
+        roundEnded: false,
+        roundDecision: null,
+        sessionSummary: null,
+        turnTimer: null,
+        pendingIntent: null,
+      });
     });
     
     // Player timeout notification
@@ -579,7 +623,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     });
   },
 
-  createRoom: async (config, password, code) => {
+  createRoom: async (config, password, code, options) => {
     const { socket, playerId, playerName, roomId: currentRoomId } = get();
     if (!socket) return { success: false, error: "Not connected" };
     if (!playerId || !playerName) return { success: false, error: "Identity not set" };
@@ -602,8 +646,11 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
           maxPlayers: config.maxPlayers ?? 8,
           shistri: config.shistri ?? { enabled: true, percent: 5, minChip: 1 },
           spectatorsAllowed: config.spectatorsAllowed ?? true,
+          turnTimeout: options?.turnTimeout,
         },
         password: password?.trim() || undefined,
+        listedInLobby: options?.listedInLobby,
+        presetLabel: options?.presetLabel,
       }, (err: any, snap: any, roomData: any) => {
         if (err) {
           set({ lastError: formatSocketError(err.code, err.message) });
@@ -928,8 +975,35 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
           set({ 
             state: snap,
             roundEnded: false,
+            sessionSummary: null,
             turnTimer: null,
             lastError: null,
+          });
+          resolve({ success: true });
+        }
+      });
+    });
+  },
+
+  playAgain: async () => {
+    const { socket, roomId, isHost } = get();
+    if (!socket || !roomId) return { success: false, error: "Not in a room" };
+    if (!isHost) return { success: false, error: "Only the host can reset the table" };
+
+    return new Promise((resolve) => {
+      socket.emit("playAgain", { roomId }, (err: any, roomData: any) => {
+        if (err) {
+          resolve({ success: false, error: formatSocketError(err.code, err.message) });
+        } else {
+          set({
+            state: null,
+            gameStarted: false,
+            roundEnded: false,
+            roundDecision: null,
+            sessionSummary: null,
+            turnTimer: null,
+            playersInRoom: roomData?.players || get().playersInRoom,
+            roomUpdateVersion: roomData?.version ?? get().roomUpdateVersion,
           });
           resolve({ success: true });
         }

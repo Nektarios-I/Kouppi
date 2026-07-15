@@ -39,6 +39,8 @@ export const CreateRoomPayload = z.object({
   creator: PlayerIdentity,
   config: RoomConfig.partial().default({}),
   password: z.string().optional(),
+  listedInLobby: z.boolean().optional(),
+  presetLabel: z.string().max(32).optional(),
 });
 export type CreateRoomPayload = z.infer<typeof CreateRoomPayload>;
 
@@ -161,5 +163,12 @@ export const RoomsListItem = z.object({
   maxPlayers: z.number().int(),
   started: z.boolean(),
   hostId: z.string().optional(),
+  isPrivate: z.boolean().optional(),
+  spectatorsAllowed: z.boolean().optional(),
+  spectatorCount: z.number().int().optional(),
+  listedInLobby: z.boolean().optional(),
+  seatsOpen: z.boolean().optional(),
+  createdAt: z.number().optional(),
+  presetLabel: z.string().optional(),
 });
 export type RoomsListItem = z.infer<typeof RoomsListItem>;

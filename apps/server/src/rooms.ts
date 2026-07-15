@@ -164,19 +164,33 @@ export function createRoom(id: string, config: Room["config"], seed: number, max
     turnTimeout: DEFAULT_TURN_TIMEOUT,
     revision: 0,
     stateRevision: 0,
+    listedInLobby: true,
+    createdAt: Date.now(),
+    sessionStats: { handsPlayed: 0, biggestPot: 0 },
   };
   rooms.set(id, room);
   registerRoomCode(room);
   return room;
 }
 
-export function createRoomWithCreator(id: string, creator: PlayerSession, config: Partial<Room["config"]>, seed: number, password?: string, code?: string): Room {
+export function createRoomWithCreator(
+  id: string,
+  creator: PlayerSession,
+  config: Partial<Room["config"]>,
+  seed: number,
+  password?: string,
+  code?: string,
+  options?: { listedInLobby?: boolean; presetLabel?: string }
+): Room {
   const merged = { ...defaultConfig(), ...(config || {}) };
   const publicCode = code ?? (id.length <= 8 && /^[A-Za-z0-9]+$/.test(id) ? normalizeRoomCode(id) : generateRoomCode());
   const base = createRoom(id, merged, seed, (config as any)?.maxPlayers ?? merged.maxPlayers ?? 8, publicCode);
   base.hostId = creator.id;
   base.players.push({ ...creator, afkCount: 0, ready: true });
   base.started = false;
+  const hasPassword = !!(password && password.trim().length > 0);
+  base.listedInLobby = options?.listedInLobby ?? !hasPassword;
+  if (options?.presetLabel) base.presetLabel = options.presetLabel;
   // Hash optional password for private rooms
   if (password && password.trim().length > 0) {
     base.passwordHash = hashRoomPassword(password.trim());
@@ -560,19 +574,90 @@ export function snapshot(id: string): Room["state"] | undefined {
   return rooms.get(id)?.state;
 }
 
-/** Return lobby info for all rooms */
-export function roomsInfo(): Array<{ id: string; code: string; playerCount: number; maxPlayers: number; started: boolean; hostId?: string; spectatorsAllowed?: boolean; spectatorCount?: number; isPrivate?: boolean }> {
-  return Array.from(rooms.values()).map(r => ({
-    id: r.id,
-    code: r.code,
-    playerCount: r.players.length,
-    maxPlayers: r.maxPlayers,
-    started: !!r.state && r.started === true,
-    hostId: r.hostId,
-    spectatorsAllowed: r.config.spectatorsAllowed ?? true,
-    spectatorCount: r.spectators?.length ?? 0,
-    isPrivate: !!r.passwordHash,
-  }));
+/** Return lobby info for listed public rooms */
+export function roomsInfo(): Array<{
+  id: string;
+  code: string;
+  playerCount: number;
+  maxPlayers: number;
+  started: boolean;
+  hostId?: string;
+  spectatorsAllowed?: boolean;
+  spectatorCount?: number;
+  isPrivate?: boolean;
+  listedInLobby?: boolean;
+  seatsOpen?: boolean;
+  createdAt?: number;
+  presetLabel?: string;
+}> {
+  return Array.from(rooms.values())
+    .filter((r) => r.listedInLobby !== false)
+    .map((r) => ({
+      id: r.id,
+      code: r.code,
+      playerCount: r.players.length,
+      maxPlayers: r.maxPlayers,
+      started: !!r.state && r.started === true,
+      hostId: r.hostId,
+      spectatorsAllowed: r.config.spectatorsAllowed ?? true,
+      spectatorCount: r.spectators?.length ?? 0,
+      isPrivate: !!r.passwordHash,
+      listedInLobby: r.listedInLobby !== false,
+      seatsOpen: r.players.length < r.maxPlayers,
+      createdAt: r.createdAt,
+      presetLabel: r.presetLabel,
+    }));
+}
+
+export function trackSessionPot(room: Room): void {
+  if (!room.state?.round) return;
+  const pot = room.state.round.pot ?? 0;
+  if (!room.sessionStats) room.sessionStats = { handsPlayed: 0, biggestPot: 0 };
+  if (pot > room.sessionStats.biggestPot) room.sessionStats.biggestPot = pot;
+}
+
+export function buildSessionSummary(room: Room): {
+  handsPlayed: number;
+  biggestPot: number;
+  mvp: { id: string; name: string; bankroll: number } | null;
+} {
+  const stats = room.sessionStats ?? { handsPlayed: 0, biggestPot: 0 };
+  let mvp: { id: string; name: string; bankroll: number } | null = null;
+  if (room.state?.players?.length) {
+    const sorted = [...room.state.players].sort((a, b) => (b.bankroll ?? 0) - (a.bankroll ?? 0));
+    const top = sorted[0];
+    if (top) mvp = { id: top.id, name: top.name, bankroll: top.bankroll ?? 0 };
+  }
+  return { handsPlayed: stats.handsPlayed, biggestPot: stats.biggestPot, mvp };
+}
+
+/** Reset room to waiting lobby for a rematch with the same players */
+export function resetRoomForPlayAgain(roomId: string, hostId: string): Room {
+  const resolved = resolveRoomIdentifier(roomId);
+  if (!resolved) throw new Error("room_not_found");
+  const room = rooms.get(resolved)!;
+  if (room.hostId !== hostId) throw new Error("not_host");
+
+  if (room.turnTimer) clearTimeout(room.turnTimer);
+  if (room.flowTimer) clearTimeout(room.flowTimer);
+  if (room.timerIntervalId) clearInterval(room.timerIntervalId);
+  if (room.decision?.timer) clearTimeout(room.decision.timer);
+  if (room.decision?.interval) clearInterval(room.decision.interval);
+
+  room.state = undefined;
+  room.started = false;
+  room.decision = undefined;
+  room.turnStartTime = undefined;
+  room.seed = Math.floor(Math.random() * 1e9);
+  room.sessionStats = { handsPlayed: 0, biggestPot: 0 };
+
+  for (const p of room.players) {
+    p.ready = p.id === hostId;
+    p.afkCount = 0;
+  }
+
+  bumpRoomRevision(room);
+  return room;
 }
 
 /** Cleanup empty rooms - removes rooms with no players and no spectators */

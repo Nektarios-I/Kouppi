@@ -14,6 +14,7 @@ import {
   banPlayerFromRoom, setRoomChatMuted, setPlayerChatMuted, isChatSendBlocked, isPlayerBanned,
   startGraceTickBroadcast, stopGraceTickBroadcast, generateRoomCode,
   addSystemChatMessage, checkChatRateLimit, recordChatSend,
+  trackSessionPot, buildSessionSummary, resetRoomForPlayAgain,
 } from "./rooms.js";
 import type { TableConfig } from "@kouppi/game-core";
 import { applyAction } from "@kouppi/game-core";
@@ -317,7 +318,15 @@ export function createKouppiServer(opts?: {
           return;
         }
         const creator = { id: data.creator.id, name: creatorName, socketId: socket.id, avatar: data.creator.avatar };
-        createRoomWithCreator(roomId, creator, cfg as any, Math.floor(Math.random() * 1e9), data.password, publicCode);
+        createRoomWithCreator(
+          roomId,
+          creator,
+          cfg as any,
+          Math.floor(Math.random() * 1e9),
+          data.password,
+          publicCode,
+          { listedInLobby: data.listedInLobby, presetLabel: data.presetLabel }
+        );
         socket.join(roomId);
         const room = getRoom(roomId)!;
         const ackSnap = snapshot(roomId) ?? null;
@@ -720,6 +729,8 @@ export function createKouppiServer(opts?: {
         }
 
         handleClientIntent(roomId, playerId, i);
+        const afterIntent = getRoom(roomId);
+        if (afterIntent) trackSessionPot(afterIntent);
         emitState(roomId);
         const updated = getRoom(roomId);
         const ackState = updated ? buildStatePayload(updated) : undefined;
@@ -772,6 +783,33 @@ export function createKouppiServer(opts?: {
       }
     });
     
+    // Play again — return same players to waiting room (host only)
+    socket.on("playAgain", ({ roomId }, cb?: (err: any|null, roomData?: any) => void) => {
+      try {
+        const resolvedId = resolveRoomIdentifier(roomId);
+        if (!resolvedId) {
+          cb?.({ code: "room_not_found", message: "Room not found" });
+          return;
+        }
+        const room = getRoom(resolvedId)!;
+        const sessionPlayer = findPlayerBySocket(room, socket.id);
+        if (!sessionPlayer) {
+          cb?.({ code: "not_in_room", message: "Not in room" });
+          return;
+        }
+        resetRoomForPlayAgain(resolvedId, sessionPlayer.id);
+        emitSystemMessage(resolvedId, "Host reset the table — ready up for another round!");
+        const roomData = buildRoomData(getRoom(resolvedId)!);
+        io.to(resolvedId).emit("roomUpdate", roomData);
+        io.to(resolvedId).emit("tableReset");
+        io.to(resolvedId).emit("sessionSummary", null);
+        cb?.(null, roomData);
+      } catch (e: any) {
+        const code = e?.message === "not_host" ? "not_host" : "bad_request";
+        cb?.({ code, message: e?.message || String(e) });
+      }
+    });
+
     // Request new round (host only, after round end)
     socket.on("newRound", ({ roomId }, cb?: (err: any|null, snapshot?: any) => void) => {
       try {
@@ -1012,6 +1050,11 @@ export function createKouppiServer(opts?: {
       if (room.decision?.timer) clearTimeout(room.decision.timer);
       if (room.decision?.interval) clearInterval(room.decision.interval);
       room.decision = { active: true, deadlineTs: deadline, choices, timer: null, interval: null };
+
+      if (!room.sessionStats) room.sessionStats = { handsPlayed: 0, biggestPot: 0 };
+      room.sessionStats.handsPlayed += 1;
+      const summary = buildSessionSummary(room);
+      io.to(roomId).emit("sessionSummary", summary);
 
       // Broadcast start of decision phase
       io.to(roomId).emit("roundDecisionStart", {

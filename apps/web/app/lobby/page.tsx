@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useRemoteGameStore, getPersistedActiveRoom } from "@/store/remoteGameStore";
 import ConnectionStatusBanner from "@/components/game/ConnectionStatusBanner";
@@ -19,6 +19,9 @@ import {
   LobbyFooterLink,
   PreGameCard,
 } from "@/components/game/LobbyUI";
+
+type RoomFilter = "all" | "waiting" | "live" | "seats";
+type RoomSort = "players" | "newest";
 
 export default function LobbyPage() {
   const router = useRouter();
@@ -54,6 +57,8 @@ export default function LobbyPage() {
   const [passwordModalMode, setPasswordModalMode] = useState<"join" | "spectate">("join");
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [roomFilter, setRoomFilter] = useState<RoomFilter>("all");
+  const [roomSort, setRoomSort] = useState<RoomSort>("players");
 
   useEffect(() => {
     connect();
@@ -193,10 +198,29 @@ export default function LobbyPage() {
     }
   };
 
-  const waitingRooms = rooms.filter((r) => !r.started);
-  const spectatorRooms = rooms.filter(
-    (r) => r.started && r.spectatorsAllowed && r.playerCount > 0
-  );
+  const waitingRooms = useMemo(() => {
+    if (roomFilter === "live") return [];
+    let list = rooms.filter((r) => !r.started);
+    if (roomFilter === "seats") list = list.filter((r) => (r.seatsOpen ?? r.playerCount < r.maxPlayers));
+    if (roomSort === "newest") {
+      list = [...list].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+    } else {
+      list = [...list].sort((a, b) => b.playerCount - a.playerCount);
+    }
+    return list;
+  }, [rooms, roomFilter, roomSort]);
+
+  const spectatorRooms = useMemo(() => {
+    let list = rooms.filter((r) => r.started && r.spectatorsAllowed && r.playerCount > 0);
+    if (roomFilter === "live") list = list;
+    if (roomSort === "newest") {
+      list = [...list].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+    } else {
+      list = [...list].sort((a, b) => b.playerCount - a.playerCount);
+    }
+    return list;
+  }, [rooms, roomFilter, roomSort]);
+
   const filteredSpectatorRooms = spectateSearch.trim()
     ? spectatorRooms.filter((r) =>
         r.id.toLowerCase().includes(spectateSearch.toLowerCase())
@@ -331,6 +355,39 @@ export default function LobbyPage() {
           </span>
         }
       >
+        <div className="flex flex-wrap gap-2 mb-4">
+          {(
+            [
+              ["all", "All waiting"],
+              ["seats", "Seats open"],
+            ] as const
+          ).map(([id, label]) => (
+            <HudButton
+              key={id}
+              variant={roomFilter === id ? "bet" : "ghost"}
+              size="sm"
+              onClick={() => setRoomFilter(id)}
+            >
+              {label}
+            </HudButton>
+          ))}
+          <span className="w-px h-6 bg-white/10 hidden sm:block" />
+          {(
+            [
+              ["players", "Most players"],
+              ["newest", "Newest"],
+            ] as const
+          ).map(([id, label]) => (
+            <HudButton
+              key={id}
+              variant={roomSort === id ? "bet" : "ghost"}
+              size="sm"
+              onClick={() => setRoomSort(id)}
+            >
+              {label}
+            </HudButton>
+          ))}
+        </div>
         {waitingRooms.length === 0 ? (
           <LobbyEmpty icon="♠" title="No rooms available" hint="Create a room to start playing!" />
         ) : (
@@ -345,6 +402,7 @@ export default function LobbyPage() {
                   maxPlayers: room.maxPlayers,
                   isPrivate: room.isPrivate,
                   hostId: room.hostId,
+                  presetLabel: room.presetLabel,
                 }}
                 actionLabel="Join"
                 actionVariant="bet"
@@ -366,6 +424,15 @@ export default function LobbyPage() {
           </span>
         }
       >
+        <div className="flex flex-wrap gap-2 mb-4">
+          <HudButton
+            variant={roomFilter === "live" ? "bet" : "ghost"}
+            size="sm"
+            onClick={() => setRoomFilter(roomFilter === "live" ? "all" : "live")}
+          >
+            In progress only
+          </HudButton>
+        </div>
         <p className="text-gray-400 text-sm font-ui mb-4">
           Watch ongoing games as a spectator. Learn strategies and enjoy the action!
         </p>
