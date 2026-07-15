@@ -28,6 +28,8 @@ export interface WaitingRoomProps {
   onCopyLink: () => void;
   onSetReady: (ready: boolean) => void;
   onKickPlayer: (targetId: string) => void;
+  onTransferHost: (targetId: string) => void;
+  onCloseRoom: () => void;
   onClearError?: () => void;
 }
 
@@ -48,6 +50,8 @@ export default function WaitingRoom({
   onCopyLink,
   onSetReady,
   onKickPlayer,
+  onTransferHost,
+  onCloseRoom,
   onClearError,
 }: WaitingRoomProps) {
   const me = players.find((p) => p.id === playerId);
@@ -122,9 +126,14 @@ export default function WaitingRoom({
                     {player.ready ? "Ready" : "Not ready"}
                   </span>
                   {isHost && player.id !== playerId && player.id !== hostId && (
-                    <HudButton variant="danger" size="sm" onClick={() => onKickPlayer(player.id)}>
-                      Kick
-                    </HudButton>
+                    <>
+                      <HudButton variant="ghost" size="sm" onClick={() => onTransferHost(player.id)}>
+                        Make Host
+                      </HudButton>
+                      <HudButton variant="danger" size="sm" onClick={() => onKickPlayer(player.id)}>
+                        Kick
+                      </HudButton>
+                    </>
                   )}
                 </div>
               </div>
@@ -198,6 +207,11 @@ export default function WaitingRoom({
           <HudButton variant="danger" onClick={onLeave} className="sm:w-auto">
             Leave Room
           </HudButton>
+          {isHost && (
+            <HudButton variant="ghost" onClick={onCloseRoom} className="sm:w-auto">
+              Close Room
+            </HudButton>
+          )}
         </div>
       </div>
 

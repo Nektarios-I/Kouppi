@@ -16,6 +16,8 @@ export type PlayerSession = {
   ready?: boolean;
   disconnectedAt?: number;
   pendingRemovalTimer?: ReturnType<typeof setTimeout>;
+  /** Timestamps of recent chat sends for rate limiting */
+  chatSendTimestamps?: number[];
 };
 
 export type ChatMessage = {
@@ -24,6 +26,7 @@ export type ChatMessage = {
   playerName: string;
   message: string;
   timestamp: number;
+  isSystem?: boolean;
 };
 
 // Emote system - easily extensible list of emotes

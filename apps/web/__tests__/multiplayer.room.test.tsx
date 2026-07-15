@@ -148,8 +148,10 @@ describe("waiting room host label", () => {
         onStartGame={vi.fn()}
         onLeave={vi.fn()}
         onCopyLink={vi.fn()}
-        onSetReady={vi.fn()}
-        onKickPlayer={vi.fn()}
+    onSetReady={vi.fn()}
+    onKickPlayer={vi.fn()}
+    onTransferHost={vi.fn()}
+    onCloseRoom={vi.fn()}
       />
     );
 

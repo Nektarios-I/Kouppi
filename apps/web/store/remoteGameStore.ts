@@ -84,6 +84,7 @@ export type ChatMessage = {
   playerName: string;
   message: string;
   timestamp: number;
+  isSystem?: boolean;
 };
 
 // Emote event type
@@ -152,11 +153,13 @@ type RemoteStore = {
   createRoom: (config: Partial<RoomConfig>, password?: string, code?: string) => Promise<{ success: boolean; error?: string; code?: string; roomId?: string }>;
   joinRoom: (roomIdOrCode: string, password?: string) => Promise<{ success: boolean; error?: string; code?: string }>;
   setReady: (ready: boolean) => Promise<{ success: boolean; error?: string }>;
-  kickPlayer: (targetId: string) => Promise<{ success: boolean; error?: string }>;
+  kickPlayer: (targetId: string) => Promise<{ success: boolean; error?: string; code?: string }>;
+  transferHost: (targetId: string) => Promise<{ success: boolean; error?: string }>;
+  closeRoomAsHost: () => Promise<{ success: boolean; error?: string }>;
   resumeActiveRoom: () => Promise<{ success: boolean; error?: string }>;
   subscribeToCareerRoom: (roomId: string) => Promise<{ success: boolean; error?: string }>; // Subscribe to room without re-joining (for career games)
-  leaveRoom: () => void;
-  startGame: () => Promise<{ success: boolean; error?: string }>;
+  leaveRoom: () => Promise<{ success: boolean; error?: string; code?: string }>;
+  startGame: () => Promise<{ success: boolean; error?: string; code?: string }>;
   sendIntent: (intent: Intent) => void;
   requestNewRound: () => Promise<{ success: boolean; error?: string }>;
   decideStay: () => void;
@@ -347,6 +350,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
       const reasonMessages: Record<string, string> = {
         empty: "Room closed — no players left",
         host_left: "The host has left the room",
+        host_closed: "The host closed the room",
         no_eligible_players: "Room closed — no eligible players remain",
       };
       set({
@@ -658,8 +662,55 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     if (!isHost) return { success: false, error: "Only the host can kick players" };
     return new Promise((resolve) => {
       socket.emit("kickPlayer", { roomId, targetId }, (err: any) => {
-        if (err) resolve({ success: false, error: err.message || err.code });
+        if (err) resolve({ success: false, error: err.message || err.code, code: err.code });
         else resolve({ success: true });
+      });
+    });
+  },
+
+  transferHost: async (targetId) => {
+    const { socket, roomId, isHost, playerId } = get();
+    if (!socket || !roomId) return { success: false, error: "Not in a room" };
+    if (!isHost) return { success: false, error: "Only the host can transfer host" };
+    return new Promise((resolve) => {
+      socket.emit("transferHost", { roomId, targetId }, (err: any, roomData: any) => {
+        if (err) resolve({ success: false, error: err.message || err.code });
+        else {
+          if (roomData) {
+            set({
+              playersInRoom: roomData.players || get().playersInRoom,
+              hostId: roomData.hostId || null,
+              isHost: roomData.hostId === playerId,
+              roomUpdateVersion: roomData.version ?? get().roomUpdateVersion,
+            });
+          }
+          resolve({ success: true });
+        }
+      });
+    });
+  },
+
+  closeRoomAsHost: async () => {
+    const { socket, roomId, isHost } = get();
+    if (!socket || !roomId) return { success: false, error: "Not in a room" };
+    if (!isHost) return { success: false, error: "Only the host can close the room" };
+    return new Promise((resolve) => {
+      socket.emit("closeRoomAsHost", { roomId }, (err: any) => {
+        if (err) resolve({ success: false, error: err.message || err.code });
+        else {
+          clearActiveRoomSession();
+          set({
+            roomId: null,
+            roomCode: null,
+            isHost: false,
+            hostId: null,
+            state: null,
+            playersInRoom: [],
+            spectatorsInRoom: [],
+            gameStarted: false,
+          });
+          resolve({ success: true });
+        }
       });
     });
   },
@@ -711,30 +762,63 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     });
   },
 
-  leaveRoom: () => {
+  leaveRoom: async () => {
     const { socket, roomId } = get();
-    if (socket && roomId) {
-      socket.emit("leaveRoom", { roomId });
+    if (!socket || !roomId) {
+      clearActiveRoomSession();
+      set({
+        roomId: null,
+        roomCode: null,
+        isHost: false,
+        hostId: null,
+        isSpectator: false,
+        state: null,
+        playersInRoom: [],
+        spectatorsInRoom: [],
+        gameStarted: false,
+        roomConfig: null,
+        turnTimer: null,
+        roundEnded: false,
+        roundDecision: null,
+        playerTimeout: null,
+        chatMessages: [],
+        activeEmotes: [],
+        lastError: null,
+        roomUpdateVersion: 0,
+      });
+      return { success: true };
     }
-    clearActiveRoomSession();
-    set({ 
-      roomId: null,
-      roomCode: null, 
-      isHost: false,
-      hostId: null,
-      isSpectator: false,
-      state: null, 
-      playersInRoom: [],
-      spectatorsInRoom: [],
-      gameStarted: false,
-      roomConfig: null,
-      turnTimer: null,
-      roundEnded: false,
-      roundDecision: null,
-      playerTimeout: null,
-      chatMessages: [],
-      activeEmotes: [],
-      lastError: null,
+    return new Promise((resolve) => {
+      socket.emit("leaveRoom", { roomId }, (err: any) => {
+        if (err?.code === "cannot_leave") {
+          const message = err.message || "You cannot leave right now";
+          set({ lastError: message });
+          resolve({ success: false, error: message, code: err.code });
+          return;
+        }
+        clearActiveRoomSession();
+        set({
+          roomId: null,
+          roomCode: null,
+          isHost: false,
+          hostId: null,
+          isSpectator: false,
+          state: null,
+          playersInRoom: [],
+          spectatorsInRoom: [],
+          gameStarted: false,
+          roomConfig: null,
+          turnTimer: null,
+          roundEnded: false,
+          roundDecision: null,
+          playerTimeout: null,
+          chatMessages: [],
+          activeEmotes: [],
+          lastError: null,
+          roomUpdateVersion: 0,
+        });
+        resolve({ success: true });
+      });
     });
   },
 
@@ -746,8 +830,13 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     return new Promise((resolve) => {
       socket.emit("startRoom", { roomId, by: playerId }, (err: any, snap: any) => {
         if (err) {
-          set({ lastError: err.message || "Start failed" });
-          resolve({ success: false, error: err.message || err.code });
+          const code = err.code || "start_failed";
+          const message =
+            code === "not_all_ready"
+              ? "All players must ready up before starting"
+              : err.message || "Start failed";
+          set({ lastError: message });
+          resolve({ success: false, error: message, code });
         } else {
           set({ 
             state: snap,
@@ -821,7 +910,11 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     const { socket, roomId } = get();
     if (!socket || !roomId) return;
     if (!message || message.trim().length === 0) return;
-    socket.emit("chatMessage", { roomId, message: message.trim() });
+    socket.emit("chatMessage", { roomId, message: message.trim() }, (err: any) => {
+      if (err?.code === "rate_limited") {
+        set({ lastError: err.message || "Slow down — too many messages" });
+      }
+    });
   },
   
   fetchChatHistory: () => {

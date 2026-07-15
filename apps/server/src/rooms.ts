@@ -220,13 +220,53 @@ export function kickPlayer(roomId: string, hostId: string, targetId: string): Ro
   if (!resolved) throw new Error("room_not_found");
   const room = rooms.get(resolved)!;
   if (room.hostId !== hostId) throw new Error("not_host");
-  if (room.started) throw new Error("game_in_progress");
   if (targetId === hostId) throw new Error("cannot_kick_self");
   const target = room.players.find((p) => p.id === targetId);
   if (!target) throw new Error("player_not_found");
+  if (room.started && room.state?.phase === "Round") {
+    const currentId = room.state.players[room.state.currentIndex]?.id;
+    if (currentId === targetId) throw new Error("cannot_kick_current_player");
+  }
   cancelDisconnectGrace(target);
   room.players = room.players.filter((p) => p.id !== targetId);
   return room;
+}
+
+export function transferHost(roomId: string, hostId: string, newHostId: string): Room {
+  const resolved = resolveRoomIdentifier(roomId);
+  if (!resolved) throw new Error("room_not_found");
+  const room = rooms.get(resolved)!;
+  if (room.hostId !== hostId) throw new Error("not_host");
+  if (newHostId === hostId) throw new Error("already_host");
+  const target = room.players.find((p) => p.id === newHostId);
+  if (!target) throw new Error("player_not_found");
+  if (target.disconnectedAt) throw new Error("player_disconnected");
+  room.hostId = newHostId;
+  return room;
+}
+
+export const CHAT_MIN_INTERVAL_MS = 1000;
+export const CHAT_MAX_PER_MINUTE = 20;
+
+export function checkChatRateLimit(player: PlayerSession): { allowed: boolean; retryAfterMs?: number } {
+  const now = Date.now();
+  const windowStart = now - 60_000;
+  const timestamps = (player.chatSendTimestamps || []).filter((t) => t > windowStart);
+  if (timestamps.length >= CHAT_MAX_PER_MINUTE) {
+    const retryAfterMs = timestamps[0] + 60_000 - now;
+    return { allowed: false, retryAfterMs: Math.max(0, retryAfterMs) };
+  }
+  const last = timestamps[timestamps.length - 1];
+  if (last && now - last < CHAT_MIN_INTERVAL_MS) {
+    return { allowed: false, retryAfterMs: CHAT_MIN_INTERVAL_MS - (now - last) };
+  }
+  return { allowed: true };
+}
+
+export function recordChatSend(player: PlayerSession): void {
+  const now = Date.now();
+  const windowStart = now - 60_000;
+  player.chatSendTimestamps = [...(player.chatSendTimestamps || []).filter((t) => t > windowStart), now];
 }
 
 export function allPlayersReady(room: Room): boolean {
@@ -553,11 +593,17 @@ import type { ChatMessage } from "./types.js";
 const MAX_CHAT_MESSAGES = 100; // Keep last 100 messages per room
 
 /** Add a chat message to the room */
-export function addChatMessage(roomId: string, playerId: string, playerName: string, message: string): ChatMessage | null {
-  const room = rooms.get(roomId);
+export function addChatMessage(
+  roomId: string,
+  playerId: string,
+  playerName: string,
+  message: string,
+  isSystem = false
+): ChatMessage | null {
+  const resolved = resolveRoomIdentifier(roomId) || roomId;
+  const room = rooms.get(resolved);
   if (!room) return null;
   
-  // Initialize chat messages array if not exists
   if (!room.chatMessages) {
     room.chatMessages = [];
   }
@@ -566,18 +612,22 @@ export function addChatMessage(roomId: string, playerId: string, playerName: str
     id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     playerId,
     playerName,
-    message: message.trim().slice(0, 500), // Limit message length to 500 chars
+    message: message.trim().slice(0, 500),
     timestamp: Date.now(),
+    isSystem,
   };
   
   room.chatMessages.push(chatMessage);
   
-  // Keep only the last MAX_CHAT_MESSAGES
   if (room.chatMessages.length > MAX_CHAT_MESSAGES) {
     room.chatMessages = room.chatMessages.slice(-MAX_CHAT_MESSAGES);
   }
   
   return chatMessage;
+}
+
+export function addSystemChatMessage(roomId: string, message: string): ChatMessage | null {
+  return addChatMessage(roomId, "system", "System", message, true);
 }
 
 /** Get all chat messages for a room */

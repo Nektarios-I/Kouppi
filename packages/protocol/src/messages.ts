@@ -48,11 +48,16 @@ export const SetReadyPayload = z.object({
 });
 export type SetReadyPayload = z.infer<typeof SetReadyPayload>;
 
-export const KickPlayerPayload = z.object({
+export const TransferHostPayload = z.object({
   roomId: z.string().min(1),
   targetId: z.string().min(1),
 });
-export type KickPlayerPayload = z.infer<typeof KickPlayerPayload>;
+export type TransferHostPayload = z.infer<typeof TransferHostPayload>;
+
+export const CloseRoomPayload = z.object({
+  roomId: z.string().min(1),
+});
+export type CloseRoomPayload = z.infer<typeof CloseRoomPayload>;
 
 export const RoomPlayerInfo = z.object({
   id: z.string(),

@@ -5,7 +5,8 @@ import { useRemoteGameStore, ChatMessage } from "@/store/remoteGameStore";
 import { HudButton, HudIconButton } from "@/components/game/HudButton";
 
 export default function Chat({ collapsed = false }: { collapsed?: boolean }) {
-  const { chatMessages, sendChatMessage, fetchChatHistory, playerId, roomId } = useRemoteGameStore();
+  const { chatMessages, sendChatMessage, fetchChatHistory, playerId, roomId, lastError, clearError } =
+    useRemoteGameStore();
   const [message, setMessage] = useState("");
   const [isOpen, setIsOpen] = useState(!collapsed);
   const [lastReadCount, setLastReadCount] = useState(0);
@@ -21,7 +22,7 @@ export default function Chat({ collapsed = false }: { collapsed?: boolean }) {
   useEffect(() => {
     if (isOpen) {
       setLastReadCount(chatMessages.length);
-      if (messagesEndRef.current) {
+      if (messagesEndRef.current?.scrollIntoView) {
         messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
       }
     }
@@ -96,7 +97,17 @@ export default function Chat({ collapsed = false }: { collapsed?: boolean }) {
           </div>
         ) : (
           chatMessages.map((msg: ChatMessage) => {
-            const isOwn = msg.playerId === playerId;
+            const isSystem = msg.isSystem || msg.playerId === "system";
+            const isOwn = !isSystem && msg.playerId === playerId;
+            if (isSystem) {
+              return (
+                <div key={msg.id} className="flex justify-center my-1">
+                  <span className="text-xs text-gray-400 font-ui italic px-2 py-1 rounded bg-black/20">
+                    {msg.message}
+                  </span>
+                </div>
+              );
+            }
             return (
               <div key={msg.id} className={`flex flex-col ${isOwn ? "items-end" : "items-start"}`}>
                 <div className="flex items-center gap-1 mb-0.5 font-ui">
@@ -116,6 +127,14 @@ export default function Chat({ collapsed = false }: { collapsed?: boolean }) {
       </div>
 
       <div className="chat-input-bar">
+        {lastError && (
+          <p className="text-xs text-warning font-ui mb-2" role="alert">
+            {lastError}
+            <button type="button" className="ml-2 underline" onClick={() => clearError()}>
+              Dismiss
+            </button>
+          </p>
+        )}
         <div className="flex items-center gap-2">
           <input
             ref={inputRef}

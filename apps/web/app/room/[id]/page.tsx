@@ -59,6 +59,8 @@ export default function RoomPage() {
     roomCode,
     setReady,
     kickPlayer,
+    transferHost,
+    closeRoomAsHost,
     startGame,
     leaveRoom,
     lastError,
@@ -232,11 +234,16 @@ export default function RoomPage() {
     }
   };
 
-  const handleLeave = () => {
+  const handleLeave = async () => {
     if (isSpectator) {
       leaveSpectator();
-    } else {
-      leaveRoom();
+      router.push("/lobby");
+      return;
+    }
+    const result = await leaveRoom();
+    if (!result.success) {
+      showToast(result.error || "Could not leave room", "error");
+      return;
     }
     router.push("/lobby");
   };
@@ -295,8 +302,31 @@ export default function RoomPage() {
   const handleKickPlayer = async (targetId: string) => {
     const result = await kickPlayer(targetId);
     if (!result.success) {
-      showToast(result.error || "Could not kick player", "error");
+      const message =
+        result.code === "cannot_kick_current_player"
+          ? "Cannot kick the player whose turn it is"
+          : result.error || "Could not kick player";
+      showToast(message, "error");
     }
+  };
+
+  const handleTransferHost = async (targetId: string) => {
+    const result = await transferHost(targetId);
+    if (!result.success) {
+      showToast(result.error || "Could not transfer host", "error");
+    } else {
+      showToast("Host transferred", "success");
+    }
+  };
+
+  const handleCloseRoom = async () => {
+    if (!window.confirm("Close this room for everyone?")) return;
+    const result = await closeRoomAsHost();
+    if (!result.success) {
+      showToast(result.error || "Could not close room", "error");
+      return;
+    }
+    router.push("/lobby");
   };
 
   if (!playerName && !isCareerGame) {
@@ -421,6 +451,8 @@ export default function RoomPage() {
         onCopyLink={handleCopyLink}
         onSetReady={handleSetReady}
         onKickPlayer={handleKickPlayer}
+        onTransferHost={handleTransferHost}
+        onCloseRoom={handleCloseRoom}
         onClearError={clearError}
       />
       <Chat />

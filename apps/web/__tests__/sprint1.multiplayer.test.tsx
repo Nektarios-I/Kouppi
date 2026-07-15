@@ -38,6 +38,8 @@ describe("Sprint 1 UI", () => {
         onCopyLink={vi.fn()}
         onSetReady={vi.fn()}
         onKickPlayer={onKick}
+        onTransferHost={vi.fn()}
+        onCloseRoom={vi.fn()}
       />
     );
 
@@ -72,6 +74,8 @@ describe("Sprint 1 UI", () => {
         onCopyLink={vi.fn()}
         onSetReady={vi.fn()}
         onKickPlayer={vi.fn()}
+        onTransferHost={vi.fn()}
+        onCloseRoom={vi.fn()}
       />
     );
 

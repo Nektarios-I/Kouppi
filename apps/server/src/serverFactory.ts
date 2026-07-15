@@ -9,8 +9,9 @@ import {
   startFirstTurn, getCurrentPlayerId, syncGamePlayersToRoom, findPlayerBySocket, promoteHost,
   beginDisconnectGrace, cancelDisconnectGrace, RECONNECT_GRACE_MS,
   addChatMessage, getChatMessages, clearChatMessages, cleanupEmptyRooms,
-  resolveRoomIdentifier, buildRoomUpdatePayload, setPlayerReady, kickPlayer,
+  resolveRoomIdentifier, buildRoomUpdatePayload, setPlayerReady, kickPlayer, transferHost,
   startGraceTickBroadcast, stopGraceTickBroadcast, generateRoomCode,
+  addSystemChatMessage, checkChatRateLimit, recordChatSend,
 } from "./rooms.js";
 import type { TableConfig } from "@kouppi/game-core";
 import { applyAction } from "@kouppi/game-core";
@@ -135,6 +136,11 @@ export function createKouppiServer(opts?: {
       const room = getRoom(roomId);
       if (!room) return;
       io.to(roomId).emit("roomUpdate", buildRoomUpdatePayload(room));
+    }
+
+    function emitSystemMessage(roomId: string, message: string) {
+      const msg = addSystemChatMessage(roomId, message);
+      if (msg) io.to(roomId).emit("chatMessage", msg);
     }
 
     function buildRoomData(room: NonNullable<ReturnType<typeof getRoom>>) {
@@ -284,6 +290,7 @@ export function createKouppiServer(opts?: {
         if (snap) {
           io.to(resolvedId!).emit("state", snap);
         }
+        emitSystemMessage(resolvedId!, `${data.player.name} joined the room`);
         cb ? cb(null, ackSnap, roomData) : socket.emit("state", ackSnap);
       } catch (e: any) {
         const err = { code: "bad_request", message: e.message };
@@ -328,6 +335,7 @@ export function createKouppiServer(opts?: {
           return;
         }
         const target = room.players.find((p) => p.id === payload.targetId);
+        const targetName = target?.name || "Player";
         const targetSocketId = target?.socketId;
         kickPlayer(resolvedId, sessionPlayer.id, payload.targetId);
         if (targetSocketId) {
@@ -335,6 +343,7 @@ export function createKouppiServer(opts?: {
           kickedSocket?.emit("playerKicked", { playerId: payload.targetId, reason: "kicked_by_host" });
           kickedSocket?.leave(resolvedId);
         }
+        emitSystemMessage(resolvedId, `${targetName} was removed by the host`);
         const closed = finalizePlayerRemoval(resolvedId);
         if (!closed) {
           emitRoomUpdate(resolvedId);
@@ -345,8 +354,64 @@ export function createKouppiServer(opts?: {
           e?.message === "not_host" ? "not_host"
           : e?.message === "game_in_progress" ? "game_in_progress"
           : e?.message === "cannot_kick_self" ? "cannot_kick_self"
+          : e?.message === "cannot_kick_current_player" ? "cannot_kick_current_player"
           : "bad_request";
         cb?.({ code, message: e?.message || String(e) });
+      }
+    });
+
+    socket.on("transferHost", (payload: { roomId: string; targetId: string }, cb?: (err: any|null, roomData?: any) => void) => {
+      try {
+        const resolvedId = resolveRoomIdentifier(payload.roomId);
+        if (!resolvedId) {
+          cb?.({ code: "room_not_found", message: "Room not found" });
+          return;
+        }
+        const room = getRoom(resolvedId)!;
+        const sessionPlayer = findPlayerBySocket(room, socket.id);
+        if (!sessionPlayer) {
+          cb?.({ code: "not_in_room", message: "Not in room" });
+          return;
+        }
+        const newHost = room.players.find((p) => p.id === payload.targetId);
+        transferHost(resolvedId, sessionPlayer.id, payload.targetId);
+        emitSystemMessage(resolvedId, `${newHost?.name || "Player"} is now the host`);
+        const roomData = buildRoomData(getRoom(resolvedId)!);
+        io.to(resolvedId).emit("roomUpdate", roomData);
+        cb?.(null, roomData);
+      } catch (e: any) {
+        const code =
+          e?.message === "not_host" ? "not_host"
+          : e?.message === "already_host" ? "already_host"
+          : e?.message === "player_not_found" ? "player_not_found"
+          : "bad_request";
+        cb?.({ code, message: e?.message || String(e) });
+      }
+    });
+
+    socket.on("closeRoomAsHost", (payload: { roomId: string }, cb?: (err: any|null) => void) => {
+      try {
+        const resolvedId = resolveRoomIdentifier(payload.roomId);
+        if (!resolvedId) {
+          cb?.({ code: "room_not_found", message: "Room not found" });
+          return;
+        }
+        const room = getRoom(resolvedId)!;
+        const sessionPlayer = findPlayerBySocket(room, socket.id);
+        if (!sessionPlayer) {
+          cb?.({ code: "not_in_room", message: "Not in room" });
+          return;
+        }
+        if (room.hostId !== sessionPlayer.id) {
+          cb?.({ code: "not_host", message: "not_host" });
+          return;
+        }
+        emitSystemMessage(resolvedId, "The host closed the room");
+        io.to(resolvedId).emit("roomClosed", { reason: "host_closed" });
+        closeRoomWithCareerTracking(resolvedId);
+        cb?.(null);
+      } catch (e: any) {
+        cb?.({ code: "bad_request", message: e?.message || String(e) });
       }
     });
 
@@ -545,7 +610,7 @@ export function createKouppiServer(opts?: {
         const snap = snapshot(data.roomId);
         io.to(data.roomId).emit("state", snap);
         
-        // Timer handled by startEligibleTurn
+        emitSystemMessage(data.roomId, "Game started!");
         
         cb ? cb(null, snap) : socket.emit("state", snap);
       } catch (e: any) {
@@ -888,8 +953,10 @@ export function createKouppiServer(opts?: {
           return;
         }
         cancelDisconnectGrace(leavingPlayer);
+        const leaveName = leavingPlayer.name;
         leaveRoom(roomId, leavingPlayer.id);
         socket.leave(roomId);
+        emitSystemMessage(roomId, `${leaveName} left the room`);
         finalizePlayerRemoval(roomId, leavingPlayer.id);
         cb ? cb(null) : undefined;
       } catch (e: any) {
@@ -1052,6 +1119,17 @@ export function createKouppiServer(opts?: {
           cb ? cb(err) : socket.emit("error", err);
           return;
         }
+
+        const rate = checkChatRateLimit(player);
+        if (!rate.allowed) {
+          const err = {
+            code: "rate_limited",
+            message: `Slow down — wait ${Math.ceil((rate.retryAfterMs || 1000) / 1000)}s before sending another message`,
+          };
+          cb ? cb(err) : socket.emit("error", err);
+          return;
+        }
+        recordChatSend(player);
         
         // Add message to room
         const chatMsg = addChatMessage(roomId, player.id, player.name, message);

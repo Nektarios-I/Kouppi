@@ -36,6 +36,8 @@ export default function MultiplayerTableGraphics() {
     sendIntent,
     leaveRoom,
     leaveSpectator,
+    kickPlayer,
+    closeRoomAsHost,
     decideStay,
     decideLeave,
     requestNewRound,
@@ -48,6 +50,8 @@ export default function MultiplayerTableGraphics() {
   const [showChipFly, setShowChipFly] = useState(false);
   const [chipFlyAmount, setChipFlyAmount] = useState(0);
   const [startingRound, setStartingRound] = useState(false);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
+  const [hostActionError, setHostActionError] = useState<string | null>(null);
 
   const sounds = useGameSounds();
   const prevIsMyTurn = useRef<boolean>(false);
@@ -179,9 +183,41 @@ export default function MultiplayerTableGraphics() {
         ? "YOUR TURN"
         : "KOUPPI";
 
-  const handleLeave = () => {
-    if (isSpectator) leaveSpectator();
-    else leaveRoom();
+  const handleLeave = async () => {
+    setLeaveError(null);
+    if (isSpectator) {
+      leaveSpectator();
+      router.push("/lobby");
+      return;
+    }
+    const result = await leaveRoom();
+    if (!result.success) {
+      setLeaveError(result.error || "Cannot leave right now");
+      return;
+    }
+    router.push("/lobby");
+  };
+
+  const handleKickPlayer = async (targetId: string) => {
+    setHostActionError(null);
+    const result = await kickPlayer(targetId);
+    if (!result.success) {
+      const message =
+        result.code === "cannot_kick_current_player"
+          ? "Cannot kick the player whose turn it is"
+          : result.error || "Could not kick player";
+      setHostActionError(message);
+    }
+  };
+
+  const handleCloseRoom = async () => {
+    if (!window.confirm("Close this room for everyone?")) return;
+    setHostActionError(null);
+    const result = await closeRoomAsHost();
+    if (!result.success) {
+      setHostActionError(result.error || "Could not close room");
+      return;
+    }
     router.push("/lobby");
   };
 
@@ -195,6 +231,41 @@ export default function MultiplayerTableGraphics() {
 
   if ((roundEnded || gameState.phase === "RoundEnd") && roundDecision?.active) {
     const myChoice = roundDecision.choices[playerId || ""] || null;
+    if (isSpectator) {
+      return (
+        <RoundEndPanel
+          title="Round Ending"
+          subtitle={
+            <>
+              Players are deciding whether to stay. Auto-start in{" "}
+              <strong className="text-gold-light">{roundDecision.remaining}s</strong>
+            </>
+          }
+          standings={gameState.players.map((p) => {
+            const c = roundDecision.choices[p.id];
+            return {
+              id: p.id,
+              name: p.name,
+              bankroll: p.bankroll,
+              isMe: false,
+              status: (
+                <span
+                  className={
+                    c === "stay" ? "text-success text-xs" : c === "leave" ? "text-error text-xs" : "text-gray-500 text-xs"
+                  }
+                >
+                  {c === "stay" ? "Stay" : c === "leave" ? "Leave" : "…"}
+                </span>
+              ),
+            };
+          })}
+        >
+          <HudButton variant="ghost" fullWidth onClick={handleLeave}>
+            Stop Watching
+          </HudButton>
+        </RoundEndPanel>
+      );
+    }
     return (
       <RoundEndPanel
         subtitle={
@@ -233,6 +304,26 @@ export default function MultiplayerTableGraphics() {
   }
 
   if (roundEnded || gameState.phase === "RoundEnd") {
+    if (isSpectator) {
+      return (
+        <RoundEndPanel
+          title="Round Complete"
+          subtitle="Spectating"
+          standings={[...gameState.players]
+            .sort((a, b) => b.bankroll - a.bankroll)
+            .map((p) => ({
+              id: p.id,
+              name: p.name,
+              bankroll: p.bankroll,
+              isMe: false,
+            }))}
+        >
+          <HudButton variant="ghost" fullWidth onClick={handleLeave}>
+            Stop Watching
+          </HudButton>
+        </RoundEndPanel>
+      );
+    }
     return (
       <RoundEndPanel
         title="Round Complete"
@@ -273,6 +364,17 @@ export default function MultiplayerTableGraphics() {
     </div>
   ) : null;
 
+  const leaveErrorBanner = leaveError ? (
+    <div className="hud-status-banner !fixed top-20 left-1/2 -translate-x-1/2 z-50 !text-center !py-2 !px-4 border-error/40 bg-error/10 text-error max-w-md" role="alert">
+      {leaveError}
+      <button type="button" className="ml-2 underline text-sm" onClick={() => setLeaveError(null)}>
+        Dismiss
+      </button>
+    </div>
+  ) : null;
+
+  const currentTurnPlayerId = gameState.players[gameState.currentIndex]?.id;
+
   return (
     <CasinoBackground className="text-white" theme={theme}>
       <ConnectionStatusBanner />
@@ -287,8 +389,22 @@ export default function MultiplayerTableGraphics() {
         onComplete={() => setShowChipFly(false)}
       />
       {timeoutBanner}
+      {leaveErrorBanner}
 
       <div className="container mx-auto px-3 sm:px-4 py-4 sm:py-6">
+        {isSpectator && (
+          <div className="mb-3 flex justify-center">
+            <span className="hud-badge hud-badge-live text-sm px-4 py-2">Spectating — read-only</span>
+          </div>
+        )}
+        {hostActionError && isHost && !isSpectator && (
+          <div className="mb-3 hud-status-banner !text-center text-warning text-sm" role="alert">
+            {hostActionError}
+            <button type="button" className="ml-2 underline" onClick={() => setHostActionError(null)}>
+              Dismiss
+            </button>
+          </div>
+        )}
         <GameHUD
           title="KOUPPI"
           badges={[
@@ -310,6 +426,11 @@ export default function MultiplayerTableGraphics() {
           rightActions={
             <div className="flex items-center gap-2 flex-wrap justify-end">
               <TableThemeSelector compact id="mp-table-theme" />
+              {isHost && !isSpectator && (
+                <HudButton variant="ghost" size="sm" onClick={handleCloseRoom}>
+                  Close Room
+                </HudButton>
+              )}
               <HudButton
                 variant="danger"
                 size="sm"
@@ -373,7 +494,33 @@ export default function MultiplayerTableGraphics() {
           </PokerTable>
         </div>
 
-        {isMyTurn && up && !awaitingNext && gameState.phase === "Round" && !currentBankrupt && (
+        {isHost && !isSpectator && playersInRoom.length > 1 && (
+          <div className="mb-4 p-3 rounded-xl border border-white/10 bg-black/25">
+            <p className="text-xs text-gray-400 font-ui uppercase tracking-wider mb-2">Host Controls</p>
+            <div className="flex flex-wrap gap-2">
+              {playersInRoom
+                .filter((p) => p.id !== playerId)
+                .map((p) => (
+                  <HudButton
+                    key={p.id}
+                    variant="danger"
+                    size="sm"
+                    disabled={currentTurnPlayerId === p.id}
+                    onClick={() => handleKickPlayer(p.id)}
+                    title={
+                      currentTurnPlayerId === p.id
+                        ? "Cannot kick during their turn"
+                        : `Remove ${p.name}`
+                    }
+                  >
+                    Kick {p.name}
+                  </HudButton>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {isMyTurn && up && !awaitingNext && gameState.phase === "Round" && !currentBankrupt && !isSpectator && (
           <GameActionPanel
             bet={bet}
             onBetChange={setBet}
