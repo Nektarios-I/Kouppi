@@ -60,6 +60,10 @@ describe("lobby management", () => {
     expect(found.playerCount).toBe(2);
     expect(found.started).toBe(false); // host-controlled start; not started yet
 
+    await new Promise<void>((resolve) => {
+      c2.emit("setReady", { roomId, ready: true }, () => resolve());
+    });
+
     // Start the room and verify rooms list updates
     const snapStarted = await new Promise<any>((resolve, reject) => {
       c1.emit("startRoom", { roomId, by: "p1" }, (err: any, snap: any) => {

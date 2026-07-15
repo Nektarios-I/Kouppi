@@ -8,7 +8,9 @@ import {
   startTurnTimer, clearTurnTimer, getTurnTimerInfo, resetAfkCount, incrementAfkCount, shouldKickForAfk,
   startFirstTurn, getCurrentPlayerId, syncGamePlayersToRoom, findPlayerBySocket, promoteHost,
   beginDisconnectGrace, cancelDisconnectGrace, RECONNECT_GRACE_MS,
-  addChatMessage, getChatMessages, clearChatMessages, cleanupEmptyRooms
+  addChatMessage, getChatMessages, clearChatMessages, cleanupEmptyRooms,
+  resolveRoomIdentifier, buildRoomUpdatePayload, setPlayerReady, kickPlayer,
+  startGraceTickBroadcast, stopGraceTickBroadcast, generateRoomCode,
 } from "./rooms.js";
 import type { TableConfig } from "@kouppi/game-core";
 import { applyAction } from "@kouppi/game-core";
@@ -129,12 +131,14 @@ export function createKouppiServer(opts?: {
       closeRoom(roomId);
     }
 
+    function emitRoomUpdate(roomId: string) {
+      const room = getRoom(roomId);
+      if (!room) return;
+      io.to(roomId).emit("roomUpdate", buildRoomUpdatePayload(room));
+    }
+
     function buildRoomData(room: NonNullable<ReturnType<typeof getRoom>>) {
-      return {
-        players: room.players.map((p: any) => ({ id: p.id, name: p.name, avatar: p.avatar })),
-        spectators: room.spectators?.map((s: any) => ({ id: s.id, name: s.name, avatar: s.avatar })) || [],
-        hostId: room.hostId,
-      };
+      return buildRoomUpdatePayload(room);
     }
 
     /** Remove player, promote host if needed, sync state, or close empty room. */
@@ -211,22 +215,24 @@ export function createKouppiServer(opts?: {
     }
 
     // createRoom with creator + config (ack)
-    socket.on("createRoom", (payload, cb?: (err: any|null, snapshot?: any) => void) => {
+    socket.on("createRoom", (payload, cb?: (err: any|null, snapshot?: any, roomData?: any) => void) => {
       try {
         const data = CreateRoomPayload.parse(payload);
-        if (getRoom(data.roomId)) {
+        const publicCode = data.code ? data.code.trim().toUpperCase() : undefined;
+        const roomId = data.roomId?.trim() || publicCode || generateRoomCode();
+        if (getRoom(roomId)) {
           const err = { code: "room_exists", message: "Room exists" };
           cb ? cb(err) : socket.emit("error", err);
           return;
         }
         const cfg: TableConfig = { ...defaultConfig, ...(data.config as any) };
         const creator = { id: data.creator.id, name: data.creator.name, socketId: socket.id, avatar: data.creator.avatar };
-        // Pass optional password for private rooms
-        createRoomWithCreator(data.roomId, creator, cfg as any, Math.floor(Math.random() * 1e9), data.password);
-        socket.join(data.roomId);
-        const snap = snapshot(data.roomId);
-        const ackSnap = snap ?? null;
-        cb ? cb(null, ackSnap) : socket.emit("state", ackSnap);
+        createRoomWithCreator(roomId, creator, cfg as any, Math.floor(Math.random() * 1e9), data.password, publicCode);
+        socket.join(roomId);
+        const room = getRoom(roomId)!;
+        const ackSnap = snapshot(roomId) ?? null;
+        const roomData = buildRoomData(room);
+        cb ? cb(null, ackSnap, roomData) : socket.emit("state", ackSnap);
       } catch (e: any) {
         const err = { code: "bad_request", message: e.message };
         cb ? cb(err) : socket.emit("error", err);
@@ -238,8 +244,8 @@ export function createKouppiServer(opts?: {
       try {
         const data = JoinRoomPayload.parse(payload);
         
-        // Check if room exists first
-        const existingRoom = getRoom(data.roomId);
+        const resolvedId = resolveRoomIdentifier(data.roomId);
+        const existingRoom = resolvedId ? getRoom(resolvedId) : undefined;
         if (!existingRoom) {
           const err = { code: "room_not_found", message: "Room not found" };
           cb ? cb(err) : socket.emit("error", err);
@@ -269,25 +275,78 @@ export function createKouppiServer(opts?: {
           cb ? cb(e2) : socket.emit("error", e2);
           return;
         }
-        socket.join(data.roomId);
-        const room = getRoom(data.roomId);
-        const snap = snapshot(data.roomId);
+        socket.join(resolvedId!);
+        const room = getRoom(resolvedId!)!;
+        const snap = snapshot(resolvedId!);
         const ackSnap = snap ?? null;
-        // Include room data (players list, hostId, avatars, spectators) in the ack for proper state setup
-        const roomData = room ? {
-          players: room.players.map((p: any) => ({ id: p.id, name: p.name, avatar: p.avatar })),
-          spectators: room.spectators?.map((s: any) => ({ id: s.id, name: s.name, avatar: s.avatar })) || [],
-          hostId: room.hostId,
-        } : null;
-        // Notify everyone in the room about the update
-        io.to(data.roomId).emit("roomUpdate", roomData);
+        const roomData = buildRoomData(room);
+        io.to(resolvedId!).emit("roomUpdate", roomData);
         if (snap) {
-          io.to(data.roomId).emit("state", snap);
+          io.to(resolvedId!).emit("state", snap);
         }
         cb ? cb(null, ackSnap, roomData) : socket.emit("state", ackSnap);
       } catch (e: any) {
         const err = { code: "bad_request", message: e.message };
         cb ? cb(err) : socket.emit("error", err);
+      }
+    });
+
+    socket.on("setReady", (payload: { roomId: string; ready: boolean }, cb?: (err: any|null, roomData?: any) => void) => {
+      try {
+        const resolvedId = resolveRoomIdentifier(payload.roomId);
+        if (!resolvedId) {
+          cb?.({ code: "room_not_found", message: "Room not found" });
+          return;
+        }
+        const room = getRoom(resolvedId)!;
+        const sessionPlayer = findPlayerBySocket(room, socket.id);
+        if (!sessionPlayer) {
+          cb?.({ code: "not_in_room", message: "Not in room" });
+          return;
+        }
+        setPlayerReady(resolvedId, sessionPlayer.id, !!payload.ready);
+        const roomData = buildRoomData(getRoom(resolvedId)!);
+        io.to(resolvedId).emit("roomUpdate", roomData);
+        cb?.(null, roomData);
+      } catch (e: any) {
+        const code = e?.message === "game_in_progress" ? "game_in_progress" : "bad_request";
+        cb?.({ code, message: e?.message || String(e) });
+      }
+    });
+
+    socket.on("kickPlayer", (payload: { roomId: string; targetId: string }, cb?: (err: any|null) => void) => {
+      try {
+        const resolvedId = resolveRoomIdentifier(payload.roomId);
+        if (!resolvedId) {
+          cb?.({ code: "room_not_found", message: "Room not found" });
+          return;
+        }
+        const room = getRoom(resolvedId)!;
+        const sessionPlayer = findPlayerBySocket(room, socket.id);
+        if (!sessionPlayer) {
+          cb?.({ code: "not_in_room", message: "Not in room" });
+          return;
+        }
+        const target = room.players.find((p) => p.id === payload.targetId);
+        const targetSocketId = target?.socketId;
+        kickPlayer(resolvedId, sessionPlayer.id, payload.targetId);
+        if (targetSocketId) {
+          const kickedSocket = io.sockets.sockets.get(targetSocketId);
+          kickedSocket?.emit("playerKicked", { playerId: payload.targetId, reason: "kicked_by_host" });
+          kickedSocket?.leave(resolvedId);
+        }
+        const closed = finalizePlayerRemoval(resolvedId);
+        if (!closed) {
+          emitRoomUpdate(resolvedId);
+        }
+        cb?.(null);
+      } catch (e: any) {
+        const code =
+          e?.message === "not_host" ? "not_host"
+          : e?.message === "game_in_progress" ? "game_in_progress"
+          : e?.message === "cannot_kick_self" ? "cannot_kick_self"
+          : "bad_request";
+        cb?.({ code, message: e?.message || String(e) });
       }
     });
 
@@ -490,7 +549,7 @@ export function createKouppiServer(opts?: {
         
         cb ? cb(null, snap) : socket.emit("state", snap);
       } catch (e: any) {
-        const code = e?.message === "not_host" ? "not_host" : e?.message === "not_enough_players" ? "not_enough_players" : "bad_request";
+        const code = e?.message === "not_host" ? "not_host" : e?.message === "not_enough_players" ? "not_enough_players" : e?.message === "not_all_ready" ? "not_all_ready" : "bad_request";
         const err = { code, message: e?.message || String(e) };
         cb ? cb(err) : socket.emit("error", err);
       }
@@ -843,9 +902,9 @@ export function createKouppiServer(opts?: {
     socket.on("joinAsSpectator", (payload, cb?: (err: any|null, snapshot?: any, roomData?: any) => void) => {
       try {
         const data = JoinAsSpectatorPayload.parse(payload);
-        const roomId = data.roomId;
+        const resolvedId = resolveRoomIdentifier(data.roomId);
+        const room = resolvedId ? getRoom(resolvedId) : undefined;
         const spectator = data.spectator;
-        const room = getRoom(roomId);
         if (!room) {
           const err = { code: "room_not_found", message: "Room not found" };
           cb ? cb(err) : socket.emit("error", err);
@@ -890,16 +949,11 @@ export function createKouppiServer(opts?: {
           });
         }
         
-        socket.join(roomId);
-        const snap = snapshot(roomId);
-        const roomData = {
-          players: room.players.map((p: any) => ({ id: p.id, name: p.name, avatar: p.avatar })),
-          spectators: room.spectators?.map((s: any) => ({ id: s.id, name: s.name, avatar: s.avatar })) || [],
-          hostId: room.hostId,
-        };
+        socket.join(resolvedId!);
+        const snap = snapshot(resolvedId!);
+        const roomData = buildRoomData(room);
         
-        // Notify everyone about the new spectator
-        io.to(roomId).emit("roomUpdate", roomData);
+        io.to(resolvedId!).emit("roomUpdate", roomData);
         
         cb ? cb(null, snap, roomData) : socket.emit("state", snap);
       } catch (e: any) {
@@ -968,6 +1022,8 @@ export function createKouppiServer(opts?: {
             leaveRoom(rid, playerId);
             finalizePlayerRemoval(rid, playerId);
           });
+          emitRoomUpdate(rid);
+          startGraceTickBroadcast(room, () => emitRoomUpdate(rid));
         }
       }
     });

@@ -1,10 +1,17 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { PreGameShell } from "@/components/game/LobbyUI";
 import { HudButton } from "@/components/game/HudButton";
+import { useRemoteGameStore } from "@/store/remoteGameStore";
 
 export default function HomePage() {
+  useEffect(() => {
+    const { roomId, disconnect } = useRemoteGameStore.getState();
+    if (!roomId) disconnect();
+  }, []);
+
   return (
     <PreGameShell>
       <div className="w-full max-w-lg text-center">

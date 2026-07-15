@@ -1,34 +1,23 @@
 "use client";
 
 import React from "react";
-import type { AvatarConfig } from "@/store/remoteGameStore";
+import type { AvatarConfig, PlayerInfo } from "@/store/remoteGameStore";
 import AvatarPicker, { Avatar } from "@/components/AvatarPicker";
 import { HudButton } from "./HudButton";
+import RoomInvitePanel from "./RoomInvitePanel";
 import {
   LobbyCard,
-  LobbyInput,
   LobbyAlert,
   LobbyFooterLink,
 } from "./LobbyUI";
 
-interface WaitingPlayer {
-  id: string;
-  name: string;
-  avatar?: AvatarConfig | null;
-}
-
-interface WaitingSpectator {
-  id: string;
-  name: string;
-}
-
 export interface WaitingRoomProps {
-  roomId: string;
+  roomCode: string;
   hostId?: string | null;
   connected: boolean;
   isHost: boolean;
-  players: WaitingPlayer[];
-  spectators: WaitingSpectator[];
+  players: PlayerInfo[];
+  spectators: Array<{ id: string; name: string }>;
   playerId: string | null;
   playerAvatar: AvatarConfig | null;
   starting: boolean;
@@ -37,11 +26,13 @@ export interface WaitingRoomProps {
   onStartGame: () => void;
   onLeave: () => void;
   onCopyLink: () => void;
+  onSetReady: (ready: boolean) => void;
+  onKickPlayer: (targetId: string) => void;
   onClearError?: () => void;
 }
 
 export default function WaitingRoom({
-  roomId,
+  roomCode,
   hostId,
   connected,
   isHost,
@@ -55,20 +46,30 @@ export default function WaitingRoom({
   onStartGame,
   onLeave,
   onCopyLink,
+  onSetReady,
+  onKickPlayer,
+  onClearError,
 }: WaitingRoomProps) {
-  const roomUrl = typeof window !== "undefined" ? window.location.href : "";
+  const me = players.find((p) => p.id === playerId);
+  const allReady = players.length >= 2 && players.every((p) => p.ready && p.connected !== false);
+  const readyCount = players.filter((p) => p.ready).length;
 
   return (
     <div className="max-w-2xl mx-auto">
-      {/* Header strip */}
+      {lastError && (
+        <LobbyAlert variant="error" onDismiss={onClearError}>
+          {lastError}
+        </LobbyAlert>
+      )}
+
       <header className="hud-header-strip mb-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <p className="text-xs text-gray-500 font-ui uppercase tracking-widest mb-1">
               Waiting Room
             </p>
-            <h1 className="font-display text-xl sm:text-2xl font-bold text-gold-light truncate">
-              {roomId}
+            <h1 className="font-display text-xl sm:text-2xl font-bold text-gold-light tracking-widest">
+              {roomCode}
             </h1>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -78,11 +79,10 @@ export default function WaitingRoom({
               {connected ? "Connected" : "Offline"}
             </span>
             {isHost && <span className="hud-badge hud-badge-gold">👑 Host</span>}
+            <span className="hud-badge hud-badge-live">{readyCount}/{players.length} ready</span>
           </div>
         </div>
       </header>
-
-      {lastError && <LobbyAlert variant="error">{lastError}</LobbyAlert>}
 
       <LobbyCard title="Players" icon="♠" badge={<span className="hud-badge">{players.length}</span>}>
         {players.length === 0 ? (
@@ -91,23 +91,42 @@ export default function WaitingRoom({
           </p>
         ) : (
           <div className="space-y-2">
-            {players.map((player, index) => (
+            {players.map((player) => (
               <div
                 key={player.id}
                 className={`lobby-player-row ${player.id === playerId ? "lobby-player-row-me" : ""}`}
               >
-                <div className="flex items-center gap-3 min-w-0">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
                   <Avatar avatar={player.avatar} size="md" />
-                  <span className="font-ui font-medium truncate">
-                    {player.name}
-                    {player.id === playerId && (
-                      <span className="text-gold text-xs ml-1">(you)</span>
+                  <div className="min-w-0">
+                    <span className="font-ui font-medium truncate block">
+                      {player.name}
+                      {player.id === playerId && (
+                        <span className="text-gold text-xs ml-1">(you)</span>
+                      )}
+                    </span>
+                    {player.connected === false && player.reconnectRemainingSec != null && (
+                      <span className="text-warning text-xs font-ui">
+                        Reconnecting… {player.reconnectRemainingSec}s
+                      </span>
                     )}
-                  </span>
+                  </div>
                 </div>
-                {hostId && player.id === hostId && (
-                  <span className="text-xs text-gold font-ui shrink-0">Host</span>
-                )}
+                <div className="flex items-center gap-2 shrink-0">
+                  {hostId && player.id === hostId && (
+                    <span className="text-xs text-gold font-ui">Host</span>
+                  )}
+                  <span
+                    className={`text-xs font-ui ${player.ready ? "text-success" : "text-gray-500"}`}
+                  >
+                    {player.ready ? "Ready" : "Not ready"}
+                  </span>
+                  {isHost && player.id !== playerId && player.id !== hostId && (
+                    <HudButton variant="danger" size="sm" onClick={() => onKickPlayer(player.id)}>
+                      Kick
+                    </HudButton>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -116,6 +135,11 @@ export default function WaitingRoom({
         {players.length < 2 && (
           <p className="mt-4 text-xs text-center text-gray-500 font-ui hud-status-banner !py-2">
             At least 2 players required to start
+          </p>
+        )}
+        {!allReady && players.length >= 2 && (
+          <p className="mt-4 text-xs text-center text-gray-500 font-ui hud-status-banner !py-2">
+            Waiting for all players to ready up…
           </p>
         )}
       </LobbyCard>
@@ -139,35 +163,42 @@ export default function WaitingRoom({
         </div>
       </LobbyCard>
 
-      <LobbyCard title="Invite" icon="⛓">
-        <div className="flex gap-2">
-          <LobbyInput readOnly value={roomUrl} className="flex-1 text-xs sm:text-sm" />
-          <HudButton variant="bet" size="sm" onClick={onCopyLink}>
-            Copy
-          </HudButton>
-        </div>
+      <LobbyCard title="Invite Friends" icon="⛓">
+        <RoomInvitePanel roomCode={roomCode} onCopyLink={onCopyLink} />
       </LobbyCard>
 
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mt-2">
-        {isHost ? (
+      <div className="flex flex-col gap-3 mt-2">
+        {me && (
           <HudButton
-            variant="success"
-            size="lg"
+            variant={me.ready ? "ghost" : "success"}
             fullWidth
-            onClick={onStartGame}
-            disabled={players.length < 2 || starting}
-            className="sm:flex-1"
+            onClick={() => onSetReady(!me.ready)}
           >
-            {starting ? "Starting…" : "Start Game"}
+            {me.ready ? "Not Ready" : "Ready Up"}
           </HudButton>
-        ) : (
-          <p className="text-gray-400 font-ui text-sm text-center sm:text-left flex-1 py-2">
-            Waiting for host to start…
-          </p>
         )}
-        <HudButton variant="danger" onClick={onLeave} className="sm:w-auto">
-          Leave Room
-        </HudButton>
+
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          {isHost ? (
+            <HudButton
+              variant="success"
+              size="lg"
+              fullWidth
+              onClick={onStartGame}
+              disabled={!allReady || starting}
+              className="sm:flex-1"
+            >
+              {starting ? "Starting…" : "Start Game"}
+            </HudButton>
+          ) : (
+            <p className="text-gray-400 font-ui text-sm text-center sm:text-left flex-1 py-2">
+              Waiting for host to start…
+            </p>
+          )}
+          <HudButton variant="danger" onClick={onLeave} className="sm:w-auto">
+            Leave Room
+          </HudButton>
+        </div>
       </div>
 
       <LobbyFooterLink href="/lobby">← Back to Lobby</LobbyFooterLink>

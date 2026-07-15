@@ -13,6 +13,7 @@ export type PlayerSession = {
   socketId: string;
   afkCount?: number; // consecutive AFK turns
   avatar?: AvatarConfig; // player's chosen avatar
+  ready?: boolean;
   disconnectedAt?: number;
   pendingRemovalTimer?: ReturnType<typeof setTimeout>;
 };
@@ -44,6 +45,8 @@ export type SpectatorSession = {
 
 export type Room = {
   id: string;
+  /** Short public code for invites (6 chars, case-insensitive lookup) */
+  code: string;
   seed: number;
   config: TableConfig;
   maxPlayers: number;
@@ -70,4 +73,6 @@ export type Room = {
   };
   // Chat messages (cleared when room is closed)
   chatMessages?: ChatMessage[];
+  /** Broadcasts reconnect countdown while any player is in grace */
+  graceTickInterval?: ReturnType<typeof setInterval>;
 };

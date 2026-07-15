@@ -132,6 +132,7 @@ export function LobbyField({
 /* ── Room row ── */
 export interface RoomRowData {
   id: string;
+  code?: string;
   playerCount: number;
   maxPlayers: number;
   isPrivate?: boolean;
@@ -165,7 +166,7 @@ export function RoomRow({
         </div>
         <div className="min-w-0">
           <div className="font-ui font-semibold text-white truncate flex items-center gap-2">
-            {room.id}
+            {room.code || room.id}
             {room.isPrivate && (
               <span className="text-gold text-xs" title="Private">
                 🔒

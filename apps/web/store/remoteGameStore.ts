@@ -21,13 +21,25 @@ export type RoomConfig = {
 
 export type RoomInfo = {
   id: string;
+  code: string;
   playerCount: number;
   maxPlayers: number;
   started: boolean;
   hostId?: string;
   spectatorsAllowed?: boolean;
   spectatorCount?: number;
-  isPrivate?: boolean; // Has password protection
+  isPrivate?: boolean;
+};
+
+export type ConnectionStatus = "connected" | "connecting" | "reconnecting" | "disconnected";
+
+export type PlayerInfo = {
+  id: string;
+  name: string;
+  avatar?: AvatarConfig;
+  ready?: boolean;
+  connected?: boolean;
+  reconnectRemainingSec?: number | null;
 };
 
 // Avatar configuration
@@ -37,11 +49,28 @@ export type AvatarConfig = {
   borderColor: string;
 };
 
-export type PlayerInfo = {
-  id: string;
-  name: string;
-  avatar?: AvatarConfig;
-};
+const SESSION_ROOM_KEY = "kouppi_active_room_code";
+const SESSION_ROOM_ID_KEY = "kouppi_active_room_id";
+
+function persistActiveRoom(code: string, roomId: string) {
+  if (typeof sessionStorage === "undefined") return;
+  sessionStorage.setItem(SESSION_ROOM_KEY, code);
+  sessionStorage.setItem(SESSION_ROOM_ID_KEY, roomId);
+}
+
+function clearActiveRoomSession() {
+  if (typeof sessionStorage === "undefined") return;
+  sessionStorage.removeItem(SESSION_ROOM_KEY);
+  sessionStorage.removeItem(SESSION_ROOM_ID_KEY);
+}
+
+export function getPersistedActiveRoom(): { code: string; roomId: string } | null {
+  if (typeof sessionStorage === "undefined") return null;
+  const code = sessionStorage.getItem(SESSION_ROOM_KEY);
+  const roomId = sessionStorage.getItem(SESSION_ROOM_ID_KEY);
+  if (!code || !roomId) return null;
+  return { code, roomId };
+}
 
 export type TurnTimerInfo = {
   remaining: number;
@@ -70,6 +99,8 @@ type RemoteStore = {
   // Connection state
   socket: Socket | null;
   connected: boolean;
+  connectionStatus: ConnectionStatus;
+  roomUpdateVersion: number;
   
   // Player identity
   playerId: string | null;
@@ -77,6 +108,7 @@ type RemoteStore = {
   
   // Current room state
   roomId: string | null;
+  roomCode: string | null;
   isHost: boolean;
   hostId: string | null;
   isSpectator: boolean;
@@ -117,8 +149,11 @@ type RemoteStore = {
   disconnect: () => void;
   setIdentity: (playerId: string, name: string) => void;
   clearRoomState: () => void; // Clear all room-related state before joining/creating
-  createRoom: (roomId: string, config: Partial<RoomConfig>, password?: string) => Promise<{ success: boolean; error?: string }>;
-  joinRoom: (roomId: string, password?: string) => Promise<{ success: boolean; error?: string; code?: string }>;
+  createRoom: (config: Partial<RoomConfig>, password?: string, code?: string) => Promise<{ success: boolean; error?: string; code?: string; roomId?: string }>;
+  joinRoom: (roomIdOrCode: string, password?: string) => Promise<{ success: boolean; error?: string; code?: string }>;
+  setReady: (ready: boolean) => Promise<{ success: boolean; error?: string }>;
+  kickPlayer: (targetId: string) => Promise<{ success: boolean; error?: string }>;
+  resumeActiveRoom: () => Promise<{ success: boolean; error?: string }>;
   subscribeToCareerRoom: (roomId: string) => Promise<{ success: boolean; error?: string }>; // Subscribe to room without re-joining (for career games)
   leaveRoom: () => void;
   startGame: () => Promise<{ success: boolean; error?: string }>;
@@ -145,9 +180,12 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
   // Initial state
   socket: null,
   connected: false,
+  connectionStatus: "disconnected" as ConnectionStatus,
+  roomUpdateVersion: 0,
   playerId: null,
   playerName: null,
   roomId: null,
+  roomCode: null,
   isHost: false,
   hostId: null,
   isSpectator: false,
@@ -179,16 +217,24 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     const s = io(serverUrl, {
       autoConnect: true,
       reconnection: true,
-      reconnectionAttempts: 5,
+      reconnectionAttempts: 10,
       reconnectionDelay: 500,
+      transports: ["websocket"],
     });
+
+    set({ connectionStatus: "connecting" });
     
     s.on("connect", () => {
-      set({ socket: s, connected: true, lastError: null });
+      set({ socket: s, connected: true, connectionStatus: "connected", lastError: null });
       get().listRooms();
     });
 
+    s.io.on("reconnect_attempt", () => {
+      set({ connectionStatus: "reconnecting" });
+    });
+
     s.io.on("reconnect", () => {
+      set({ connectionStatus: "connected", connected: true });
       const { roomId, playerId, playerName, isSpectator } = get();
       if (!roomId || !playerId || !playerName) return;
 
@@ -209,8 +255,20 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
 
       void attemptRejoin();
     });
+
+    if (typeof document !== "undefined") {
+      const onVisibility = () => {
+        if (document.visibilityState !== "visible") return;
+        const sock = get().socket;
+        if (sock && !sock.connected) {
+          set({ connectionStatus: "reconnecting" });
+          sock.connect();
+        }
+      };
+      document.addEventListener("visibilitychange", onVisibility);
+    }
     
-    s.on("disconnect", () => set({ connected: false }));
+    s.on("disconnect", () => set({ connected: false, connectionStatus: "reconnecting" }));
     
     s.on("state", (snapshot: any) => {
       if (snapshot) {
@@ -231,45 +289,58 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
       }
     });
     
-    s.on("roomUpdate", (data: { players: PlayerInfo[]; spectators?: PlayerInfo[]; hostId: string } | null) => {
-      if (data) {
-        const currentPlayerId = get().playerId;
-        const isSpectator = get().isSpectator;
-        
-        // Check if still in room as player or spectator
-        const stillInRoomAsPlayer = !!data.players?.some(p => p.id === currentPlayerId);
-        const stillInRoomAsSpectator = !!data.spectators?.some(s => s.id === currentPlayerId);
-        
-        if (!stillInRoomAsPlayer && !stillInRoomAsSpectator) {
-          // We have been removed. Reset ALL local state.
-          set({
-            roomId: null,
-            isHost: false,
-            hostId: null,
-            isSpectator: false,
-            state: null,
-            playersInRoom: [],
-            spectatorsInRoom: [],
-            gameStarted: false,
-            roomConfig: null,
-            turnTimer: null,
-            roundEnded: false,
-            roundDecision: null,
-            playerTimeout: null,
-            chatMessages: [],
-            activeEmotes: [],
-            lastError: null,
-          });
-          return;
-        }
+    s.on("roomUpdate", (data: {
+      roomId?: string;
+      code?: string;
+      version?: number;
+      players: PlayerInfo[];
+      spectators?: PlayerInfo[];
+      hostId: string;
+    } | null) => {
+      if (!data) return;
+      const current = get().roomUpdateVersion;
+      if (typeof data.version === "number" && data.version < current) return;
+
+      const currentPlayerId = get().playerId;
+      const isSpectator = get().isSpectator;
+      
+      const stillInRoomAsPlayer = !!data.players?.some(p => p.id === currentPlayerId);
+      const stillInRoomAsSpectator = !!data.spectators?.some(s => s.id === currentPlayerId);
+      
+      if (!stillInRoomAsPlayer && !stillInRoomAsSpectator) {
+        clearActiveRoomSession();
         set({
-          playersInRoom: data.players || [],
-          spectatorsInRoom: data.spectators || [],
-          isHost: data.hostId === currentPlayerId,
-          hostId: data.hostId || null,
-          isSpectator: stillInRoomAsSpectator && !stillInRoomAsPlayer,
+          roomId: null,
+          roomCode: null,
+          isHost: false,
+          hostId: null,
+          isSpectator: false,
+          state: null,
+          playersInRoom: [],
+          spectatorsInRoom: [],
+          gameStarted: false,
+          roomConfig: null,
+          turnTimer: null,
+          roundEnded: false,
+          roundDecision: null,
+          playerTimeout: null,
+          chatMessages: [],
+          activeEmotes: [],
+          lastError: null,
+          roomUpdateVersion: 0,
         });
+        return;
       }
+      set({
+        roomId: data.roomId ?? get().roomId,
+        roomCode: data.code ?? get().roomCode,
+        playersInRoom: data.players || [],
+        spectatorsInRoom: data.spectators || [],
+        isHost: data.hostId === currentPlayerId,
+        hostId: data.hostId || null,
+        isSpectator: stillInRoomAsSpectator && !stillInRoomAsPlayer,
+        roomUpdateVersion: typeof data.version === "number" ? data.version : current,
+      });
     });
     
     s.on("roomClosed", (data: { reason: string }) => {
@@ -333,10 +404,13 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
       const kickMessages: Record<string, string> = {
         afk: "You were kicked for being AFK",
         no_decision: "You were removed for not choosing stay or leave",
+        kicked_by_host: "You were removed by the host",
       };
 
+      clearActiveRoomSession();
       set({
         roomId: null,
+        roomCode: null,
         isHost: false,
         hostId: null,
         isSpectator: false,
@@ -390,7 +464,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     
     s.on("connect_error", (err: any) => {
       console.error("connect error", err?.message || err);
-      set({ lastError: `Connection failed: ${err?.message || "Unknown"}` });
+      set({ connectionStatus: "disconnected", lastError: `Connection failed: ${err?.message || "Unknown"}` });
     });
   },
 
@@ -398,10 +472,14 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     const s = get().socket;
     if (s) {
       s.disconnect();
+      clearActiveRoomSession();
       set({ 
         socket: null, 
-        connected: false, 
-        roomId: null, 
+        connected: false,
+        connectionStatus: "disconnected",
+        roomUpdateVersion: 0,
+        roomId: null,
+        roomCode: null, 
         isHost: false,
         hostId: null,
         isSpectator: false,
@@ -437,6 +515,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     }
     set({
       roomId: null,
+      roomCode: null,
       isHost: false,
       hostId: null,
       isSpectator: false,
@@ -452,24 +531,26 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
       chatMessages: [],
       activeEmotes: [],
       lastError: null,
+      roomUpdateVersion: 0,
     });
   },
 
-  createRoom: async (roomId, config, password) => {
+  createRoom: async (config, password, code) => {
     const { socket, playerId, playerName, roomId: currentRoomId } = get();
     if (!socket) return { success: false, error: "Not connected" };
     if (!playerId || !playerName) return { success: false, error: "Identity not set" };
     
-    // Clear any previous room state first
     if (currentRoomId) {
       get().clearRoomState();
     }
     
     const { playerAvatar } = get();
+    const publicCode = code?.trim().toUpperCase();
     
     return new Promise((resolve) => {
       socket.emit("createRoom", {
-        roomId,
+        code: publicCode,
+        roomId: publicCode,
         creator: { id: playerId, name: playerName, avatar: playerAvatar || undefined },
         config: {
           ante: config.ante ?? 10,
@@ -478,56 +559,63 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
           shistri: config.shistri ?? { enabled: true, percent: 5, minChip: 1 },
           spectatorsAllowed: config.spectatorsAllowed ?? true,
         },
-        password: password?.trim() || undefined, // Optional password
-      }, (err: any, snap: any) => {
+        password: password?.trim() || undefined,
+      }, (err: any, snap: any, roomData: any) => {
         if (err) {
           set({ lastError: err.message || "Create failed" });
           resolve({ success: false, error: err.message || err.code });
         } else {
+          const resolvedCode = roomData?.code || publicCode || "";
+          const resolvedRoomId = roomData?.roomId || publicCode || "";
+          persistActiveRoom(resolvedCode, resolvedRoomId);
           set({ 
-            roomId, 
+            roomId: resolvedRoomId,
+            roomCode: resolvedCode,
             isHost: true,
             hostId: playerId,
             state: snap || null,
             roomConfig: config as RoomConfig,
-            playersInRoom: [{ id: playerId, name: playerName, avatar: playerAvatar || undefined }],
+            playersInRoom: roomData?.players || [{ id: playerId, name: playerName, avatar: playerAvatar || undefined, ready: true, connected: true }],
             gameStarted: false,
             lastError: null,
+            roomUpdateVersion: roomData?.version ?? 0,
           });
-          resolve({ success: true });
+          resolve({ success: true, code: resolvedCode, roomId: resolvedRoomId });
         }
       });
     });
   },
 
-  joinRoom: async (roomId, password) => {
+  joinRoom: async (roomIdOrCode, password) => {
     const { socket, playerId, playerName, playerAvatar, roomId: currentRoomId } = get();
     if (!socket) return { success: false, error: "Not connected" };
     if (!playerId || !playerName) return { success: false, error: "Identity not set" };
     
     // Clear any previous room state first
-    if (currentRoomId && currentRoomId !== roomId) {
+    if (currentRoomId && currentRoomId !== roomIdOrCode) {
       get().clearRoomState();
     }
     
     return new Promise((resolve) => {
       socket.emit("joinRoom", {
-        roomId,
+        roomId: roomIdOrCode.trim(),
         player: { id: playerId, name: playerName, avatar: playerAvatar || undefined },
-        password: password?.trim() || undefined, // Password for private rooms
+        password: password?.trim() || undefined,
       }, (err: any, snap: any, roomData: any) => {
         if (err) {
           set({ lastError: err.message || "Join failed" });
-          // Return specific error code for wrong password
           const errorCode = err.code || (err.message?.includes("password") ? "wrong_password" : "join_failed");
           resolve({ success: false, error: err.message || err.code, code: errorCode });
         } else {
-          // Get host status from roomData returned by server
           const isHost = roomData?.hostId === playerId;
-          const players: PlayerInfo[] = roomData?.players || snap?.players?.map((p: any) => ({ id: p.id, name: p.name, avatar: p.avatar })) || [];
+          const players: PlayerInfo[] = roomData?.players || [];
+          const resolvedRoomId = roomData?.roomId || roomIdOrCode;
+          const resolvedCode = roomData?.code || roomIdOrCode.toUpperCase();
+          persistActiveRoom(resolvedCode, resolvedRoomId);
           
           set({ 
-            roomId, 
+            roomId: resolvedRoomId,
+            roomCode: resolvedCode,
             isHost,
             hostId: roomData?.hostId || null,
             isSpectator: false,
@@ -536,11 +624,53 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
             spectatorsInRoom: roomData?.spectators || [],
             gameStarted: snap?.phase !== "Lobby" && snap?.phase !== undefined,
             lastError: null,
+            roomUpdateVersion: roomData?.version ?? 0,
           });
           resolve({ success: true });
         }
       });
     });
+  },
+
+  setReady: async (ready) => {
+    const { socket, roomId } = get();
+    if (!socket || !roomId) return { success: false, error: "Not in a room" };
+    return new Promise((resolve) => {
+      socket.emit("setReady", { roomId, ready }, (err: any, roomData: any) => {
+        if (err) {
+          resolve({ success: false, error: err.message || err.code });
+        } else {
+          if (roomData) {
+            set({
+              playersInRoom: roomData.players || get().playersInRoom,
+              roomUpdateVersion: roomData.version ?? get().roomUpdateVersion,
+            });
+          }
+          resolve({ success: true });
+        }
+      });
+    });
+  },
+
+  kickPlayer: async (targetId) => {
+    const { socket, roomId, isHost } = get();
+    if (!socket || !roomId) return { success: false, error: "Not in a room" };
+    if (!isHost) return { success: false, error: "Only the host can kick players" };
+    return new Promise((resolve) => {
+      socket.emit("kickPlayer", { roomId, targetId }, (err: any) => {
+        if (err) resolve({ success: false, error: err.message || err.code });
+        else resolve({ success: true });
+      });
+    });
+  },
+
+  resumeActiveRoom: async () => {
+    const persisted = getPersistedActiveRoom();
+    if (!persisted) return { success: false, error: "No active room" };
+    const { playerId, playerName, roomId } = get();
+    if (!playerId || !playerName) return { success: false, error: "Identity not set" };
+    if (roomId) return { success: true };
+    return get().joinRoom(persisted.code);
   },
 
   // Subscribe to a career room without re-adding the player (player already added server-side)
@@ -586,9 +716,10 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     if (socket && roomId) {
       socket.emit("leaveRoom", { roomId });
     }
-    // Reset ALL room-related state to prevent leaking into next session
+    clearActiveRoomSession();
     set({ 
-      roomId: null, 
+      roomId: null,
+      roomCode: null, 
       isHost: false,
       hostId: null,
       isSpectator: false,

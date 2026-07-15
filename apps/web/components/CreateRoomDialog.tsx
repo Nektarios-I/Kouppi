@@ -1,10 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useRemoteGameStore, RoomConfig } from "@/store/remoteGameStore";
+import { useRemoteGameStore } from "@/store/remoteGameStore";
 import { HudButton } from "@/components/game/HudButton";
 import { LobbyInput, LobbyField, LobbyAlert } from "@/components/game/LobbyUI";
+
+function generateClientCode(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 6; i++) {
+    code += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return code;
+}
 
 export default function CreateRoomDialog({
   open,
@@ -16,10 +25,10 @@ export default function CreateRoomDialog({
   const router = useRouter();
   const { createRoom, playerId, playerName } = useRemoteGameStore();
 
-  const [roomId, setRoomId] = useState("");
+  const [roomCode, setRoomCode] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [config, setConfig] = useState<Partial<RoomConfig>>({
+  const [config, setConfig] = useState({
     maxPlayers: 8,
     ante: 10,
     startingBankroll: 100,
@@ -29,15 +38,18 @@ export default function CreateRoomDialog({
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (open && !roomCode) {
+      setRoomCode(generateClientCode());
+    }
+  }, [open, roomCode]);
+
   if (!open) return null;
 
   const handleCreate = async () => {
-    if (!roomId.trim()) {
-      setError("Room ID is required");
-      return;
-    }
-    if (roomId.trim().length < 3) {
-      setError("Room ID must be at least 3 characters");
+    const code = roomCode.trim().toUpperCase();
+    if (code.length < 4) {
+      setError("Room code must be at least 4 characters");
       return;
     }
     if (!playerId || !playerName) {
@@ -48,13 +60,13 @@ export default function CreateRoomDialog({
     setCreating(true);
     setError(null);
 
-    const result = await createRoom(roomId.trim(), config, password.trim() || undefined);
+    const result = await createRoom(config, password.trim() || undefined, code);
 
     setCreating(false);
 
     if (result.success) {
       onClose();
-      router.push(`/room/${encodeURIComponent(roomId.trim())}`);
+      router.push(`/room/${encodeURIComponent(result.code || code)}`);
     } else {
       setError(result.error || "Failed to create room");
     }
@@ -67,7 +79,7 @@ export default function CreateRoomDialog({
           <h2 className="font-display text-xl sm:text-2xl font-bold text-gold-light tracking-wide">
             Create New Room
           </h2>
-          <p className="text-gray-400 text-sm font-ui mt-1">Set up a table for your friends</p>
+          <p className="text-gray-400 text-sm font-ui mt-1">Share the code with friends to join</p>
         </div>
 
         {error && (
@@ -77,16 +89,18 @@ export default function CreateRoomDialog({
         )}
 
         <div className="space-y-4">
-          <LobbyField label="Room name">
-            <LobbyInput
-              placeholder="my-cool-room"
-              value={roomId}
-              onChange={(e) => setRoomId(e.target.value)}
-              autoFocus
-            />
-            <p className="text-xs text-gray-500 mt-1.5 font-ui">
-              Other players will use this to find your room
-            </p>
+          <LobbyField label="Room code">
+            <div className="flex gap-2">
+              <LobbyInput
+                value={roomCode}
+                onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                maxLength={8}
+                className="font-display tracking-widest text-lg"
+              />
+              <HudButton variant="ghost" size="sm" onClick={() => setRoomCode(generateClientCode())}>
+                New
+              </HudButton>
+            </div>
           </LobbyField>
 
           <LobbyField label="Password (optional)">
@@ -102,14 +116,10 @@ export default function CreateRoomDialog({
                 type="button"
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 text-sm"
                 onClick={() => setShowPassword(!showPassword)}
-                aria-label={showPassword ? "Hide password" : "Show password"}
               >
                 {showPassword ? "Hide" : "Show"}
               </button>
             </div>
-            <p className="text-xs text-gray-500 mt-1.5 font-ui">
-              {password.trim() ? "This room will be private" : "Public room — anyone can join"}
-            </p>
           </LobbyField>
 
           <div className="grid grid-cols-2 gap-4">
@@ -142,25 +152,11 @@ export default function CreateRoomDialog({
             </LobbyField>
           </div>
 
-          <LobbyField label="Starting bankroll">
-            <LobbyInput
-              type="number"
-              min={10}
-              value={config.startingBankroll}
-              onChange={(e) =>
-                setConfig((c) => ({
-                  ...c,
-                  startingBankroll: Math.max(10, Number(e.target.value)),
-                }))
-              }
-            />
-          </LobbyField>
-
           <label className="flex items-center gap-3 p-3 rounded-xl cursor-pointer lobby-player-row">
             <input
               type="checkbox"
               className="w-4 h-4 rounded accent-gold"
-              checked={config.spectatorsAllowed ?? true}
+              checked={config.spectatorsAllowed}
               onChange={(e) =>
                 setConfig((c) => ({
                   ...c,
@@ -170,32 +166,13 @@ export default function CreateRoomDialog({
             />
             <span className="font-ui text-sm text-gray-300">Allow spectators</span>
           </label>
-
-          <label className="flex items-center gap-3 p-3 rounded-xl cursor-pointer lobby-player-row">
-            <input
-              type="checkbox"
-              className="w-4 h-4 rounded accent-gold"
-              checked={config.shistri?.enabled ?? true}
-              onChange={(e) =>
-                setConfig((c) => ({
-                  ...c,
-                  shistri: { ...(c.shistri || { percent: 5, minChip: 1 }), enabled: e.target.checked },
-                }))
-              }
-            />
-            <span className="font-ui text-sm text-gray-300">Enable SHISTRI</span>
-          </label>
         </div>
 
         <div className="game-modal-actions mt-6">
           <HudButton variant="ghost" onClick={onClose} disabled={creating}>
             Cancel
           </HudButton>
-          <HudButton
-            variant="success"
-            onClick={handleCreate}
-            disabled={creating || !roomId.trim()}
-          >
+          <HudButton variant="success" onClick={handleCreate} disabled={creating || !roomCode.trim()}>
             {creating ? "Creating…" : "Create Room"}
           </HudButton>
         </div>

@@ -29,14 +29,15 @@ let mockStore: Record<string, unknown>;
 
 vi.mock("@/store/remoteGameStore", () => ({
   useRemoteGameStore: () => mockStore,
+  getPersistedActiveRoom: () => null,
 }));
 
 import LobbyPage from "@/app/lobby/page";
 
 function defaultRooms() {
   return [
-    { id: "lobby-1", playerCount: 1, maxPlayers: 2, started: false },
-    { id: "lobby-2", playerCount: 2, maxPlayers: 2, started: true, spectatorsAllowed: true },
+    { id: "lobby-1", code: "LOBBY1", playerCount: 1, maxPlayers: 2, started: false },
+    { id: "lobby-2", code: "LOBBY2", playerCount: 2, maxPlayers: 2, started: true, spectatorsAllowed: true },
   ];
 }
 
@@ -50,9 +51,12 @@ function baseStore(overrides: Record<string, unknown> = {}) {
     setIdentity,
     clearError,
     connected: true,
+    connectionStatus: "connected",
     rooms: defaultRooms(),
     playerId: "you",
     playerName: "Tester",
+    resumeActiveRoom: vi.fn(),
+    roomId: null as string | null,
     lastError: null,
     ...overrides,
   };
@@ -75,12 +79,12 @@ describe("Multiplayer lobby UI", () => {
 
   it("shows connection status", async () => {
     renderLobby();
-    expect(await screen.findByText(/Connected/i)).toBeInTheDocument();
+    expect(await screen.findByText("Connected", { selector: ".hud-badge" })).toBeInTheDocument();
   });
 
   it("renders lobby list and join buttons", async () => {
     renderLobby();
-    expect(await screen.findByText("lobby-1")).toBeInTheDocument();
+    expect(await screen.findByText("LOBBY1")).toBeInTheDocument();
     const joinButtons = await screen.findAllByRole("button", { name: /Join/i });
     expect(joinButtons.length).toBeGreaterThan(0);
   });
@@ -88,12 +92,12 @@ describe("Multiplayer lobby UI", () => {
   it("calls joinRoom when clicking Join", async () => {
     const user = userEvent.setup();
     renderLobby();
-    const row = await screen.findByText("lobby-1");
+    const row = await screen.findByText("LOBBY1");
     const card = row.closest(".lobby-room-row");
     const joinBtn = card?.querySelector("button");
     expect(joinBtn).toBeTruthy();
     await user.click(joinBtn!);
-    expect(joinRoom).toHaveBeenCalledWith("lobby-1", undefined);
+    expect(joinRoom).toHaveBeenCalledWith("LOBBY1", undefined);
   });
 
   it("clears sessionStorage when changing name", async () => {
@@ -113,6 +117,7 @@ describe("Multiplayer lobby UI", () => {
       rooms: [
         {
           id: "private-live",
+          code: "PRIV01",
           playerCount: 2,
           maxPlayers: 4,
           started: true,

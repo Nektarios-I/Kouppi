@@ -49,6 +49,7 @@ function baseStore(overrides: Record<string, unknown> = {}) {
     connect,
     connected: true,
     roomId: null,
+    roomCode: null,
     isHost: false,
     hostId: "host-1",
     isSpectator: false,
@@ -67,6 +68,8 @@ function baseStore(overrides: Record<string, unknown> = {}) {
     leaveRoom: vi.fn(),
     leaveSpectator: vi.fn(),
     startGame: vi.fn(),
+    setReady: vi.fn(),
+    kickPlayer: vi.fn(),
     listRooms: vi.fn(),
     lastError: null,
     clearError,
@@ -128,13 +131,13 @@ describe("waiting room host label", () => {
     const WaitingRoom = (await import("@/components/game/WaitingRoom")).default;
     render(
       <WaitingRoom
-        roomId="test-room"
+        roomCode="TEST01"
         hostId="p2"
         connected
         isHost={false}
         players={[
-          { id: "p1", name: "First" },
-          { id: "p2", name: "HostPlayer" },
+          { id: "p1", name: "First", ready: true, connected: true },
+          { id: "p2", name: "HostPlayer", ready: true, connected: true },
         ]}
         spectators={[]}
         playerId="p1"
@@ -145,6 +148,8 @@ describe("waiting room host label", () => {
         onStartGame={vi.fn()}
         onLeave={vi.fn()}
         onCopyLink={vi.fn()}
+        onSetReady={vi.fn()}
+        onKickPlayer={vi.fn()}
       />
     );
 

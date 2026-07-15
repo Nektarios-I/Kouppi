@@ -8,6 +8,7 @@ export default function Chat({ collapsed = false }: { collapsed?: boolean }) {
   const { chatMessages, sendChatMessage, fetchChatHistory, playerId, roomId } = useRemoteGameStore();
   const [message, setMessage] = useState("");
   const [isOpen, setIsOpen] = useState(!collapsed);
+  const [lastReadCount, setLastReadCount] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -18,8 +19,11 @@ export default function Chat({ collapsed = false }: { collapsed?: boolean }) {
   }, [roomId, fetchChatHistory]);
 
   useEffect(() => {
-    if (isOpen && messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    if (isOpen) {
+      setLastReadCount(chatMessages.length);
+      if (messagesEndRef.current) {
+        messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+      }
     }
   }, [chatMessages, isOpen]);
 
@@ -44,9 +48,16 @@ export default function Chat({ collapsed = false }: { collapsed?: boolean }) {
   };
 
   if (!isOpen) {
-    const unreadCount = chatMessages.length;
+    const unreadCount = Math.max(0, chatMessages.length - lastReadCount);
     return (
-      <button type="button" onClick={() => setIsOpen(true)} className="chat-fab">
+      <button
+        type="button"
+        onClick={() => {
+          setLastReadCount(chatMessages.length);
+          setIsOpen(true);
+        }}
+        className="chat-fab"
+      >
         <span className="text-xl">💬</span>
         <span>Chat</span>
         {unreadCount > 0 && (

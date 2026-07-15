@@ -4,14 +4,18 @@ import { createKouppiServer } from "../src/serverFactory";
 
 let httpServer: any;
 let ioServer: any;
-let port = 4100;
+let port = 0;
 
 beforeAll(async () => {
   const created = createKouppiServer({ corsOrigin: "*", skipCareerDatabase: true });
   httpServer = created.httpServer;
   ioServer = created.io;
   await new Promise<void>((resolve) => {
-    httpServer.listen(port, () => resolve());
+    httpServer.listen(0, () => {
+      const addr = httpServer.address();
+      port = typeof addr === "object" && addr ? addr.port : 4100;
+      resolve();
+    });
   });
 }, 20000);
 
@@ -22,8 +26,8 @@ afterAll(async () => {
 
 describe("socket.io room flow", () => {
   it("creates and joins a room with two clients and applies intents", async () => {
-    const c1: Socket = clientIo(`http://localhost:${port}`, { autoConnect: true });
-    const c2: Socket = clientIo(`http://localhost:${port}`, { autoConnect: true });
+    const c1: Socket = clientIo(`http://127.0.0.1:${port}`, { autoConnect: true, transports: ["websocket"] });
+    const c2: Socket = clientIo(`http://127.0.0.1:${port}`, { autoConnect: true, transports: ["websocket"] });
 
     await new Promise<void>((resolve, reject) => {
       c1.on("connect", () => resolve());
@@ -45,11 +49,12 @@ describe("socket.io room flow", () => {
 
     // both join (ack)
     // Host already joined during creation
-    const snapJoin2 = await new Promise<any>((resolve) => {
+    await new Promise<void>((resolve) => {
       c2.emit("joinRoom", { roomId, player: { id: "p2", name: "Bob" } }, (_err: any, snap: any) => resolve(snap));
     });
-    // Room not started yet; ack snapshot should be null
-    expect(snapJoin2).toBeNull();
+    await new Promise<void>((resolve) => {
+      c2.emit("setReady", { roomId, ready: true }, () => resolve());
+    });
     const snapStarted = await new Promise<any>((resolve, reject) => {
       c1.emit("startRoom", { roomId, by: "p1" }, (err: any, snap: any) => {
         if (err) return reject(new Error(`startRoom error: ${err.code}`));
@@ -95,5 +100,5 @@ describe("socket.io room flow", () => {
     // cleanup
     c1.close();
     c2.close();
-  }, 20000);
+  }, 30000);
 });

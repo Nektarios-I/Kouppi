@@ -16,6 +16,7 @@ import { GameLog, RoundEndPanel } from "./game/GamePanels";
 import { HudButton } from "./game/HudButton";
 import CasinoBackground from "./game/CasinoBackground";
 import TableThemeSelector from "./game/TableThemeSelector";
+import ConnectionStatusBanner from "./game/ConnectionStatusBanner";
 import { useTableTheme } from "@/hooks/useTableTheme";
 
 export default function MultiplayerTableGraphics() {
@@ -31,11 +32,13 @@ export default function MultiplayerTableGraphics() {
     playerTimeout,
     playersInRoom,
     spectatorsInRoom,
+    isHost,
     sendIntent,
     leaveRoom,
     leaveSpectator,
     decideStay,
     decideLeave,
+    requestNewRound,
   } = useRemoteGameStore();
   const { theme } = useTableTheme();
 
@@ -44,6 +47,7 @@ export default function MultiplayerTableGraphics() {
   const [celebrationType, setCelebrationType] = useState<"win" | "kouppi" | "shistri">("win");
   const [showChipFly, setShowChipFly] = useState(false);
   const [chipFlyAmount, setChipFlyAmount] = useState(0);
+  const [startingRound, setStartingRound] = useState(false);
 
   const sounds = useGameSounds();
   const prevIsMyTurn = useRef<boolean>(false);
@@ -181,6 +185,12 @@ export default function MultiplayerTableGraphics() {
     router.push("/lobby");
   };
 
+  const handleStartNewRound = async () => {
+    setStartingRound(true);
+    await requestNewRound();
+    setStartingRound(false);
+  };
+
   if (!gameState) return null;
 
   if ((roundEnded || gameState.phase === "RoundEnd") && roundDecision?.active) {
@@ -235,9 +245,20 @@ export default function MultiplayerTableGraphics() {
             isMe: p.id === playerId,
           }))}
       >
-        <div className="flex-1 text-center text-gray-400 py-3 bg-black/25 rounded-xl font-ui text-sm border border-white/5">
-          Waiting for next round…
-        </div>
+        {isHost ? (
+          <HudButton
+            variant="success"
+            fullWidth
+            onClick={handleStartNewRound}
+            disabled={startingRound}
+          >
+            {startingRound ? "Starting…" : "Start Next Round"}
+          </HudButton>
+        ) : (
+          <div className="flex-1 text-center text-gray-400 py-3 bg-black/25 rounded-xl font-ui text-sm border border-white/5">
+            Waiting for host to start next round…
+          </div>
+        )}
         <HudButton variant="danger" onClick={handleLeave}>
           Leave
         </HudButton>
@@ -254,6 +275,7 @@ export default function MultiplayerTableGraphics() {
 
   return (
     <CasinoBackground className="text-white" theme={theme}>
+      <ConnectionStatusBanner />
       <Celebration
         active={showCelebration}
         type={celebrationType}

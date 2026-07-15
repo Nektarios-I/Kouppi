@@ -20,6 +20,7 @@ import {
   LobbyInput,
   LobbyAlert,
 } from "@/components/game/LobbyUI";
+import ConnectionStatusBanner from "@/components/game/ConnectionStatusBanner";
 import { HudButton } from "@/components/game/HudButton";
 
 const MultiplayerTable = dynamic(
@@ -55,6 +56,9 @@ export default function RoomPage() {
     subscribeToCareerRoom,
     joinAsSpectator,
     leaveSpectator,
+    roomCode,
+    setReady,
+    kickPlayer,
     startGame,
     leaveRoom,
     lastError,
@@ -275,8 +279,24 @@ export default function RoomPage() {
   };
 
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(window.location.href);
-    showToast("Link copied to clipboard", "success");
+    const code = roomCode || decodedRoomId;
+    const url = `${window.location.origin}/join?code=${encodeURIComponent(code)}`;
+    navigator.clipboard.writeText(url);
+    showToast("Invite link copied", "success");
+  };
+
+  const handleSetReady = async (ready: boolean) => {
+    const result = await setReady(ready);
+    if (!result.success) {
+      showToast(result.error || "Could not update ready state", "error");
+    }
+  };
+
+  const handleKickPlayer = async (targetId: string) => {
+    const result = await kickPlayer(targetId);
+    if (!result.success) {
+      showToast(result.error || "Could not kick player", "error");
+    }
   };
 
   if (!playerName && !isCareerGame) {
@@ -383,8 +403,9 @@ export default function RoomPage() {
 
   return (
     <LobbyShell>
+      <ConnectionStatusBanner />
       <WaitingRoom
-        roomId={decodedRoomId}
+        roomCode={roomCode || decodedRoomId}
         hostId={hostId}
         connected={connected}
         isHost={isHost}
@@ -398,6 +419,8 @@ export default function RoomPage() {
         onStartGame={handleStartGame}
         onLeave={handleLeave}
         onCopyLink={handleCopyLink}
+        onSetReady={handleSetReady}
+        onKickPlayer={handleKickPlayer}
         onClearError={clearError}
       />
       <Chat />

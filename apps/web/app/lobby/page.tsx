@@ -2,7 +2,8 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useRemoteGameStore } from "@/store/remoteGameStore";
+import { useRemoteGameStore, getPersistedActiveRoom } from "@/store/remoteGameStore";
+import ConnectionStatusBanner from "@/components/game/ConnectionStatusBanner";
 import CreateRoomDialog from "../../components/CreateRoomDialog";
 import { useToast } from "@/components/game/Toast";
 import { HudButton } from "@/components/game/HudButton";
@@ -35,9 +36,13 @@ export default function LobbyPage() {
     clearRoomState,
     lastError,
     clearError,
+    resumeActiveRoom,
+    roomId: activeRoomId,
   } = useRemoteGameStore();
 
   const [joinRoomId, setJoinRoomId] = useState("");
+  const [persistedRoom, setPersistedRoom] = useState<{ code: string; roomId: string } | null>(null);
+  const [resuming, setResuming] = useState(false);
   const [spectateSearch, setSpectateSearch] = useState("");
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [localName, setLocalName] = useState("");
@@ -79,16 +84,23 @@ export default function LobbyPage() {
     sessionStorage.setItem("kouppi_player_name", localName.trim());
   };
 
-  const handleJoinRoom = async (roomId: string, password?: string) => {
+  useEffect(() => {
+    setPersistedRoom(getPersistedActiveRoom());
+  }, [activeRoomId]);
+
+  const handleJoinRoom = async (roomIdOrCode: string, password?: string) => {
     if (!playerId || !playerName) {
       showToast("Please set your name first", "warning");
       return;
     }
 
-    const targetRoom = rooms.find((r) => r.id === roomId);
+    const normalized = roomIdOrCode.trim();
+    const targetRoom =
+      rooms.find((r) => r.id === normalized || r.code === normalized.toUpperCase()) ||
+      rooms.find((r) => r.code.toUpperCase() === normalized.toUpperCase());
     if (targetRoom?.isPrivate && !password) {
       setPasswordModalMode("join");
-      setPasswordModalRoomId(roomId);
+      setPasswordModalRoomId(normalized);
       setPasswordInput("");
       setPasswordError(null);
       setPasswordModalOpen(true);
@@ -97,12 +109,13 @@ export default function LobbyPage() {
 
     setJoining(true);
     clearError();
-    const result = await joinRoom(roomId, password);
+    const joinTarget = targetRoom?.code || normalized;
+    const result = await joinRoom(joinTarget, password);
     setJoining(false);
 
     if (result.success) {
       setPasswordModalOpen(false);
-      router.push(`/room/${encodeURIComponent(roomId)}`);
+      router.push(`/room/${encodeURIComponent(joinTarget)}`);
     } else {
       if (
         (result as { code?: string }).code === "wrong_password" ||
@@ -111,7 +124,7 @@ export default function LobbyPage() {
         if (passwordModalOpen) {
           setPasswordError("Incorrect password");
         } else {
-          setPasswordModalRoomId(roomId);
+          setPasswordModalRoomId(roomIdOrCode);
           setPasswordInput("");
           setPasswordError("This room requires a password");
           setPasswordModalOpen(true);
@@ -192,6 +205,7 @@ export default function LobbyPage() {
 
   return (
     <LobbyShell>
+      <ConnectionStatusBanner />
       <LobbyHeader
         subtitle="The Ultimate Card Game Experience"
         connected={connected}
@@ -243,6 +257,31 @@ export default function LobbyPage() {
         )}
       </LobbyCard>
 
+      {persistedRoom && !activeRoomId && playerName && (
+        <LobbyCard title="Resume Game" icon="↻">
+          <p className="text-sm text-gray-400 font-ui mb-3">
+            You were in room <strong className="text-gold-light">{persistedRoom.code}</strong>
+          </p>
+          <HudButton
+            variant="success"
+            disabled={resuming}
+            onClick={async () => {
+              setResuming(true);
+              const result = await resumeActiveRoom();
+              setResuming(false);
+              if (result.success) {
+                router.push(`/room/${encodeURIComponent(persistedRoom.code)}`);
+              } else {
+                showToast(result.error || "Could not rejoin room", "error");
+                setPersistedRoom(null);
+              }
+            }}
+          >
+            {resuming ? "Rejoining…" : "Rejoin Room"}
+          </HudButton>
+        </LobbyCard>
+      )}
+
       <LobbyCard title="Quick Actions" icon="♠">
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center gap-4">
           <HudButton
@@ -257,7 +296,7 @@ export default function LobbyPage() {
           <span className="text-gray-500 text-sm font-ui text-center hidden lg:block">or</span>
           <div className="flex flex-1 flex-col sm:flex-row gap-3 min-w-0">
             <LobbyInput
-              placeholder="Enter Room ID to join…"
+              placeholder="Enter room code to join…"
               value={joinRoomId}
               onChange={(e) => setJoinRoomId(e.target.value)}
               onKeyDown={(e) =>
@@ -301,6 +340,7 @@ export default function LobbyPage() {
                 key={room.id}
                 room={{
                   id: room.id,
+                  code: room.code,
                   playerCount: room.playerCount,
                   maxPlayers: room.maxPlayers,
                   isPrivate: room.isPrivate,
@@ -310,7 +350,7 @@ export default function LobbyPage() {
                 actionVariant="bet"
                 loading={joining}
                 disabled={!playerName}
-                onAction={() => handleJoinRoom(room.id)}
+                onAction={() => handleJoinRoom(room.code || room.id)}
               />
             ))}
           </div>
@@ -350,6 +390,7 @@ export default function LobbyPage() {
                 key={room.id}
                 room={{
                   id: room.id,
+                  code: room.code,
                   playerCount: room.playerCount,
                   maxPlayers: room.maxPlayers,
                   isPrivate: room.isPrivate,

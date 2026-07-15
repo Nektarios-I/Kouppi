@@ -70,6 +70,10 @@ describe("multiplayer security fixes", () => {
       guest.emit("joinRoom", { roomId, player: { id: "p2", name: "Bob" } }, () => resolve());
     });
 
+    await new Promise<void>((resolve) => {
+      guest.emit("setReady", { roomId, ready: true }, () => resolve());
+    });
+
     await new Promise<void>((resolve, reject) => {
       host.emit("startRoom", { roomId, by: "p1" }, (err: any) => (err ? reject(err) : resolve()));
     });
@@ -124,6 +128,10 @@ describe("multiplayer security fixes", () => {
 
     await new Promise<void>((resolve) => {
       c2.emit("joinRoom", { roomId, player: { id: "p2", name: "Bob" } }, () => resolve());
+    });
+
+    await new Promise<void>((resolve) => {
+      c2.emit("setReady", { roomId, ready: true }, () => resolve());
     });
 
     await new Promise<void>((resolve, reject) => {

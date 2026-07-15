@@ -33,17 +33,51 @@ export const RoomConfig = z.object({
 });
 
 export const CreateRoomPayload = z.object({
-  roomId: z.string().min(3),
+  roomId: z.string().min(3).optional(),
+  /** Optional 6-char public code; server generates if omitted */
+  code: z.string().min(4).max(8).optional(),
   creator: PlayerIdentity,
   config: RoomConfig.partial().default({}),
-  password: z.string().optional(), // Optional password for private rooms
+  password: z.string().optional(),
 });
 export type CreateRoomPayload = z.infer<typeof CreateRoomPayload>;
 
+export const SetReadyPayload = z.object({
+  roomId: z.string().min(1),
+  ready: z.boolean(),
+});
+export type SetReadyPayload = z.infer<typeof SetReadyPayload>;
+
+export const KickPlayerPayload = z.object({
+  roomId: z.string().min(1),
+  targetId: z.string().min(1),
+});
+export type KickPlayerPayload = z.infer<typeof KickPlayerPayload>;
+
+export const RoomPlayerInfo = z.object({
+  id: z.string(),
+  name: z.string(),
+  avatar: AvatarConfig.optional(),
+  ready: z.boolean().optional(),
+  connected: z.boolean().optional(),
+  reconnectRemainingSec: z.number().int().nullable().optional(),
+});
+export type RoomPlayerInfo = z.infer<typeof RoomPlayerInfo>;
+
+export const RoomUpdatePayload = z.object({
+  roomId: z.string(),
+  code: z.string(),
+  version: z.number().int(),
+  players: z.array(RoomPlayerInfo),
+  spectators: z.array(z.object({ id: z.string(), name: z.string(), avatar: AvatarConfig.optional() })),
+  hostId: z.string().optional(),
+});
+export type RoomUpdatePayload = z.infer<typeof RoomUpdatePayload>;
+
 export const JoinRoomPayload = z.object({
-  roomId: z.string().min(3),
+  roomId: z.string().min(1), // Room id or public code (case-insensitive)
   player: PlayerIdentity,
-  password: z.string().optional(), // Password required if room is private
+  password: z.string().optional(),
 });
 export type JoinRoomPayload = z.infer<typeof JoinRoomPayload>;
 
@@ -109,9 +143,10 @@ export const ClientEvents = {
 
 export const RoomsListItem = z.object({
   id: z.string(),
+  code: z.string(),
   playerCount: z.number().int(),
   maxPlayers: z.number().int(),
   started: z.boolean(),
-  hostId: z.string(),
+  hostId: z.string().optional(),
 });
 export type RoomsListItem = z.infer<typeof RoomsListItem>;
