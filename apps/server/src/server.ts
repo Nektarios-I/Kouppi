@@ -1,8 +1,9 @@
 import { createKouppiServer } from "./serverFactory.js";
 import { attachRedisAdapterIfConfigured } from "./redisAdapter.js";
 import { initRedisServices } from "./redisClient.js";
+import { parseCorsOrigins } from "./config/corsOrigins.js";
 
-const corsOrigin = process.env.CORS_ORIGIN || "*";
+const corsOrigin = parseCorsOrigins(process.env.CORS_ORIGIN);
 
 async function start() {
   await initRedisServices();

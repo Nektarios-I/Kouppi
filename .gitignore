@@ -37,6 +37,12 @@ test-results/
 # Vercel local metadata
 .vercel/
 
+# SQLite databases (local dev / ephemeral deploy artifacts)
+apps/server/data/
+*.db
+*.db-shm
+*.db-wal
+
 # Misc
 *.zip
 *.7z

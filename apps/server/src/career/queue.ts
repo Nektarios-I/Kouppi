@@ -19,6 +19,7 @@ export interface QueueEntry {
   rating: number;
   trophies: number;
   socketId: string;
+  anteId: string;
   queuedAt: number;
 }
 
@@ -33,6 +34,21 @@ export interface MatchFound {
 
 // In-memory queue
 const queue = new Map<string, QueueEntry>();
+
+// Injectable clock for deterministic tests
+let queueNow: () => number = () => Date.now();
+
+export function setQueueClock(nowFn: () => number): void {
+  queueNow = nowFn;
+}
+
+export function resetQueueClock(): void {
+  queueNow = () => Date.now();
+}
+
+function nowMs(): number {
+  return queueNow();
+}
 
 // Callbacks for match events
 let onMatchFoundCallback: ((match: MatchFound) => void) | null = null;
@@ -51,15 +67,16 @@ export function joinQueue(entry: QueueEntry): { success: boolean; position: numb
   // Check if already in queue
   if (queue.has(entry.playerId)) {
     const existing = queue.get(entry.playerId)!;
-    // Update socket ID if reconnecting
+    // Update socket ID and ante if reconnecting / refreshing
     existing.socketId = entry.socketId;
+    existing.anteId = entry.anteId;
     return { success: true, position: getQueuePosition(entry.playerId) };
   }
   
   // Add to queue
   queue.set(entry.playerId, {
     ...entry,
-    queuedAt: Date.now(),
+    queuedAt: nowMs(),
   });
   
   // Try to find a match immediately
@@ -114,7 +131,7 @@ export function getQueueSize(): number {
 export function getWaitTime(playerId: string): number {
   const entry = queue.get(playerId);
   if (!entry) return 0;
-  return Math.floor((Date.now() - entry.queuedAt) / 1000);
+  return Math.floor((nowMs() - entry.queuedAt) / 1000);
 }
 
 /**
@@ -200,9 +217,20 @@ export function getQueueStatus(playerId: string): {
   waitTime: number;
   searchRange: number;
   queueSize: number;
+  fallbackMode?: "expanded" | "cross-tier" | "quick-match";
 } {
   const inQueue = isInQueue(playerId);
   const waitTime = getWaitTime(playerId);
+  
+  // Determine fallback mode
+  let fallbackMode: "expanded" | "cross-tier" | "quick-match" | undefined;
+  if (waitTime >= 45) {
+    fallbackMode = "quick-match";
+  } else if (waitTime >= 30) {
+    fallbackMode = "cross-tier";
+  } else if (waitTime >= 15) {
+    fallbackMode = "expanded";
+  }
   
   return {
     inQueue,
@@ -210,6 +238,7 @@ export function getQueueStatus(playerId: string): {
     waitTime,
     searchRange: getMatchmakingRange(waitTime),
     queueSize: getQueueSize(),
+    fallbackMode,
   };
 }
 
@@ -218,4 +247,5 @@ export function getQueueStatus(playerId: string): {
  */
 export function clearQueue(): void {
   queue.clear();
+  resetQueueClock();
 }

@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useMemo } from "react";
-import PlayerSeat from "@/components/game/PlayerSeat";
-import { getPlayerPosition } from "@/components/game/seatPositions";
+import React, { useMemo, useRef } from "react";
+import TableSeatLayout from "@/components/game/TableSeatLayout";
 import { ChipStack } from "@/components/ChipAnimation";
 import type { AvatarConfig } from "@/store/remoteGameStore";
 import { useTableTheme } from "@/hooks/useTableTheme";
 import { useTextureImage } from "@/hooks/useTextureImage";
+import { SEAT_SAFE_ZONE } from "@/components/game/seatLayout";
 
 interface Player {
   id: string;
@@ -24,6 +24,12 @@ export interface PokerTableProps {
   children?: React.ReactNode;
   dealerMessage?: string;
   avatars?: Record<string, AvatarConfig>;
+  connectionByPlayerId?: Record<
+    string,
+    { connected?: boolean; reconnectRemainingSec?: number | null }
+  >;
+  currentBetByPlayerId?: Record<string, number>;
+  turnRemainingSec?: number | null;
 }
 
 const RAIL_STUDS = Array.from({ length: 20 }, (_, i) => i);
@@ -37,10 +43,14 @@ export function PokerTable({
   children,
   dealerMessage = "KOUPPI",
   avatars = {},
+  connectionByPlayerId,
+  currentBetByPlayerId,
+  turnRemainingSec = null,
 }: PokerTableProps) {
   const { theme } = useTableTheme();
   const feltTextureState = useTextureImage(theme.tableTextureUrl);
   const railTextureState = useTextureImage(theme.railTextureUrl);
+  const tableSurfaceRef = useRef<HTMLDivElement>(null);
 
   const feltTextureReady = feltTextureState === "loaded";
   const railTextureReady = railTextureState === "loaded";
@@ -73,9 +83,6 @@ export function PokerTable({
     [railTextureReady, theme]
   );
 
-  const myIndex = players.findIndex((p) => p.id === playerId);
-  const effectiveMyIndex = myIndex >= 0 ? myIndex : 0;
-
   const glowStyle = theme.glowColor
     ? { boxShadow: `0 0 50px ${theme.glowColor}, 0 24px 64px rgba(0,0,0,0.75)` }
     : undefined;
@@ -102,7 +109,17 @@ export function PokerTable({
       />
 
       <div className="table-perspective relative z-10">
-        <div className="table-tilt relative w-full aspect-[16/10] select-none" style={glowStyle}>
+        <div
+          ref={tableSurfaceRef}
+          className="table-tilt relative w-full aspect-[16/10] select-none overflow-visible"
+          style={
+            {
+              ...glowStyle,
+              ["--seat-safe-rx" as string]: `${SEAT_SAFE_ZONE.rx}%`,
+              ["--seat-safe-ry" as string]: `${SEAT_SAFE_ZONE.ry}%`,
+            } as React.CSSProperties
+          }
+        >
           {/* Pedestal skirt */}
           <div
             className="absolute inset-[-5px] sm:inset-[-7px] rounded-[50%]"
@@ -283,20 +300,16 @@ export function PokerTable({
             {children}
           </div>
 
-          {players.map((player, index) => {
-            const position = getPlayerPosition(index, players.length, effectiveMyIndex);
-            return (
-              <div key={player.id} className="absolute z-30" style={position}>
-                <PlayerSeat
-                  player={player}
-                  isCurrentTurn={index === currentIndex}
-                  isMe={player.id === playerId}
-                  isBankrupt={player.bankroll <= 0}
-                  avatar={avatars[player.id]}
-                />
-              </div>
-            );
-          })}
+          <TableSeatLayout
+            players={players}
+            currentIndex={currentIndex}
+            playerId={playerId}
+            avatars={avatars}
+            connectionByPlayerId={connectionByPlayerId}
+            currentBetByPlayerId={currentBetByPlayerId}
+            turnRemainingSec={turnRemainingSec}
+            containerRef={tableSurfaceRef}
+          />
         </div>
       </div>
 

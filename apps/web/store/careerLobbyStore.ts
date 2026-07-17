@@ -1,17 +1,11 @@
 /**
- * Career Lobby Store
- * 
- * Manages client-side state for career mode matchmaking:
- * - Tier data with eligibility
- * - Current room state
- * - Socket connection
+ * Career Lobby Store — queue-based matchmaking (Sprint 2)
  */
 
 import { create } from "zustand";
 import { io, Socket } from "socket.io-client";
 import { formatConnectionError, getServerUrl } from "@/lib/serverUrl";
 
-// Get API URL dynamically at runtime (not module load time)
 function getApiUrl() {
   return getServerUrl();
 }
@@ -65,181 +59,204 @@ export interface CareerRoomState {
   secondsRemaining: number | null;
 }
 
+export interface QueueState {
+  inQueue: boolean;
+  position: number;
+  waitTime: number;
+  searchRange: number;
+  queueSize: number;
+  anteId?: string;
+  tierId?: string;
+  fallbackMode?: "expanded" | "cross-tier" | "quick-match";
+}
+
+export interface MatchFoundData {
+  roomId: string;
+  opponent: {
+    username: string;
+    rating: number;
+    avatarEmoji: string;
+    avatarColor: string;
+    avatarBorder: string;
+  };
+}
+
 interface CareerLobbyState {
-  // Socket
   socket: Socket | null;
   isConnected: boolean;
   isConnecting: boolean;
-  
-  // User data
+  authToken: string | null;
   isAuthenticated: boolean;
   playerRating: number;
   playerBankroll: number;
-  
-  // Tiers
   tiers: Tier[];
   selectedTierId: string | null;
   isLoadingTiers: boolean;
-  
-  // Room
+  queueState: QueueState | null;
+  isJoiningQueue: boolean;
+  queuePollInterval: ReturnType<typeof setInterval> | null;
+  matchFound: MatchFoundData | null;
   currentRoom: CareerRoomState | null;
   isJoiningRoom: boolean;
-  
-  // Game transition
   gameRoomId: string | null;
-  
-  // Errors
   error: string | null;
-  
-  // Actions
   connect: (token: string) => void;
   disconnect: () => void;
   fetchTiers: (token: string) => void;
   selectTier: (tierId: string) => void;
-  joinAnte: (token: string, anteId: string) => Promise<boolean>;
+  joinQueue: (token: string, anteId: string) => Promise<boolean>;
+  leaveQueue: (token: string) => void;
+  startQueuePolling: (token: string) => void;
+  stopQueuePolling: () => void;
   leaveRoom: (token: string) => void;
   clearError: () => void;
   reset: () => void;
 }
 
 export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
-  // Initial state
   socket: null,
   isConnected: false,
   isConnecting: false,
+  authToken: null,
   isAuthenticated: false,
   playerRating: 0,
   playerBankroll: 0,
   tiers: [],
   selectedTierId: null,
   isLoadingTiers: false,
+  queueState: null,
+  isJoiningQueue: false,
+  queuePollInterval: null,
+  matchFound: null,
   currentRoom: null,
   isJoiningRoom: false,
   gameRoomId: null,
   error: null,
-  
+
   connect: (token: string) => {
     const { socket } = get();
     if (socket?.connected) return;
-    
-    set({ isConnecting: true, error: null });
-    
+
+    set({ isConnecting: true, error: null, authToken: token });
+
     const newSocket = io(getApiUrl(), {
       transports: ["websocket", "polling"],
       autoConnect: true,
     });
-    
+
     newSocket.on("connect", () => {
-      console.log("[CareerLobby] Connected to server");
       set({ isConnected: true, isConnecting: false });
-      
-      // Authenticate
       newSocket.emit("career:auth", { token }, (err: any, data: any) => {
         if (err) {
-          console.error("[CareerLobby] Auth failed:", err);
           set({ error: err.message, isAuthenticated: false });
           return;
         }
-        
-        console.log("[CareerLobby] Authenticated:", data);
-        set({ 
+        set({
           isAuthenticated: true,
           playerRating: data.rating,
           playerBankroll: data.bankroll,
         });
-        
-        // Auto-fetch tiers after auth
         get().fetchTiers(token);
       });
     });
-    
+
     newSocket.on("disconnect", () => {
-      console.log("[CareerLobby] Disconnected");
       set({ isConnected: false, isAuthenticated: false });
+      get().stopQueuePolling();
     });
-    
+
     newSocket.on("connect_error", (err) => {
-      console.error("[CareerLobby] Connection error:", err);
       set({ isConnecting: false, error: formatConnectionError(err?.message) });
     });
-    
-    // Room updates
+
     newSocket.on("career:roomUpdate", (data: CareerRoomState) => {
-      console.log("[CareerLobby] Room update:", data);
-      set({ currentRoom: data });
+      set({ currentRoom: data, matchFound: null });
     });
-    
-    // Auto-start timer
+
+    newSocket.on("career:queueJoined", (data: QueueState & { anteId: string; tierId: string }) => {
+      set({
+        queueState: {
+          inQueue: true,
+          position: data.position,
+          waitTime: data.waitTime ?? 0,
+          searchRange: data.searchRange ?? 100,
+          queueSize: data.queueSize ?? 0,
+          anteId: data.anteId,
+          tierId: data.tierId,
+          fallbackMode: data.fallbackMode,
+        },
+        isJoiningQueue: false,
+      });
+      const { authToken } = get();
+      if (authToken) get().startQueuePolling(authToken);
+    });
+
+    newSocket.on("career:queueStatus", (data: QueueState) => {
+      if (get().matchFound) return;
+      set({ queueState: data.inQueue ? data : null });
+    });
+
+    newSocket.on("career:matchFound", (data: MatchFoundData) => {
+      set({ matchFound: data, queueState: null });
+      get().stopQueuePolling();
+    });
+
     newSocket.on("career:autoStartTimer", (data: { roomId: string; startsAt: number; secondsRemaining: number }) => {
-      console.log("[CareerLobby] Auto-start timer:", data);
       const { currentRoom } = get();
       if (currentRoom?.roomId === data.roomId) {
-        set({ 
-          currentRoom: { 
-            ...currentRoom, 
+        set({
+          currentRoom: {
+            ...currentRoom,
             autoStartAt: data.startsAt,
             secondsRemaining: data.secondsRemaining,
-          } 
+          },
         });
       }
     });
-    
-    // Game starting
-    newSocket.on("career:gameStarting", (data: any) => {
-      console.log("[CareerLobby] Game starting:", data);
-      set({ currentRoom: { ...get().currentRoom!, status: "starting" } });
-    });
-    
-    // Transition to game
-    newSocket.on("career:transitionToGame", (data: { careerRoomId: string; gameRoomId: string; config: any }) => {
-      console.log("[CareerLobby] Transitioning to game:", data);
+
+    newSocket.on("career:transitionToGame", (data: { gameRoomId: string }) => {
       set({ gameRoomId: data.gameRoomId });
     });
-    
-    // Game finished
-    newSocket.on("career:gameFinished", (data: { roomId: string }) => {
-      console.log("[CareerLobby] Game finished:", data);
-      set({ currentRoom: null, gameRoomId: null });
+
+    newSocket.on("career:gameFinished", () => {
+      set({ currentRoom: null, gameRoomId: null, matchFound: null });
     });
-    
-    // Errors
-    newSocket.on("career:error", (err: { code: string; message: string }) => {
-      console.error("[CareerLobby] Error:", err);
-      set({ error: err.message });
+
+    newSocket.on("career:error", (err: { message: string }) => {
+      set({ error: err.message, isJoiningQueue: false });
     });
-    
+
     set({ socket: newSocket });
   },
-  
+
   disconnect: () => {
+    get().stopQueuePolling();
     const { socket } = get();
-    if (socket) {
+    if (socket && typeof socket.disconnect === "function") {
       socket.disconnect();
-      set({ 
-        socket: null, 
-        isConnected: false, 
-        isAuthenticated: false,
-        currentRoom: null,
-        gameRoomId: null,
-      });
     }
+    set({
+      socket: null,
+      isConnected: false,
+      isAuthenticated: false,
+      authToken: null,
+      queueState: null,
+      matchFound: null,
+      currentRoom: null,
+      gameRoomId: null,
+    });
   },
-  
+
   fetchTiers: (token: string) => {
     const { socket } = get();
     if (!socket?.connected) return;
-    
     set({ isLoadingTiers: true, error: null });
-    
     socket.emit("career:getTiers", { token }, (err: any, data: any) => {
       if (err) {
-        console.error("[CareerLobby] Failed to fetch tiers:", err);
         set({ isLoadingTiers: false, error: err.message });
         return;
       }
-      
-      console.log("[CareerLobby] Tiers:", data);
-      set({ 
+      set({
         tiers: data.tiers,
         playerRating: data.playerRating,
         playerBankroll: data.playerBankroll,
@@ -247,74 +264,111 @@ export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
       });
     });
   },
-  
+
   selectTier: (tierId: string) => {
-    set({ selectedTierId: tierId, error: null });
+    set({ selectedTierId: tierId || null, error: null });
   },
-  
-  joinAnte: async (token: string, anteId: string): Promise<boolean> => {
+
+  joinQueue: async (token: string, anteId: string): Promise<boolean> => {
     const { socket } = get();
     if (!socket?.connected) {
       set({ error: "Not connected to server" });
       return false;
     }
-    
-    set({ isJoiningRoom: true, error: null });
-    
+    set({ isJoiningQueue: true, error: null, authToken: token });
     return new Promise((resolve) => {
-      socket.emit("career:joinAnte", { token, anteId }, (err: any, data: any) => {
+      socket.emit("career:joinAnte", { token, anteId }, (err: any) => {
         if (err) {
-          console.error("[CareerLobby] Failed to join ante:", err);
-          set({ isJoiningRoom: false, error: err.message });
+          set({ isJoiningQueue: false, error: err.message });
           resolve(false);
           return;
         }
-        
-        console.log("[CareerLobby] Joined room:", data);
-        set({ 
-          isJoiningRoom: false,
-          currentRoom: data,
-        });
         resolve(true);
       });
     });
   },
-  
-  leaveRoom: (token: string) => {
-    const { socket, currentRoom } = get();
-    if (!socket?.connected || !currentRoom) return;
-    
-    socket.emit("career:leaveRoom", { token }, (err: any, data: any) => {
+
+  leaveQueue: (token: string) => {
+    const { socket, queueState } = get();
+    if (!socket?.connected || !queueState?.inQueue) return;
+    socket.emit("career:leaveQueue", { token }, (err: any) => {
       if (err) {
-        console.error("[CareerLobby] Failed to leave room:", err);
         set({ error: err.message });
         return;
       }
-      
-      console.log("[CareerLobby] Left room");
-      set({ currentRoom: null });
+      set({ queueState: null, matchFound: null, isJoiningQueue: false });
+      get().stopQueuePolling();
     });
   },
-  
-  clearError: () => {
-    set({ error: null });
+
+  startQueuePolling: (token: string) => {
+    const { socket, queuePollInterval } = get();
+    if (!socket?.connected) return;
+    if (queuePollInterval) clearInterval(queuePollInterval);
+
+    const interval = setInterval(() => {
+      const { socket: currentSocket, queueState, matchFound } = get();
+      if (!currentSocket?.connected || !queueState?.inQueue || matchFound) {
+        get().stopQueuePolling();
+        return;
+      }
+      currentSocket.emit("career:getQueueStatus", { token }, (err: any, data: QueueState) => {
+        if (err || get().matchFound) return;
+        if (data?.inQueue) {
+          set({ queueState: data });
+        } else {
+          set({ queueState: null });
+          get().stopQueuePolling();
+        }
+      });
+    }, 2000);
+
+    set({ queuePollInterval: interval });
   },
-  
+
+  stopQueuePolling: () => {
+    const { queuePollInterval } = get();
+    if (queuePollInterval) {
+      clearInterval(queuePollInterval);
+      set({ queuePollInterval: null });
+    }
+  },
+
+  leaveRoom: (token: string) => {
+    const { socket, currentRoom } = get();
+    if (!socket?.connected || !currentRoom) return;
+    socket.emit("career:leaveRoom", { token }, (err: any) => {
+      if (err) {
+        set({ error: err.message });
+        return;
+      }
+      set({ currentRoom: null, matchFound: null });
+    });
+  },
+
+  clearError: () => set({ error: null }),
+
   reset: () => {
+    get().stopQueuePolling();
     const { socket } = get();
-    if (socket) {
+    if (socket && typeof socket.disconnect === "function") {
       socket.disconnect();
     }
     set({
       socket: null,
       isConnected: false,
       isConnecting: false,
+      authToken: null,
       isAuthenticated: false,
       playerRating: 0,
       playerBankroll: 0,
       tiers: [],
       selectedTierId: null,
       isLoadingTiers: false,
+      queueState: null,
+      isJoiningQueue: false,
+      queuePollInterval: null,
+      matchFound: null,
       currentRoom: null,
       isJoiningRoom: false,
       gameRoomId: null,

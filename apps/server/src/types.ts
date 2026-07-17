@@ -52,6 +52,14 @@ export type SpectatorSession = {
   joinSessionToken?: string;
 };
 
+// Career Mode metadata for rooms
+export type CareerMetadata = {
+  matchType: "career";
+  tierId: string;
+  anteId: string;
+  careerRoomId?: string; // Link back to career room manager if needed
+};
+
 export type Room = {
   id: string;
   /** Short public code for invites (6 chars, case-insensitive lookup) */
@@ -102,4 +110,6 @@ export type Room = {
     handsPlayed: number;
     biggestPot: number;
   };
+  /** Career Mode metadata (only present for career games) */
+  metadata?: CareerMetadata;
 };

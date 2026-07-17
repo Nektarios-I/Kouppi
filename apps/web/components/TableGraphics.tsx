@@ -274,6 +274,11 @@ export default function SinglePlayerTableGraphics() {
             playerId={you.id}
             avatars={avatarMap}
             dealerMessage={dealerMessage}
+            currentBetByPlayerId={
+              state.turn?.betAmount && state.turn.playerId
+                ? { [state.turn.playerId]: state.turn.betAmount }
+                : undefined
+            }
           >
             <CenterCards presentation={centerCards} />
           </PokerTable>

@@ -1,0 +1,40 @@
+Great question! Based on what I've seen in your codebase and what similar online card/casino games typically have, here are my top recommendations ordered by impact and implementation effort:
+
+🎯 High Impact, Medium Effort
+1. Sound Effects & Background Music
+Card dealing sounds, chip betting sounds, win/lose jingles
+Ambient casino music (toggleable)
+Makes the game feel much more polished and immersive
+2. Emotes/Quick Reactions
+6-8 quick emoji reactions (👍 😂 😎 🔥 💀 🎉)
+Click to broadcast to all players
+Adds social interaction without typing
+3. Animations
+Card flip animations when revealing
+Chip movement animations for bets
+Confetti/celebration on wins
+Makes gameplay more satisfying
+🎯 Medium Impact, Lower Effort
+4. Player Avatars
+Choose from preset avatars or colors
+Shows in player seats around the table
+More visual identity than just names
+5. Spectator Mode
+Watch ongoing games without joining
+Good for learning or waiting for a spot
+You already have spectatorsAllowed in config!
+6. Private/Password-Protected Rooms
+Optional password when creating room
+Play with friends only
+🎯 High Impact, Higher Effort
+7. Persistent Player Stats & Leaderboard
+Track wins, total earnings, games played
+Daily/weekly/all-time rankings
+Requires database (SQLite/PostgreSQL)
+8. Friend System
+Add friends, see online status
+Invite to games
+Also requires persistence
+9. Reconnection Handling
+If player disconnects briefly (< 30s), auto-rejoin
+Resume game state seamlessly

@@ -22,6 +22,9 @@ export default function CareerLobby() {
     tiers,
     selectedTierId,
     isLoadingTiers,
+    queueState,
+    isJoiningQueue,
+    matchFound,
     currentRoom,
     isJoiningRoom,
     gameRoomId,
@@ -29,7 +32,8 @@ export default function CareerLobby() {
     connect,
     fetchTiers,
     selectTier,
-    joinAnte,
+    joinQueue,
+    leaveQueue,
     leaveRoom,
     clearError,
   } = useCareerLobbyStore();
@@ -63,7 +67,12 @@ export default function CareerLobby() {
 
   const handleJoinAnte = async (anteId: string) => {
     if (!token) return;
-    await joinAnte(token, anteId);
+    await joinQueue(token, anteId);
+  };
+
+  const handleCancelSearch = () => {
+    if (!token) return;
+    leaveQueue(token);
   };
 
   const handleLeaveRoom = () => {
@@ -102,6 +111,63 @@ export default function CareerLobby() {
         <HudButton variant="bet" fullWidth onClick={() => token && connect(token)}>
           Reconnect
         </HudButton>
+      </LobbyCard>
+    );
+  }
+
+  if (queueState?.inQueue) {
+    const queueTier = tiers.find((t) => t.id === queueState.tierId);
+    return (
+      <LobbyCard title={`${queueTier?.emoji ?? "🔍"} Finding Match`} icon="◎">
+        <div className="space-y-4">
+          <div className="hud-status-banner !bg-gold/10 !border-gold/30 text-center">
+            <div className="text-2xl mb-2">🔍</div>
+            <div className="font-display text-lg font-bold text-gold mb-1">Searching for opponent...</div>
+            <div className="text-sm text-gray-400">
+              Position #{queueState.position} · {queueState.waitTime}s wait
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="career-stat-tile">
+              <div className="text-xs text-gray-500 font-ui uppercase tracking-wide">Search Range</div>
+              <div className="text-lg font-display font-bold text-gold">±{queueState.searchRange}</div>
+            </div>
+            <div className="career-stat-tile">
+              <div className="text-xs text-gray-500 font-ui uppercase tracking-wide">Players in Queue</div>
+              <div className="text-lg font-display font-bold text-gold">{queueState.queueSize}</div>
+            </div>
+          </div>
+          {queueState.fallbackMode && (
+            <div className="hud-status-banner text-center !py-3 font-ui">
+              <div className="text-lg mb-1">
+                {queueState.fallbackMode === "quick-match" && "🌍 Quick Match Mode"}
+                {queueState.fallbackMode === "cross-tier" && "📡 Searching All Leagues"}
+                {queueState.fallbackMode === "expanded" && "🔎 Expanding Search Range"}
+              </div>
+              <div className="text-xs text-gray-400">
+                {queueState.fallbackMode === "quick-match" && "Accepting any opponent to get you in a game"}
+                {queueState.fallbackMode === "cross-tier" && "Looking for players in nearby leagues"}
+                {queueState.fallbackMode === "expanded" && "Widening rating range to find more matches"}
+              </div>
+            </div>
+          )}
+          <HudButton variant="danger" fullWidth onClick={handleCancelSearch}>
+            Cancel Search
+          </HudButton>
+        </div>
+      </LobbyCard>
+    );
+  }
+
+  if (matchFound && !currentRoom) {
+    return (
+      <LobbyCard title="Match Found!" icon="✨">
+        <div className="hud-result-win text-center py-6">
+          <div className="text-4xl mb-3">⚔️</div>
+          <div className="font-display text-xl font-bold text-success mb-2">Opponent Found!</div>
+          <div className="text-sm text-gray-400">{matchFound.opponent.username} · Rating {matchFound.opponent.rating}</div>
+          <div className="hud-status-banner text-center !py-2 mt-4 font-ui text-sm">Preparing game room...</div>
+        </div>
       </LobbyCard>
     );
   }
@@ -247,7 +313,7 @@ export default function CareerLobby() {
                   key={ante.id}
                   ante={ante}
                   tierColor={selectedTier.color}
-                  isJoining={isJoiningRoom}
+                  isJoining={isJoiningQueue}
                   onJoin={() => handleJoinAnte(ante.id)}
                 />
               ))}
@@ -329,7 +395,7 @@ function AnteCard({
         disabled={!ante.canAfford || isJoining}
         className="shrink-0"
       >
-        {isJoining ? "…" : ante.canAfford ? "Join" : "Not enough"}
+        {isJoining ? "…" : ante.canAfford ? "Find Match" : "Not enough"}
       </HudButton>
     </div>
   );

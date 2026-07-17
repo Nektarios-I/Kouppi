@@ -69,17 +69,19 @@ function resolveJoinIdentity(
 }
 
 export function createKouppiServer(opts?: {
-  corsOrigin?: string;
+  corsOrigin?: string | string[];
   config?: TableConfig;
   /** Skip career database init (used in tests). */
   skipCareerDatabase?: boolean;
   /** Force websocket-only transport (defaults to true when NODE_ENV=production). */
   websocketOnly?: boolean;
 }) {
+  let careerDatabaseReady = !!opts?.skipCareerDatabase;
   // Initialize database for Career Mode
   if (!opts?.skipCareerDatabase) {
     try {
       getDatabase();
+      careerDatabaseReady = true;
       console.log("[Career Mode] Database initialized");
 
       // Cleanup expired sessions periodically (every hour)
@@ -90,6 +92,7 @@ export function createKouppiServer(opts?: {
         }
       }, 60 * 60 * 1000);
     } catch (error) {
+      careerDatabaseReady = false;
       console.error("[Career Mode] Failed to initialize database:", error);
       // Continue without Career Mode if DB fails
     }
@@ -139,6 +142,7 @@ export function createKouppiServer(opts?: {
       connections: io.engine.clientsCount,
       transport: websocketOnly ? "websocket" : "websocket,polling",
       redis: !!process.env.REDIS_URL,
+      database: careerDatabaseReady,
       ts: new Date().toISOString(),
     });
   });

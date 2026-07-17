@@ -524,6 +524,23 @@ export default function MultiplayerTableGraphics() {
             playerId={playerId || undefined}
             avatars={avatarMap}
             dealerMessage={dealerMessage}
+            connectionByPlayerId={Object.fromEntries(
+              playersInRoom.map((p) => [
+                p.id,
+                {
+                  connected: p.connected,
+                  reconnectRemainingSec: p.reconnectRemainingSec ?? null,
+                },
+              ])
+            )}
+            currentBetByPlayerId={
+              gameState.turn?.betAmount && gameState.turn.playerId
+                ? { [gameState.turn.playerId]: gameState.turn.betAmount }
+                : undefined
+            }
+            turnRemainingSec={
+              turnTimer && !awaitingNext && isMyTurn ? turnTimer.remaining : null
+            }
           >
             <CenterCards presentation={centerCards} />
           </PokerTable>

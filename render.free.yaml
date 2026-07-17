@@ -1,0 +1,22 @@
+# Render FREE-tier blueprint for the KOUPPI game server (apps/server).
+# Use this file when creating a Blueprint in Render — NOT render.yaml (that one is paid + persistent disk).
+# Frontend stays on Vercel. After deploy, set NEXT_PUBLIC_SERVER_URL on Vercel to this service HTTPS origin.
+
+services:
+  - type: web
+    name: kouppi-server-free
+    runtime: node
+    plan: free
+    region: ohio
+    buildCommand: corepack enable && corepack prepare pnpm@10.12.4 --activate && pnpm install --frozen-lockfile && pnpm exec turbo build --filter=@kouppi/server
+    startCommand: node apps/server/dist/server.js
+    healthCheckPath: /health/ready
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CORS_ORIGIN
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: DATABASE_PATH
+        value: /tmp/kouppi.db

@@ -10,7 +10,9 @@
 
 import { v4 as uuidv4 } from "uuid";
 import { Server, Socket } from "socket.io";
-import { getAnteOptionById, type AnteTier, type AnteOption } from "./tiers.js";
+import { getAnteOptionById, CAREER_TIERS, canAffordAnte, type AnteTier, type AnteOption } from "./tiers.js";
+import type { MatchFound } from "./queue.js";
+import { getUserById } from "@kouppi/database";
 import { 
   createRoomWithCreator, 
   joinRoom, 
@@ -305,6 +307,20 @@ function triggerGameStart(room: CareerRoom, io: Server) {
     return;
   }
 
+  // Phase 3: Identity Verification - verify all player sockets are still authenticated
+  for (const player of room.players) {
+    const socket = io.sockets.sockets.get(player.socketId);
+    if (!socket) {
+      console.error(`[Career] Player ${player.username} socket ${player.socketId} not connected`);
+      io.to(room.id).emit("career:error", {
+        code: "player_disconnected",
+        message: `${player.username} disconnected before game could start`,
+      });
+      room.status = "waiting";
+      return;
+    }
+  }
+
   room.status = "starting";
   room.startedAt = Date.now();
   room.autoStartTimer = null;
@@ -331,7 +347,7 @@ function triggerGameStart(room: CareerRoom, io: Server) {
   try {
     // Create the game room with the first player as host
     const firstPlayer = room.players[0];
-    createRoomWithCreator(
+    const gameRoom = createRoomWithCreator(
       gameRoomId,
       {
         id: firstPlayer.userId,
@@ -344,7 +360,19 @@ function triggerGameStart(room: CareerRoom, io: Server) {
         },
       },
       gameConfig,
-      Math.floor(Math.random() * 1e9)
+      Math.floor(Math.random() * 1e9),
+      undefined, // password
+      undefined, // publicCode
+      {
+        listedInLobby: false, // Don't show career games in casual lobby
+        presetLabel: `Career - ${room.ante} ante`,
+      },
+      {
+        matchType: "career",
+        tierId: room.tierId,
+        anteId: room.anteId,
+        careerRoomId: room.id,
+      }
     );
 
     // Add remaining players to the game room
@@ -699,6 +727,191 @@ export function handleCareerGameEnd(
   }).catch(error => {
     console.error(`[Career] Error processing game end:`, error);
   });
+}
+
+/**
+ * Pick an ante both players can afford. Prefer a shared queue selection, otherwise
+ * the lower buy-in option that both bankrolls support.
+ */
+function resolveMatchAnte(
+  anteId1: string,
+  anteId2: string,
+  user1: { bankroll: number; rating: number },
+  user2: { bankroll: number; rating: number }
+): ReturnType<typeof getAnteOptionById> {
+  if (anteId1 && anteId1 === anteId2) {
+    const shared = getAnteOptionById(anteId1);
+    if (
+      shared &&
+      canAffordAnte(user1.bankroll, anteId1) &&
+      canAffordAnte(user2.bankroll, anteId1)
+    ) {
+      return shared;
+    }
+  }
+
+  const candidates = [anteId1, anteId2]
+    .map((id) => getAnteOptionById(id))
+    .filter((option): option is NonNullable<typeof option> => !!option)
+    .sort((a, b) => a.ante.buyIn - b.ante.buyIn);
+
+  for (const option of candidates) {
+    if (
+      canAffordAnte(user1.bankroll, option.ante.id) &&
+      canAffordAnte(user2.bankroll, option.ante.id)
+    ) {
+      return option;
+    }
+  }
+
+  const minBankroll = Math.min(user1.bankroll, user2.bankroll);
+  const minRating = Math.min(user1.rating, user2.rating);
+  const affordable = CAREER_TIERS.flatMap((tier) =>
+    tier.minRating <= minRating ? tier.antes.map((ante) => ({ tier, ante })) : []
+  )
+    .filter((option) => minBankroll >= option.ante.buyIn)
+    .sort((a, b) => b.ante.buyIn - a.ante.buyIn);
+
+  return affordable[0];
+}
+
+/**
+ * Handle match found from queue - create career room and start game
+ * Called by matchmaking loop when compatible players are found
+ */
+export function handleMatchFound(match: MatchFound, io: Server): void {
+  console.log(`[Career] Match found: ${match.player1.playerName} vs ${match.player2.playerName}`);
+
+  const user1 = getUserById(match.player1.playerId);
+  const user2 = getUserById(match.player2.playerId);
+  if (!user1 || !user2) {
+    console.error("[Career] Match failed - user record missing");
+    io.to(match.player1.socketId).emit("career:error", {
+      code: "match_failed",
+      message: "Failed to create match - please try again",
+    });
+    io.to(match.player2.socketId).emit("career:error", {
+      code: "match_failed",
+      message: "Failed to create match - please try again",
+    });
+    return;
+  }
+
+  const anteOption = resolveMatchAnte(match.player1.anteId, match.player2.anteId, user1, user2);
+  if (!anteOption) {
+    console.error("[Career] No valid ante option found for match");
+    io.to(match.player1.socketId).emit("career:error", {
+      code: "match_failed",
+      message: "Failed to create match - please try again",
+    });
+    io.to(match.player2.socketId).emit("career:error", {
+      code: "match_failed",
+      message: "Failed to create match - please try again",
+    });
+    return;
+  }
+
+  console.log(
+    `[Career] Selected ${anteOption.tier.name} - ${anteOption.ante.label} for match (ratings: ${match.player1.rating}-${match.player2.rating})`
+  );
+  
+  // Create career room
+  const room: CareerRoom = {
+    id: generateRoomId(),
+    anteId: anteOption.ante.id,
+    tierId: anteOption.tier.id,
+    ante: anteOption.ante.ante,
+    minBet: anteOption.ante.minBet,
+    maxBet: anteOption.ante.maxBet,
+    buyIn: anteOption.ante.buyIn,
+    players: [],
+    maxPlayers: MAX_PLAYERS_PER_ROOM,
+    status: "waiting",
+    autoStartTimer: null,
+    autoStartAt: null,
+    createdAt: Date.now(),
+    startedAt: null,
+    gameRoomId: null,
+  };
+  
+  // Add both players to room
+  const player1: CareerPlayer = {
+    odlayerId: match.player1.playerId,
+    odlayerName: match.player1.playerName,
+    odlating: match.player1.rating,
+    odankroll: user1.bankroll,
+    odocketId: match.player1.socketId,
+    userId: match.player1.playerId,
+    username: match.player1.playerName,
+    rating: match.player1.rating,
+    bankroll: user1.bankroll,
+    socketId: match.player1.socketId,
+    avatarEmoji: user1.avatarEmoji,
+    avatarColor: user1.avatarColor,
+    avatarBorder: user1.avatarBorder,
+    joinedAt: Date.now(),
+  };
+  
+  const player2: CareerPlayer = {
+    odlayerId: match.player2.playerId,
+    odlayerName: match.player2.playerName,
+    odlating: match.player2.rating,
+    odankroll: user2.bankroll,
+    odocketId: match.player2.socketId,
+    userId: match.player2.playerId,
+    username: match.player2.playerName,
+    rating: match.player2.rating,
+    bankroll: user2.bankroll,
+    socketId: match.player2.socketId,
+    avatarEmoji: user2.avatarEmoji,
+    avatarColor: user2.avatarColor,
+    avatarBorder: user2.avatarBorder,
+    joinedAt: Date.now(),
+  };
+  
+  room.players.push(player1, player2);
+  
+  // Register room mappings
+  careerRooms.set(room.id, room);
+  socketToRoom.set(player1.socketId, room.id);
+  socketToRoom.set(player2.socketId, room.id);
+  userToRoom.set(player1.userId, room.id);
+  userToRoom.set(player2.userId, room.id);
+  
+  console.log(`[Career] Created room ${room.id} for match`);
+  
+  // Have both sockets join the room channel
+  io.sockets.sockets.get(player1.socketId)?.join(room.id);
+  io.sockets.sockets.get(player2.socketId)?.join(room.id);
+  
+  // Notify both players of match found
+  io.to(player1.socketId).emit("career:matchFound", {
+    roomId: room.id,
+    opponent: {
+      username: player2.username,
+      rating: player2.rating,
+      avatarEmoji: player2.avatarEmoji,
+      avatarColor: player2.avatarColor,
+      avatarBorder: player2.avatarBorder,
+    },
+  });
+  
+  io.to(player2.socketId).emit("career:matchFound", {
+    roomId: room.id,
+    opponent: {
+      username: player1.username,
+      rating: player1.rating,
+      avatarEmoji: player1.avatarEmoji,
+      avatarColor: player1.avatarColor,
+      avatarBorder: player1.avatarBorder,
+    },
+  });
+  
+  // Broadcast room state to both players
+  broadcastRoomState(room, io);
+  
+  // Start auto-start timer immediately (30 seconds)
+  startAutoStartTimer(room, io);
 }
 
 /**

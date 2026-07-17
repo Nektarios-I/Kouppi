@@ -129,6 +129,7 @@ export function getMatchmakingRange(waitTimeSeconds: number): number {
 
 /**
  * Check if two players are compatible for matchmaking
+ * Includes fallback logic for low-concurrency scenarios
  */
 export function isMatchmakingCompatible(
   rating1: number,
@@ -140,8 +141,33 @@ export function isMatchmakingCompatible(
   const range2 = getMatchmakingRange(waitTime2);
   const diff = Math.abs(rating1 - rating2);
   
-  // Both players must have expanded their range enough
-  return diff <= range1 && diff <= range2;
+  // Standard compatibility: both players must have expanded their range enough
+  if (diff <= range1 && diff <= range2) {
+    return true;
+  }
+  
+  // Fallback 1: After 15 seconds, expand range to ±250 (beyond normal expansion)
+  if (waitTime1 >= 15 || waitTime2 >= 15) {
+    const expandedRange = 250;
+    if (diff <= expandedRange) {
+      return true;
+    }
+  }
+  
+  // Fallback 2: After 30 seconds, allow cross-tier matching (±1 tier ~200 rating)
+  if (waitTime1 >= 30 || waitTime2 >= 30) {
+    const crossTierRange = 400; // ~2 tiers
+    if (diff <= crossTierRange) {
+      return true;
+    }
+  }
+  
+  // Fallback 3: After 45 seconds, "quick match" mode - accept any opponent
+  if (waitTime1 >= 45 || waitTime2 >= 45) {
+    return true;
+  }
+  
+  return false;
 }
 
 /**

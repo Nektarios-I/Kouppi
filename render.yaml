@@ -1,5 +1,5 @@
-# Render blueprint for the KOUPPI game server (apps/server).
-# Import in Render or create a Web Service manually with equivalent settings.
+# Render blueprint for the KOUPPI game server (PAID — persistent disk).
+# For FREE demo/dev deployment use render.free.yaml instead (no disk, ephemeral SQLite).
 # Frontend stays on Vercel — set NEXT_PUBLIC_SERVER_URL to this service's HTTPS URL.
 
 services:

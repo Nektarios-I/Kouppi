@@ -3,7 +3,9 @@
  * 
  * Handles all career-related socket events:
  * - career:getTiers - Get available tiers for player's rating
- * - career:joinAnte - Join/create a room for a specific ante
+ * - career:joinAnte - Join matchmaking queue for a specific ante
+ * - career:leaveQueue - Leave matchmaking queue
+ * - career:getQueueStatus - Get current queue status
  * - career:leaveRoom - Leave current waiting room
  * - career:getRoomInfo - Get current room state
  */
@@ -17,6 +19,13 @@ import {
   canAccessTier,
   canAffordAnte,
 } from "./tiers.js";
+import {
+  joinQueue,
+  leaveQueue,
+  getQueueStatus,
+  isInQueue,
+  type QueueEntry,
+} from "./queue.js";
 import {
   findOrCreateRoom,
   leaveCareerRoom,
@@ -138,7 +147,8 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
   });
 
   /**
-   * Join a specific ante room (find existing or create new)
+   * Join matchmaking queue for a specific ante
+   * Replaces instant room join with queue-based matching
    */
   socket.on("career:joinAnte", (
     payload: { token: string; anteId: string },
@@ -155,6 +165,14 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
       const user = getUserById(auth.userId);
       if (!user) {
         const err = { code: "user_not_found", message: "User not found" };
+        cb ? cb(err) : socket.emit("career:error", err);
+        return;
+      }
+
+      // Check if already in a room
+      const currentRoom = getRoomBySocket(socket.id);
+      if (currentRoom) {
+        const err = { code: "already_in_room", message: "Already in a room" };
         cb ? cb(err) : socket.emit("career:error", err);
         return;
       }
@@ -190,59 +208,103 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
         cb ? cb(err) : socket.emit("career:error", err);
         return;
       }
+
+      // Refresh queue entry if already waiting (reconnect / second tab)
+      if (isInQueue(user.id)) {
+        const refreshEntry: QueueEntry = {
+          playerId: user.id,
+          playerName: user.username,
+          rating: user.rating,
+          trophies: user.trophies,
+          socketId: socket.id,
+          anteId: payload.anteId,
+          queuedAt: Date.now(),
+        };
+        const result = joinQueue(refreshEntry);
+        const response = {
+          inQueue: true,
+          position: result.position,
+          anteId: payload.anteId,
+          tierId: anteOption.tier.id,
+          message: "Searching for opponent...",
+        };
+        cb ? cb(null, response) : socket.emit("career:queueJoined", response);
+        return;
+      }
       
-      // Create player object
-      const player: CareerPlayer = {
-        odlayerId: user.id,
-        odlayerName: user.username,
-        odlating: user.rating,
-        odankroll: user.bankroll,
-        odocketId: socket.id,
-        userId: user.id,
-        username: user.username,
+      // Create queue entry
+      const queueEntry: QueueEntry = {
+        playerId: user.id,
+        playerName: user.username,
         rating: user.rating,
-        bankroll: user.bankroll,
+        trophies: user.trophies,
         socketId: socket.id,
-        avatarEmoji: user.avatarEmoji,
-        avatarColor: user.avatarColor,
-        avatarBorder: user.avatarBorder,
-        joinedAt: Date.now(),
+        anteId: payload.anteId,
+        queuedAt: Date.now(),
       };
       
-      // Find or create room
-      const result = findOrCreateRoom(payload.anteId, player, io);
+      // Join the queue
+      const result = joinQueue(queueEntry);
       
-      if (!result.success) {
-        const err = { code: "join_failed", message: result.error };
+      console.log(`[Career] ${user.username} joined queue (position ${result.position})`);
+      
+      const response = {
+        inQueue: true,
+        position: result.position,
+        anteId: payload.anteId,
+        tierId: anteOption.tier.id,
+        message: "Searching for opponent...",
+      };
+      
+      cb ? cb(null, response) : socket.emit("career:queueJoined", response);
+    } catch (e: any) {
+      const err = { code: "error", message: e.message };
+      cb ? cb(err) : socket.emit("career:error", err);
+    }
+  });
+
+  /**
+   * Leave matchmaking queue
+   */
+  socket.on("career:leaveQueue", (payload: { token: string }, cb?: (err: any, data?: any) => void) => {
+    try {
+      const auth = authenticateSocket(socket, payload.token);
+      if (!auth) {
+        const err = { code: "auth_failed", message: "Authentication required" };
         cb ? cb(err) : socket.emit("career:error", err);
         return;
       }
       
-      // Join the socket room
-      socket.join(result.room!.id);
+      const removed = leaveQueue(auth.userId);
       
-      const response = {
-        roomId: result.room!.id,
-        tierId: result.room!.tierId,
-        anteId: result.room!.anteId,
-        ante: result.room!.ante,
-        minBet: result.room!.minBet,
-        maxBet: result.room!.maxBet,
-        players: result.room!.players.map((p) => ({
-          userId: p.userId,
-          username: p.username,
-          rating: p.rating,
-          avatarEmoji: p.avatarEmoji,
-          avatarColor: p.avatarColor,
-          avatarBorder: p.avatarBorder,
-        })),
-        playerCount: result.room!.players.length,
-        maxPlayers: result.room!.maxPlayers,
-        status: result.room!.status,
-        autoStartAt: result.room!.autoStartAt,
-      };
+      if (removed) {
+        console.log(`[Career] ${auth.username} left queue`);
+        cb ? cb(null, { success: true }) : socket.emit("career:queueLeft", { success: true });
+      } else {
+        const err = { code: "not_in_queue", message: "Not in matchmaking queue" };
+        cb ? cb(err) : socket.emit("career:error", err);
+      }
+    } catch (e: any) {
+      const err = { code: "error", message: e.message };
+      cb ? cb(err) : socket.emit("career:error", err);
+    }
+  });
+
+  /**
+   * Get current queue status
+   */
+  socket.on("career:getQueueStatus", (payload: { token: string }, cb?: (err: any, data?: any) => void) => {
+    try {
+      const auth = authenticateSocket(socket, payload.token);
+      if (!auth) {
+        const err = { code: "auth_failed", message: "Authentication required" };
+        cb ? cb(err) : socket.emit("career:error", err);
+        return;
+      }
       
-      cb ? cb(null, response) : socket.emit("career:joined", response);
+      const status = getQueueStatus(auth.userId);
+      
+      cb ? cb(null, status) : socket.emit("career:queueStatus", status);
     } catch (e: any) {
       const err = { code: "error", message: e.message };
       cb ? cb(err) : socket.emit("career:error", err);
@@ -322,60 +384,24 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
   });
 
   /**
-   * Handle game starting event - create actual game room
+   * Handle game starting event - DEPRECATED/REMOVED
+   * Game creation is now handled automatically in triggerGameStart()
+   * via careerRoomManager when the 30-second timer expires.
    */
-  socket.on("career:gameStarting", (payload: { roomId: string; players: any[]; config: any }) => {
-    const careerRoom = getCareerRoom(payload.roomId);
-    if (!careerRoom) return;
-    
-    // Only the first player to receive this creates the game room
-    if (careerRoom.gameRoomId) return;
-    
-    const gameRoomId = `game-${payload.roomId}`;
-    
-    // Create the actual game room using existing room system
-    const gameConfig: TableConfig = {
-      ...defaultConfig,
-      ante: careerRoom.ante,
-      minBetPolicy: { type: "fixed", value: careerRoom.minBet },
-      maxPlayers: careerRoom.maxPlayers,
-    };
-    
-    // Create room with first player as creator
-    const firstPlayer = careerRoom.players[0];
-    createRoomWithCreator(
-      gameRoomId,
-      {
-        id: firstPlayer.userId,
-        name: firstPlayer.username,
-        socketId: firstPlayer.socketId,
-        avatar: {
-          emoji: firstPlayer.avatarEmoji,
-          color: firstPlayer.avatarColor,
-          borderColor: firstPlayer.avatarBorder,
-        },
-      },
-      gameConfig,
-      Math.floor(Math.random() * 1e9)
-    );
-    
-    // Have first player's socket join the game room
-    socket.join(gameRoomId);
-    
-    markRoomInGame(payload.roomId, gameRoomId);
-    
-    // Tell all players to transition to the game room
-    io.to(payload.roomId).emit("career:transitionToGame", {
-      careerRoomId: payload.roomId,
-      gameRoomId,
-      config: gameConfig,
-    });
-  });
 
   /**
-   * Handle socket disconnect - clean up career room membership
+   * Handle socket disconnect - clean up career room membership and queue
    */
   socket.on("disconnect", () => {
+    const auth = authenticatedSockets.get(socket.id);
+    if (auth) {
+      // Remove from queue if present
+      const removed = leaveQueue(auth.userId);
+      if (removed) {
+        console.log(`[Career] ${auth.username} removed from queue on disconnect`);
+      }
+    }
+    
     authenticatedSockets.delete(socket.id);
     handleDisconnect(socket.id, io);
   });

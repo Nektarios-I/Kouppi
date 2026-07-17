@@ -1,0 +1,7 @@
+Latest Ready deployment:
+https://kouppi-22utiiyru-nektarios-is-projects.vercel.app
+Production alias:
+https://kouppi-web-nektarios-is-projects.vercel.app
+
+VERCEL HOME PAGE TO CHECK LINK:
+https://vercel.com/nektarios-is-projects/kouppi-web/6zEgSdZt7gsxwCQmx3U9HZUSV3BJ

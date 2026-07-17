@@ -204,7 +204,8 @@ export function createRoomWithCreator(
   seed: number,
   password?: string,
   code?: string,
-  options?: { listedInLobby?: boolean; presetLabel?: string }
+  options?: { listedInLobby?: boolean; presetLabel?: string },
+  metadata?: import("./types.js").CareerMetadata
 ): Room {
   const merged = { ...defaultConfig(), ...(config || {}) };
   const publicCode = code ?? (id.length <= 8 && /^[A-Za-z0-9]+$/.test(id) ? normalizeRoomCode(id) : generateRoomCode());
@@ -216,6 +217,7 @@ export function createRoomWithCreator(
   const hasPassword = !!(password && password.trim().length > 0);
   base.listedInLobby = options?.listedInLobby ?? !hasPassword;
   if (options?.presetLabel) base.presetLabel = options.presetLabel;
+  if (metadata) base.metadata = metadata;
   // Hash optional password for private rooms
   if (password && password.trim().length > 0) {
     base.passwordHash = hashRoomPassword(password.trim());
@@ -273,14 +275,25 @@ export function joinRoom(
   } else {
     const hasActiveSocket =
       !!exists.socketId && exists.socketId !== player.socketId && !exists.disconnectedAt;
-    if (hasActiveSocket) {
-      throw new Error("slot_taken");
-    }
+
     if (exists.joinSessionToken) {
-      if (!isValidJoinSessionToken(options?.joinSessionToken) || options!.joinSessionToken !== exists.joinSessionToken) {
+      const token = options?.joinSessionToken;
+      const tokenValid =
+        isValidJoinSessionToken(token) && token === exists.joinSessionToken;
+
+      if (tokenValid) {
+        // Legitimate reconnect with session token
+      } else if (token !== undefined) {
+        throw new Error("invalid_session_token");
+      } else if (hasActiveSocket) {
+        throw new Error("slot_taken");
+      } else {
         throw new Error("invalid_session_token");
       }
     } else {
+      if (hasActiveSocket) {
+        throw new Error("slot_taken");
+      }
       exists.joinSessionToken = generateJoinSessionToken();
     }
     cancelDisconnectGrace(exists);
@@ -655,7 +668,7 @@ export function snapshot(id: string): Room["state"] | undefined {
   return store().get(id)?.state;
 }
 
-/** Return lobby info for listed public rooms */
+/** Return lobby info for listed public rooms (excludes career games) */
 export function roomsInfo(): Array<{
   id: string;
   code: string;
@@ -672,7 +685,7 @@ export function roomsInfo(): Array<{
   presetLabel?: string;
 }> {
   return store().values()
-    .filter((r) => r.listedInLobby !== false)
+    .filter((r) => r.listedInLobby !== false && r.metadata?.matchType !== "career")
     .map((r) => ({
       id: r.id,
       code: r.code,
@@ -690,7 +703,7 @@ export function roomsInfo(): Array<{
     }));
 }
 
-/** Lobby listing merged with Redis metadata when distributed store is active. */
+/** Lobby listing merged with Redis metadata when distributed store is active (excludes career games). */
 export async function roomsInfoAsync(): Promise<ReturnType<typeof roomsInfo>> {
   const local = roomsInfo();
   const s = store();
@@ -700,7 +713,8 @@ export async function roomsInfoAsync(): Promise<ReturnType<typeof roomsInfo>> {
   const byId = new Map(local.map((r) => [r.id, r]));
   for (const meta of remote) {
     const id = meta.id as string;
-    if (!id || byId.has(id)) continue;
+    // Skip career games from Redis as well
+    if (!id || byId.has(id) || meta.matchType === "career") continue;
     byId.set(id, {
       id,
       code: meta.code as string,

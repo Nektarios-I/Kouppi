@@ -1196,6 +1196,214 @@ body {
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
+/* ─── Perimeter seat pods ─── */
+.player-seat {
+  --seat-surface: rgba(8, 12, 24, 0.82);
+  --seat-border: rgba(148, 163, 184, 0.35);
+  --seat-turn: #38bdf8;
+  --seat-turn-glow: rgba(56, 189, 248, 0.35);
+}
+
+.player-seat--dimmed {
+  opacity: 0.5;
+  filter: grayscale(0.35);
+}
+
+.player-seat__pod {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  max-width: 148px;
+  padding: 0.3rem 0.45rem 0.3rem 0.3rem;
+  border-radius: 0.65rem;
+  background: linear-gradient(
+    165deg,
+    rgba(18, 28, 48, 0.92) 0%,
+    var(--seat-surface) 55%,
+    rgba(4, 8, 16, 0.9) 100%
+  );
+  border: 1px solid var(--seat-border);
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(10px);
+}
+
+.player-seat--mobile-hero .player-seat__pod {
+  max-width: 132px;
+  padding: 0.25rem 0.4rem 0.25rem 0.25rem;
+}
+
+.player-seat__pod--me {
+  border-color: rgba(212, 175, 55, 0.55);
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(212, 175, 55, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.player-seat__pod--turn {
+  border-color: rgba(56, 189, 248, 0.7);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.55),
+    0 0 18px var(--seat-turn-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.player-seat__avatar-wrap {
+  position: relative;
+  border-radius: 9999px;
+  line-height: 0;
+}
+
+.player-seat__avatar-wrap--turn {
+  box-shadow: 0 0 0 2px var(--seat-turn), 0 0 12px var(--seat-turn-glow);
+  border-radius: 9999px;
+}
+
+.player-seat__avatar-wrap--me:not(.player-seat__avatar-wrap--turn) {
+  box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.65);
+  border-radius: 9999px;
+}
+
+.player-seat__turn-pip {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--seat-turn);
+  border: 1.5px solid rgba(8, 12, 24, 0.9);
+  box-shadow: 0 0 8px var(--seat-turn-glow);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .player-seat__pod--turn .player-seat__avatar-wrap--turn,
+  .player-seat__avatar-wrap--turn {
+    animation: seat-turn-pulse 1.8s ease-in-out infinite;
+  }
+}
+
+@keyframes seat-turn-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 2px var(--seat-turn), 0 0 10px var(--seat-turn-glow);
+  }
+  50% {
+    box-shadow: 0 0 0 2px var(--seat-turn), 0 0 16px rgba(56, 189, 248, 0.55);
+  }
+}
+
+.player-seat__name {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+  line-height: 1.15;
+  max-width: 5.5rem;
+}
+
+.player-seat--mobile-hero .player-seat__name {
+  max-width: 4.5rem;
+}
+
+.player-seat__bankroll {
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: var(--gold-light, #f0d060);
+  line-height: 1;
+  letter-spacing: 0.01em;
+}
+
+.player-seat__bankroll--bust {
+  color: var(--error, #ef4444);
+}
+
+.player-seat__timer {
+  font-size: 0.5625rem;
+  font-weight: 700;
+  color: var(--seat-turn);
+  min-width: 1rem;
+}
+
+.player-seat--mobile-opponent {
+  max-width: 58px;
+}
+
+.player-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.05rem 0.28rem;
+  border-radius: 0.25rem;
+  font-family: var(--font-ui), system-ui, sans-serif;
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.player-status-badge--bot {
+  color: #1a1208;
+  background: linear-gradient(180deg, #f0c14b 0%, #d4a017 100%);
+  border: 1px solid rgba(255, 220, 120, 0.45);
+}
+
+.player-status-badge--turn {
+  color: #042033;
+  background: linear-gradient(180deg, #7dd3fc 0%, #38bdf8 100%);
+  border: 1px solid rgba(186, 230, 253, 0.5);
+}
+
+.player-status-badge--offline {
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.75);
+  border: 1px solid rgba(248, 113, 113, 0.4);
+}
+
+.player-status-badge--you {
+  color: #1a1208;
+  background: rgba(212, 175, 55, 0.85);
+  border: 1px solid rgba(240, 208, 96, 0.5);
+}
+
+.player-bet-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.55));
+}
+
+.player-bet-marker__amount {
+  font-size: 0.5625rem;
+  font-weight: 700;
+  color: var(--gold-light, #f0d060);
+  background: rgba(8, 12, 24, 0.75);
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  border-radius: 9999px;
+  padding: 0.05rem 0.35rem;
+  line-height: 1.2;
+}
+
+.player-bet-marker--compact .player-bet-marker__amount {
+  font-size: 0.5rem;
+  padding: 0.02rem 0.25rem;
+}
+
+.player-bet-marker--active .player-bet-marker__amount {
+  border-color: rgba(56, 189, 248, 0.55);
+  color: #e0f2fe;
+}
+
+.player-avatar--initials {
+  font-size: inherit;
+}
+
 /* ─── In-game overlays: chat & emotes ─── */
 .chat-fab {
   @apply fixed z-50 flex items-center gap-2 px-4 py-3 rounded-2xl font-ui font-semibold transition-transform hover:scale-105 min-h-[44px];

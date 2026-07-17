@@ -25,7 +25,9 @@ Health check: `GET /health/ready` on the server port.
 
 ## Render (Blueprint)
 
-This repo includes [`render.yaml`](../render.yaml). Manual steps:
+**Free demo/dev:** [`render.free.yaml`](../render.free.yaml) — Free instance, ephemeral `/tmp/kouppi.db`, no disk. See [RENDER_FREE_DEPLOYMENT_PREP.md](./RENDER_FREE_DEPLOYMENT_PREP.md).
+
+**Production (paid + disk):** [`render.yaml`](../render.yaml). Manual steps:
 
 1. Connect the GitHub repo in [Render Dashboard](https://dashboard.render.com).
 2. Create a **Web Service** from `render.yaml` (or import the blueprint).
