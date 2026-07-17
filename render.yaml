@@ -1,0 +1,28 @@
+# Render blueprint for the KOUPPI game server (apps/server).
+# Import in Render or create a Web Service manually with equivalent settings.
+# Frontend stays on Vercel — set NEXT_PUBLIC_SERVER_URL to this service's HTTPS URL.
+
+services:
+  - type: web
+    name: kouppi-server
+    runtime: node
+    plan: starter
+    region: frankfurt
+    buildCommand: corepack enable && corepack prepare pnpm@10.12.4 --activate && pnpm install --frozen-lockfile && pnpm exec turbo build --filter=@kouppi/server
+    startCommand: node apps/server/dist/server.js
+    healthCheckPath: /health/ready
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "4000"
+      - key: CORS_ORIGIN
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_PATH
+        value: /var/data/kouppi.sqlite
+    disk:
+      name: kouppi-data
+      mountPath: /var/data
+      sizeGB: 1

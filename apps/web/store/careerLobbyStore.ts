@@ -9,12 +9,11 @@
 
 import { create } from "zustand";
 import { io, Socket } from "socket.io-client";
+import { formatConnectionError, getServerUrl } from "@/lib/serverUrl";
 
 // Get API URL dynamically at runtime (not module load time)
 function getApiUrl() {
-  return typeof window !== 'undefined' 
-    ? (process.env.NEXT_PUBLIC_SERVER_URL || window.location.origin.replace(':3000', ':4000'))
-    : (process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:4000');
+  return getServerUrl();
 }
 
 export interface AnteOption {
@@ -161,7 +160,7 @@ export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
     
     newSocket.on("connect_error", (err) => {
       console.error("[CareerLobby] Connection error:", err);
-      set({ isConnecting: false, error: "Failed to connect to server" });
+      set({ isConnecting: false, error: formatConnectionError(err?.message) });
     });
     
     // Room updates

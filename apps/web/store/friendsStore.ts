@@ -6,11 +6,10 @@ import { create } from "zustand";
 import { io, Socket } from "socket.io-client";
 import type { FriendProfile, FriendRequestInfo, UserPresence, FriendsGameInvite } from "@kouppi/protocol";
 import { useAuthStore } from "./authStore";
+import { getServerUrl as getGameServerUrl } from "@/lib/serverUrl";
 
 function getServerUrl(): string {
-  return typeof window !== "undefined"
-    ? process.env.NEXT_PUBLIC_SERVER_URL || window.location.origin.replace(":3000", ":4000")
-    : process.env.NEXT_PUBLIC_SERVER_URL || "http://localhost:4000";
+  return getGameServerUrl();
 }
 
 type SearchResult = {

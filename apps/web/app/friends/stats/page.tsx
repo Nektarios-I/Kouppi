@@ -16,11 +16,10 @@ import {
   FriendsStatsEmpty,
   type FriendsStatsData,
 } from "@/components/FriendsStatsView";
+import { getServerUrl } from "@/lib/serverUrl";
 
 function getApiBase(): string {
-  return typeof window !== "undefined"
-    ? process.env.NEXT_PUBLIC_SERVER_URL || window.location.origin.replace(":3000", ":4000")
-    : process.env.NEXT_PUBLIC_SERVER_URL || "http://localhost:4000";
+  return getServerUrl();
 }
 
 export default function FriendsStatsPage() {

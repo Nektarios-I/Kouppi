@@ -125,7 +125,7 @@ photo/
 ### Prerequisites
 
 - Node.js 20+
-- pnpm 9+
+- pnpm 10.12.4 (see `packageManager` in root `package.json`; enable via Corepack)
 
 ### Install
 
@@ -205,7 +205,9 @@ This project intentionally emphasizes:
 
 ## Game Server (Production)
 
-The multiplayer Socket.IO server (`apps/server`) must run on a **persistent host** (not Vercel serverless). Suggested env:
+The multiplayer Socket.IO server (`apps/server`) must run on a **persistent host** (not Vercel serverless). Step-by-step deployment: [docs/GAME_SERVER_DEPLOY.md](docs/GAME_SERVER_DEPLOY.md). Optional Render blueprint: [`render.yaml`](render.yaml).
+
+Suggested env:
 
 | Variable | Purpose |
 |----------|---------|

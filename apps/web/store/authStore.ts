@@ -4,12 +4,11 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { getServerUrl } from "@/lib/serverUrl";
 
 // Get API URL dynamically at runtime (not module load time)
 function getApiUrl() {
-  return typeof window !== 'undefined' 
-    ? (process.env.NEXT_PUBLIC_SERVER_URL || window.location.origin.replace(':3000', ':4000'))
-    : (process.env.NEXT_PUBLIC_SERVER_URL || 'http://localhost:4000');
+  return getServerUrl();
 }
 
 /**

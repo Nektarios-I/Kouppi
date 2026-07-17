@@ -1,6 +1,7 @@
 "use client";
 import { create } from "zustand";
 import { io, Socket } from "socket.io-client";
+import { formatConnectionError, getServerUrl } from "@/lib/serverUrl";
 import type { GameState } from "@kouppi/game-core";
 import { formatSocketError } from "@/lib/errorMessages";
 import { isPlayerMuted } from "@/lib/mutedPlayers";
@@ -269,7 +270,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
 
   connect: (url?: string) => {
     // Use provided URL, or environment variable, or default to localhost
-    const serverUrl = url || process.env.NEXT_PUBLIC_SERVER_URL || "http://localhost:4000";
+    const serverUrl = url || getServerUrl();
     const existingSocket = get().socket;
     if (existingSocket?.connected) return;
     if (existingSocket) {
@@ -573,7 +574,10 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     
     s.on("connect_error", (err: any) => {
       console.error("connect error", err?.message || err);
-      set({ connectionStatus: "disconnected", lastError: `Connection failed: ${err?.message || "Unknown"}` });
+      set({
+        connectionStatus: "disconnected",
+        lastError: formatConnectionError(err?.message),
+      });
     });
   },
 

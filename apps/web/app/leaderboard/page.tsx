@@ -7,6 +7,7 @@ import { useCareerStore } from "@/store/careerStore";
 import TrophyBadge from "@/components/TrophyBadge";
 import { LobbyShell, LobbyCard, LobbyEmpty } from "@/components/game/LobbyUI";
 import { HudButton } from "@/components/game/HudButton";
+import { getServerUrl } from "@/lib/serverUrl";
 
 const ARENAS = [
   { id: 0, name: "All Arenas", minTrophies: 0, color: "#d4af37" },
@@ -54,7 +55,7 @@ export default function LeaderboardPage() {
   const fetchLeaderboard = async () => {
     setIsLoading(true);
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+      const baseUrl = getServerUrl();
       const endpoint =
         selectedArena === 0
           ? `/api/leaderboard?limit=${limit}&offset=${page * limit}`

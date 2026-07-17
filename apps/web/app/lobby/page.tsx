@@ -22,6 +22,7 @@ import {
   PreGameCard,
 } from "@/components/game/LobbyUI";
 import FriendsPanel from "@/components/FriendsPanel";
+import { getServerUrl } from "@/lib/serverUrl";
 
 type RoomFilter = "all" | "waiting" | "live" | "seats";
 type RoomSort = "players" | "newest";
@@ -75,7 +76,7 @@ export default function LobbyPage() {
     }
     const token = useAuthStore.getState().token;
     if (!token) return;
-    const apiBase = process.env.NEXT_PUBLIC_SERVER_URL || "http://localhost:4000";
+    const apiBase = getServerUrl();
     fetch(`${apiBase}/api/casual/stats`, {
       headers: { Authorization: `Bearer ${token}` },
     })
