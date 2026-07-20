@@ -16,6 +16,11 @@ jobs:
         with:
           node-version: 20
           cache: 'pnpm'
-      - run: pnpm install --frozen-lockfile
+      - name: Install (frozen lockfile — must match package.json)
+        run: |
+          if ! pnpm install --frozen-lockfile; then
+            echo "::error::pnpm-lock.yaml is out of date with package.json (Vercel fails the same way). Run 'pnpm install' at the repo root and commit pnpm-lock.yaml together with any package.json dependency changes."
+            exit 1
+          fi
       - run: pnpm -w test
       - run: pnpm -w build

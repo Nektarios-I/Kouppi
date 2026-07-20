@@ -7,7 +7,8 @@
     "dev": "turbo dev",
     "test": "turbo test",
     "lint": "turbo lint",
-    "format": "prettier -w ."
+    "format": "prettier -w .",
+    "check:lockfile": "pnpm install --frozen-lockfile"
   },
   "devDependencies": {
     "prettier": "^3.3.3",

@@ -1,0 +1,28 @@
+---
+description: Keep pnpm-lock.yaml in sync with package.json — required for Vercel/CI
+globs: "**/package.json"
+alwaysApply: true
+---
+
+# pnpm lockfile must stay in sync
+
+Vercel and GitHub CI install with **frozen lockfile**. If any `package.json` (including `optionalDependencies` / `devDependencies`) changes without updating `pnpm-lock.yaml`, production deploys fail with:
+
+`ERR_PNPM_OUTDATED_LOCKFILE`
+
+## Required after every dependency change
+
+From the monorepo root, before committing:
+
+```bash
+pnpm install
+pnpm install --frozen-lockfile   # must succeed
+```
+
+Commit **both** the `package.json` change and the updated `pnpm-lock.yaml` in the same commit.
+
+## Never
+
+- Commit `apps/*/package.json` or `packages/*/package.json` dependency edits without regenerating the lockfile
+- Suggest `pnpm install --no-frozen-lockfile` as a “fix” for Vercel — that hides the real problem
+- Assume optionalDependencies do not affect the lockfile — they do
