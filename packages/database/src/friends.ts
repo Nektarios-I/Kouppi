@@ -80,6 +80,34 @@ export function sendFriendRequest(
   }
 
   const db = getRawDb();
+  // UNIQUE(from_user_id, to_user_id) keeps declined/cancelled rows — reopen instead of INSERT.
+  const prior = db
+    .prepare(
+      `SELECT * FROM friend_requests
+       WHERE from_user_id = ? AND to_user_id = ?
+         AND status IN ('declined', 'cancelled')`
+    )
+    .get(fromUserId, target.userId) as Record<string, unknown> | undefined;
+
+  if (prior) {
+    const now = Date.now();
+    db.prepare(
+      `UPDATE friend_requests
+       SET status = 'pending', created_at = ?, responded_at = NULL
+       WHERE id = ?`
+    ).run(now, prior.id);
+    return {
+      request: {
+        id: prior.id as string,
+        fromUserId,
+        toUserId: target.userId,
+        status: "pending",
+        createdAt: now,
+        respondedAt: null,
+      },
+    };
+  }
+
   const request: FriendRequest = {
     id: uuidv4(),
     fromUserId,

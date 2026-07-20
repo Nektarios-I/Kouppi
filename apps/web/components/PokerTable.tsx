@@ -88,7 +88,7 @@ export function PokerTable({
     : undefined;
 
   return (
-    <div className="relative w-full max-w-4xl mx-auto">
+    <div className="relative w-full max-w-4xl mx-auto poker-table-root">
       {/* Multi-layer floor contact shadow */}
       <div
         className="absolute left-1/2 -translate-x-1/2 top-[60%] w-[92%] h-[32%] rounded-[50%] pointer-events-none"
@@ -111,7 +111,7 @@ export function PokerTable({
       <div className="table-perspective relative z-10">
         <div
           ref={tableSurfaceRef}
-          className="table-tilt relative w-full aspect-[16/10] select-none overflow-visible"
+          className="table-tilt relative w-full aspect-[16/10] select-none overflow-visible poker-table-surface"
           style={
             {
               ...glowStyle,

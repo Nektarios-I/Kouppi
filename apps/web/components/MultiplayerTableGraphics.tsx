@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useRemoteGameStore } from "@/store/remoteGameStore";
 import type { GameState } from "@kouppi/game-core";
+import { canShistri, shistriBet } from "@kouppi/game-core";
 import { PokerTable } from "./PokerTable";
 import { useGameSounds } from "@/hooks/useSounds";
 import { Celebration } from "./Confetti";
@@ -155,24 +156,25 @@ export default function MultiplayerTableGraphics() {
   const canKouppi =
     me && gameState && me.bankroll >= gameState.round.pot && gameState.round.pot > 0;
 
-  const canShistriCheck = (upcards: typeof up) => {
-    if (!upcards || !gameState?.config.shistri.enabled) return false;
-    const { a, b } = upcards;
-    return Math.abs(a.rank - b.rank) >= 6;
-  };
-  const shistriEligible = !!(up && canShistriCheck(up));
-  const shistriBetAmount = shistriEligible && gameState
-    ? Math.min(
-        me?.bankroll || 0,
-        Math.min(
-          gameState.round.pot,
-          Math.max(
-            gameState.config.shistri.minChip,
-            Math.floor((gameState.round.pot * gameState.config.shistri.percent) / 100)
+  const shistriEligible = !!(
+    up &&
+    gameState?.config.shistri.enabled &&
+    canShistri(up)
+  );
+  const shistriBetAmount =
+    shistriEligible && gameState
+      ? Math.min(
+          me?.bankroll || 0,
+          Math.min(
+            gameState.round.pot,
+            shistriBet(
+              gameState.round.pot,
+              gameState.config.shistri.percent,
+              gameState.config.shistri.minChip
+            )
           )
         )
-      )
-    : 0;
+      : 0;
 
   const awaitingNext = !!gameState?.awaitNext;
 
@@ -426,20 +428,21 @@ export default function MultiplayerTableGraphics() {
       {timeoutBanner}
       {leaveErrorBanner}
 
-      <div className="container mx-auto px-3 sm:px-4 py-4 sm:py-6">
+      <div className="game-stage">
         {isSpectator && (
-          <div className="mb-3 flex justify-center">
+          <div className="mb-2 flex justify-center game-stage-hud">
             <span className="hud-badge hud-badge-live text-sm px-4 py-2">Spectating — read-only</span>
           </div>
         )}
         {hostActionError && isHost && !isSpectator && (
-          <div className="mb-3 hud-status-banner !text-center text-warning text-sm" role="alert">
+          <div className="mb-2 hud-status-banner !text-center text-warning text-sm game-stage-hud" role="alert">
             {hostActionError}
             <button type="button" className="ml-2 underline" onClick={() => setHostActionError(null)}>
               Dismiss
             </button>
           </div>
         )}
+        <div className="game-stage-hud">
         <GameHUD
           title="KOUPPI"
           badges={[
@@ -515,8 +518,9 @@ export default function MultiplayerTableGraphics() {
             ) : undefined
           }
         />
+        </div>
 
-        <div className="mb-4 sm:mb-6">
+        <div className="game-stage-table-region">
           <PokerTable
             pot={gameState.round.pot}
             players={gameState.players}
@@ -547,8 +551,8 @@ export default function MultiplayerTableGraphics() {
         </div>
 
         {isHost && !isSpectator && playersInRoom.length > 1 && (
-          <div className="mb-4 p-3 rounded-xl border border-white/10 bg-black/25">
-            <p className="text-xs text-gray-400 font-ui uppercase tracking-wider mb-2">Host Controls</p>
+          <div className="game-stage-secondary mb-1 p-2 rounded-xl border border-white/10 bg-black/25">
+            <p className="text-xs text-gray-400 font-ui uppercase tracking-wider mb-1">Host Controls</p>
             <div className="flex flex-wrap gap-2">
               {playersInRoom
                 .filter((p) => p.id !== playerId)
@@ -573,6 +577,7 @@ export default function MultiplayerTableGraphics() {
         )}
 
         {isMyTurn && up && !awaitingNext && gameState.phase === "Round" && !currentBankrupt && !isSpectator && (
+          <div className="game-stage-dock">
           <GameActionPanel
             bet={bet}
             onBetChange={setBet}
@@ -583,6 +588,7 @@ export default function MultiplayerTableGraphics() {
             canKouppi={!!canKouppi}
             shistriEligible={!!shistriEligible}
             shistriAmount={shistriBetAmount}
+            shistriPercent={gameState.config.shistri.percent}
             disabled={!!pendingIntent}
             showPairWarning={
               !!(up.a && up.b && (up.a.rank === up.b.rank || Math.abs(up.a.rank - up.b.rank) === 1))
@@ -605,9 +611,12 @@ export default function MultiplayerTableGraphics() {
               setPendingConfirm({ type: "shistri", amount: shistriBetAmount });
             }}
           />
+          </div>
         )}
 
-        <GameLog entries={gameState.history} />
+        <div className="game-stage-secondary">
+          <GameLog entries={gameState.history} />
+        </div>
       </div>
 
       {pendingConfirm?.type === "closeRoom" && (

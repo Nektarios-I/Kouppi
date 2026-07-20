@@ -11,7 +11,8 @@
     "lint": "next lint",
     "test": "vitest",
     "test:unit": "vitest",
-    "test:e2e": "playwright test || echo 'E2E skipped (no Playwright setup)'"
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install chromium"
   },
   "dependencies": {
     "@kouppi/game-core": "workspace:*",

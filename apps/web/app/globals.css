@@ -804,9 +804,120 @@ body {
   backdrop-filter: blur(6px);
 }
 
+/* ─── Viewport-aware game stage (UI-VIEWPORT-001 / Phase 4) ─── */
+.game-viewport-shell {
+  min-height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.game-viewport-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.game-stage {
+  --game-chrome-h: 280px;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 72rem;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+  padding-top: 0.5rem;
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 640px) {
+  .game-stage {
+    padding-left: 1rem;
+    padding-right: 1rem;
+    padding-top: 0.75rem;
+  }
+}
+
+.game-stage-hud {
+  flex: 0 0 auto;
+}
+
+.game-stage-table-region {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.game-stage-table-region .poker-table-root {
+  width: min(100%, 56rem);
+  max-height: calc(100dvh - var(--game-chrome-h));
+}
+
+.game-stage-table-region .poker-table-surface {
+  max-height: calc(100dvh - var(--game-chrome-h));
+  width: min(100%, calc((100dvh - var(--game-chrome-h)) * 1.6));
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.game-stage-secondary {
+  flex: 0 1 auto;
+  max-height: 5.5rem;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.game-stage-dock {
+  flex: 0 0 auto;
+  z-index: 40;
+}
+
+@media (max-height: 820px) {
+  .game-stage {
+    --game-chrome-h: 240px;
+  }
+  .game-action-dock-inner {
+    padding: 0.55rem 0.75rem 0.7rem;
+  }
+  .game-action-header {
+    margin-bottom: 0.4rem;
+  }
+  .game-action-title {
+    font-size: 0.95rem;
+    letter-spacing: 0.12em;
+  }
+  .game-action-quick-row {
+    margin-bottom: 0.4rem;
+    gap: 0.35rem;
+  }
+  .game-action-warning {
+    margin-bottom: 0.4rem;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.75rem;
+  }
+}
+
+@media (max-height: 700px) {
+  .game-stage {
+    --game-chrome-h: 210px;
+  }
+  .game-stage-secondary {
+    display: none;
+  }
+}
+
 /* Action dock */
 .game-action-dock {
-  @apply mb-4;
+  @apply mb-0;
 }
 
 .game-action-dock-inner {
@@ -1519,5 +1630,57 @@ body {
 
 .game-action-dock-inner .hud-btn {
   min-height: 44px;
+}
+
+/* SHISTRI responsive stake labels (SHI-STAKE-UI-001) */
+.shistri-label-mobile {
+  display: none;
+}
+.shistri-label-compact {
+  display: none;
+}
+.shistri-label-desktop {
+  display: block;
+}
+.game-action-shistri-helper {
+  display: none;
+  text-align: center;
+  font-size: 0.7rem;
+  color: rgba(212, 175, 55, 0.85);
+  margin-top: 0.35rem;
+  margin-bottom: 0;
+}
+
+@media (max-width: 639px) {
+  .shistri-label-mobile {
+    display: inline;
+  }
+  .shistri-label-compact,
+  .shistri-label-desktop {
+    display: none;
+  }
+  .game-action-shistri-helper {
+    display: block;
+  }
+}
+
+@media (min-width: 640px) and (max-width: 1023px) {
+  .shistri-label-compact {
+    display: inline;
+  }
+  .shistri-label-mobile,
+  .shistri-label-desktop {
+    display: none;
+  }
+}
+
+@media (min-width: 1024px) {
+  .shistri-label-desktop {
+    display: block;
+  }
+  .shistri-label-mobile,
+  .shistri-label-compact {
+    display: none;
+  }
 }
 

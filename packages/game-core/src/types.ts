@@ -4,6 +4,10 @@ export type Suit = "S"|"H"|"D"|"C";
 export interface Card { rank: Rank; suit: Suit; }
 export type Chips = number;
 
+/** Default SHISTRI stake as percent of pot (product rule). */
+export const SHISTRI_DEFAULT_PERCENT = 7;
+export const SHISTRI_DEFAULT_MIN_CHIP = 1;
+
 export type MinBetPolicy =
   | { type: "fixed"; value: Chips }
   | { type: "voted"; options: Chips[]; tieBreaker: "random" };
@@ -16,7 +20,7 @@ export interface TableConfig {
   ante: Chips;                       // default 10
   startingBankroll: Chips;           // default 100
   minBetPolicy: MinBetPolicy;        // default fixed(10)
-  shistri: { enabled: boolean; percent: number; minChip: number }; // 5%, min 1
+  shistri: { enabled: boolean; percent: number; minChip: number }; // default 7%, min 1
   maxPlayers: number;                // up to 20
   deckPolicy: DeckPolicy;            // MVP: no reshuffle until empty
   allowKouppi: true;                 // always true for this game

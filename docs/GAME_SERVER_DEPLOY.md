@@ -50,7 +50,34 @@ Server reads `CORS_ORIGIN` in `apps/server/src/server.ts` and passes it to Socke
 
 ## Scaling note
 
-Without `REDIS_URL`, rooms, career matchmaking queue, and friend presence are **single-process in-memory**. Run one server instance or configure Redis before scaling horizontally.
+Without `REDIS_URL`, rooms, career matchmaking queue, and friend presence are **single-process in-memory**. Run **one** server instance, or configure Redis before scaling horizontally.
+
+### Redis honesty (REDIS-PKG-001)
+
+| Layer | With `REDIS_URL` | Without |
+|-------|------------------|---------|
+| Socket.IO adapter | Multi-instance pub/sub (optional deps `redis` + `@socket.io/redis-adapter`) | Single process |
+| Career matchmaking queue | Still **in-memory** on each process | In-memory |
+| Friend presence / room store | See server docs / Redis room store if enabled | In-memory |
+
+**Do not** run multiple Render/Fly instances for Career matchmaking until the queue is Redis-backed. Optional packages are declared under `apps/server` `optionalDependencies` so installs stay light when Redis is unused.
+
+### JWT sessions (JWT-SESS-001)
+
+- Production **requires** `JWT_SECRET` (server refuses to start auth without it).
+- JWTs include `sid`; `requireAuth` validates the row in `sessions`. Logout deletes the session (client should call `POST /api/auth/logout`).
+
+### SQLite backups (BACKUP-001)
+
+On the host that mounts persistent disk:
+
+```bash
+DATABASE_PATH=/var/data/kouppi.sqlite ./scripts/backup-sqlite.sh
+# Windows:
+# .\scripts\backup-sqlite.ps1 -DatabasePath "D:\data\kouppi.db"
+```
+
+Schedule via cron / Render cron / Task Scheduler. Free-tier `/tmp` DBs need no backup — they are wiped on restart (see CAREER-DB-001).
 
 ## Verify production
 

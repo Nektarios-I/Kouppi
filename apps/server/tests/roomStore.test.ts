@@ -12,7 +12,7 @@ function makeRoom(id: string): Room {
       ante: 10,
       startingBankroll: 100,
       minBetPolicy: { type: "fixed", value: 10 },
-      shistri: { enabled: true, percent: 5, minChip: 1 },
+      shistri: { enabled: true, percent: 7, minChip: 1 },
       maxPlayers: 8,
       deckPolicy: "single_no_reshuffle_until_empty",
       allowKouppi: true,

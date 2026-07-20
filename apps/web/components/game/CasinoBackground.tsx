@@ -16,10 +16,10 @@ interface CasinoBackgroundProps {
  */
 export default function CasinoBackground({ children, className = "", theme }: CasinoBackgroundProps) {
   return (
-    <div className={`relative min-h-screen overflow-hidden casino-room ${className}`}>
+    <div className={`relative casino-room game-viewport-shell ${className}`}>
       <CasinoFloor theme={theme} />
       <BackgroundProps theme={theme} />
-      <div className="relative z-10">{children}</div>
+      <div className="relative z-10 game-viewport-content">{children}</div>
     </div>
   );
 }

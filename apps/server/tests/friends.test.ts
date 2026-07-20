@@ -15,7 +15,7 @@ import {
   isFriend,
   getRawDb,
 } from "@kouppi/database";
-import { generateToken } from "../src/auth/jwt.js";
+import { issueTestAuthToken } from "./helpers/authToken.js";
 
 const tmpDb = path.join(os.tmpdir(), `kouppi-friends-test-${Date.now()}.db`);
 
@@ -94,7 +94,7 @@ describe("friends database", () => {
   it("issues JWT for auth routes", async () => {
     if (!dbAvailable()) return;
     const user = await createUser("jwt_friend_user", "password123");
-    const token = generateToken(user.id, user.username);
+    const token = issueTestAuthToken(user.id, user.username);
     expect(token).toBeTruthy();
   });
 });

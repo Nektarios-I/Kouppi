@@ -22,7 +22,7 @@ export default function HowToPlay() {
             add your bet to the pot.
           </li>
           <li>
-            SHISTRI (optional): If exactly one winning rank exists, you may place a small bet (5% of
+            SHISTRI (optional): If exactly one winning rank exists, you may place a small bet (7% of
             pot, min 1). Win: take the whole pot; else lose the bet to the pot.
           </li>
           <li>

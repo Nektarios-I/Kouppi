@@ -1,4 +1,5 @@
 import type { RoomConfig } from "@/store/remoteGameStore";
+import { SHISTRI_DEFAULT_MIN_CHIP, SHISTRI_DEFAULT_PERCENT } from "@kouppi/game-core";
 
 export type RoomPresetId = "quick" | "classic" | "highStakes";
 
@@ -19,7 +20,7 @@ export const ROOM_PRESETS: RoomPreset[] = [
       startingBankroll: 50,
       maxPlayers: 4,
       turnTimeout: 20,
-      shistri: { enabled: true, percent: 5, minChip: 1 },
+      shistri: { enabled: true, percent: SHISTRI_DEFAULT_PERCENT, minChip: SHISTRI_DEFAULT_MIN_CHIP },
       spectatorsAllowed: true,
     },
   },
@@ -32,7 +33,7 @@ export const ROOM_PRESETS: RoomPreset[] = [
       startingBankroll: 100,
       maxPlayers: 8,
       turnTimeout: 30,
-      shistri: { enabled: true, percent: 5, minChip: 1 },
+      shistri: { enabled: true, percent: SHISTRI_DEFAULT_PERCENT, minChip: SHISTRI_DEFAULT_MIN_CHIP },
       spectatorsAllowed: true,
     },
   },
@@ -45,7 +46,7 @@ export const ROOM_PRESETS: RoomPreset[] = [
       startingBankroll: 500,
       maxPlayers: 6,
       turnTimeout: 45,
-      shistri: { enabled: true, percent: 5, minChip: 1 },
+      shistri: { enabled: true, percent: SHISTRI_DEFAULT_PERCENT, minChip: SHISTRI_DEFAULT_MIN_CHIP },
       spectatorsAllowed: true,
     },
   },

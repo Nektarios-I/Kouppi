@@ -4,12 +4,12 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { getServerUrl } from "@/lib/serverUrl";
-
-// Get API URL dynamically at runtime (not module load time)
-function getApiUrl() {
-  return getServerUrl();
-}
+import {
+  formatAuthNetworkError,
+  mapAuthHttpError,
+  readAuthJsonResponse,
+  resolveAuthApiBase,
+} from "@/lib/serverUrl";
 
 /**
  * Avatar configuration
@@ -65,6 +65,58 @@ interface AuthState {
   getAuthHeader: () => Record<string, string>;
 }
 
+function warnAuthDiagnostic(action: "login" | "register" | "me", diagnostic: string) {
+  // Developer console only — never include passwords/tokens.
+  console.warn(`[Career Auth] ${action}: ${diagnostic}`);
+}
+
+async function postAuth(
+  action: "login" | "register",
+  path: string,
+  body: Record<string, unknown>
+): Promise<{ success: true; token: string; user: UserProfile } | { success: false; error: string }> {
+  const base = resolveAuthApiBase();
+  if (!base.ok) {
+    warnAuthDiagnostic(action, base.diagnostic);
+    return { success: false, error: formatAuthNetworkError(base.diagnostic) };
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${base.url}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    warnAuthDiagnostic(action, `Network failure contacting ${base.url}${path}`);
+    return { success: false, error: formatAuthNetworkError("Connection or CORS failure") };
+  }
+
+  const parsed = await readAuthJsonResponse(response);
+  if (parsed.parseError || parsed.data == null) {
+    warnAuthDiagnostic(action, `Non-JSON response (HTTP ${parsed.status}) from ${path}`);
+    return {
+      success: false,
+      error: formatAuthNetworkError("Server returned an unexpected response"),
+    };
+  }
+
+  if (!response.ok || !parsed.data.success) {
+    const fallback = action === "login" ? "Login failed" : "Registration failed";
+    return {
+      success: false,
+      error: mapAuthHttpError(parsed.status, parsed.data, fallback),
+    };
+  }
+
+  return {
+    success: true,
+    token: parsed.data.token,
+    user: parsed.data.user,
+  };
+}
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -75,106 +127,86 @@ export const useAuthStore = create<AuthState>()(
       
       login: async (username: string, password: string) => {
         set({ isLoading: true, error: null });
-        
-        try {
-          const response = await fetch(`${getApiUrl()}/api/auth/login`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username, password }),
-          });
-          
-          const data = await response.json();
-          
-          if (!response.ok || !data.success) {
-            set({ 
-              isLoading: false, 
-              error: data.error || "Login failed" 
-            });
-            return false;
-          }
-          
-          set({ 
-            token: data.token, 
-            user: data.user, 
-            isLoading: false,
-            error: null,
-          });
-          
-          return true;
-        } catch (error: any) {
-          set({ 
-            isLoading: false, 
-            error: error.message || "Failed to connect to server" 
-          });
+        const result = await postAuth("login", "/api/auth/login", { username, password });
+        if (!result.success) {
+          set({ isLoading: false, error: result.error });
           return false;
         }
+        set({
+          token: result.token,
+          user: result.user,
+          isLoading: false,
+          error: null,
+        });
+        return true;
       },
       
       register: async (username: string, password: string, avatar?: Partial<Avatar>) => {
         set({ isLoading: true, error: null });
-        
-        try {
-          const response = await fetch(`${getApiUrl()}/api/auth/register`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username, password, avatar }),
-          });
-          
-          const data = await response.json();
-          
-          if (!response.ok || !data.success) {
-            set({ 
-              isLoading: false, 
-              error: data.error || "Registration failed" 
-            });
-            return false;
-          }
-          
-          set({ 
-            token: data.token, 
-            user: data.user, 
-            isLoading: false,
-            error: null,
-          });
-          
-          return true;
-        } catch (error: any) {
-          set({ 
-            isLoading: false, 
-            error: error.message || "Failed to connect to server" 
-          });
+        const result = await postAuth("register", "/api/auth/register", {
+          username,
+          password,
+          avatar,
+        });
+        if (!result.success) {
+          set({ isLoading: false, error: result.error });
           return false;
         }
+        set({
+          token: result.token,
+          user: result.user,
+          isLoading: false,
+          error: null,
+        });
+        return true;
       },
       
       logout: () => {
+        const { token } = get();
+        const base = resolveAuthApiBase();
+        // Best-effort server revoke; always clear local session.
+        if (token && base.ok) {
+          void fetch(`${base.url}/api/auth/logout`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}` },
+          }).catch(() => undefined);
+        }
         set({ token: null, user: null, error: null });
       },
       
       refreshUser: async () => {
         const { token } = get();
         if (!token) return;
+
+        const base = resolveAuthApiBase();
+        if (!base.ok) {
+          warnAuthDiagnostic("me", base.diagnostic);
+          return;
+        }
         
         try {
-          const response = await fetch(`${getApiUrl()}/api/auth/me`, {
+          const response = await fetch(`${base.url}/api/auth/me`, {
             headers: { 
               "Authorization": `Bearer ${token}`,
             },
           });
+
+          const parsed = await readAuthJsonResponse(response);
+          if (parsed.parseError || !parsed.data) {
+            warnAuthDiagnostic("me", `Non-JSON response (HTTP ${parsed.status})`);
+            return;
+          }
           
-          const data = await response.json();
-          
-          if (!response.ok || !data.success) {
-            // Token might be invalid, logout
+          if (!response.ok || !parsed.data.success) {
             if (response.status === 401) {
               set({ token: null, user: null });
             }
             return;
           }
           
-          set({ user: data.user });
-        } catch (error) {
-          console.error("Failed to refresh user:", error);
+          set({ user: parsed.data.user });
+        } catch {
+          warnAuthDiagnostic("me", "Network failure refreshing profile");
         }
       },
       

@@ -1,4 +1,4 @@
-import { initGame, applyAction } from "@kouppi/game-core";
+import { initGame, applyAction, SHISTRI_DEFAULT_PERCENT, SHISTRI_DEFAULT_MIN_CHIP } from "@kouppi/game-core";
 import type { Action } from "@kouppi/game-core";
 import type { Room, PlayerSession, SpectatorSession, AvatarConfig } from "./types.js";
 import { hashRoomPassword } from "./security/password.js";
@@ -234,7 +234,7 @@ function defaultConfig(): Room["config"] {
     ante: 10,
     startingBankroll: 100,
     minBetPolicy: { type: "fixed", value: 10 },
-    shistri: { enabled: true, percent: 5, minChip: 1 },
+    shistri: { enabled: true, percent: SHISTRI_DEFAULT_PERCENT, minChip: SHISTRI_DEFAULT_MIN_CHIP },
     maxPlayers: 8,
     deckPolicy: "single_no_reshuffle_until_empty",
     allowKouppi: true,

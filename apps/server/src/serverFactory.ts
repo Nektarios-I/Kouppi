@@ -18,6 +18,7 @@ import {
   getPlayerJoinSessionToken, getSpectatorJoinSessionToken, roomsInfoAsync,
 } from "./rooms.js";
 import type { TableConfig } from "@kouppi/game-core";
+import { SHISTRI_DEFAULT_MIN_CHIP, SHISTRI_DEFAULT_PERCENT } from "@kouppi/game-core";
 import { applyAction } from "@kouppi/game-core";
 
 // Career Mode imports
@@ -29,12 +30,17 @@ import friendsRoutes from "./friends/friendsRoutes.js";
 import { persistCasualFriendsSessionFromRoom } from "./casual/persistCasualSession.js";
 import { registerCareerHandlers } from "./career/careerSocketHandlers.js";
 import { registerFriendHandlers, updateAndBroadcastPresence } from "./friends/friendSocketHandlers.js";
-import { isCareerGame, handleCareerGameEnd, getCareerRoomByGameId } from "./career/careerRoomManager.js";
+import { isCareerGame, handleCareerGameEnd, getCareerRoomByGameId, handleMatchFound } from "./career/careerRoomManager.js";
+import {
+  setOnMatchFound,
+  clearOnMatchFound,
+  runMatchmaking,
+} from "./career/queue.js";
 import { verifyRoomPassword, roomRequiresPassword } from "./security/password.js";
 import { sanitizeDisplayName, sanitizeChatText, sanitizeEmote } from "./security/sanitize.js";
 import { checkEventRateLimit, recordEvent, clearRateLimitsForSocket } from "./security/rateLimit.js";
 import { logServerEvent } from "./security/log.js";
-import { verifyToken } from "./auth/jwt.js";
+import { verifyActiveAuthToken } from "./auth/verifyActiveAuth.js";
 import { getUserById } from "@kouppi/database";
 import type { AvatarConfig } from "./types.js";
 
@@ -46,7 +52,7 @@ function resolveJoinIdentity(
   if (!authToken) {
     return { identity: { id: identity.id, name: identity.name, avatar: identity.avatar } };
   }
-  const payload = verifyToken(authToken);
+  const payload = verifyActiveAuthToken(authToken);
   if (!payload) return { error: "invalid_auth_token" };
   if (!skipCareerDatabase) {
     const user = getUserById(payload.userId);
@@ -77,11 +83,14 @@ export function createKouppiServer(opts?: {
   websocketOnly?: boolean;
 }) {
   let careerDatabaseReady = !!opts?.skipCareerDatabase;
+  /** True only when SQLite was actually initialized (not skipped for unit tests). */
+  let careerDbInitialized = false;
   // Initialize database for Career Mode
   if (!opts?.skipCareerDatabase) {
     try {
       getDatabase();
       careerDatabaseReady = true;
+      careerDbInitialized = true;
       console.log("[Career Mode] Database initialized");
 
       // Cleanup expired sessions periodically (every hour)
@@ -93,6 +102,7 @@ export function createKouppiServer(opts?: {
       }, 60 * 60 * 1000);
     } catch (error) {
       careerDatabaseReady = false;
+      careerDbInitialized = false;
       console.error("[Career Mode] Failed to initialize database:", error);
       // Continue without Career Mode if DB fails
     }
@@ -153,7 +163,7 @@ export function createKouppiServer(opts?: {
       ante: 10,
       startingBankroll: 100,
       minBetPolicy: { type: "fixed", value: 10 },
-      shistri: { enabled: true, percent: 5, minChip: 1 },
+      shistri: { enabled: true, percent: SHISTRI_DEFAULT_PERCENT, minChip: SHISTRI_DEFAULT_MIN_CHIP },
       maxPlayers: 8,
       deckPolicy: "single_no_reshuffle_until_empty",
       allowKouppi: true,
@@ -170,6 +180,20 @@ export function createKouppiServer(opts?: {
       console.log(`[Cleanup] Removed ${cleaned} empty room(s)`);
     }
   }, 30000);
+
+  // Career matchmaking: register once per server instance when Career DB is available.
+  // Immediate matches also fire from joinQueue → tryFindMatch when a compatible pair exists.
+  // Skipped when skipCareerDatabase (most unit tests) to avoid leaked timers / open handles.
+  let matchmakingInterval: ReturnType<typeof setInterval> | null = null;
+  if (careerDbInitialized) {
+    setOnMatchFound((match) => {
+      handleMatchFound(match, io);
+    });
+    const MATCHMAKING_INTERVAL_MS = 2000;
+    matchmakingInterval = setInterval(() => {
+      runMatchmaking();
+    }, MATCHMAKING_INTERVAL_MS);
+  }
 
   io.on("connection", (socket) => {
     logServerEvent("socket_connect", { socketId: socket.id });
@@ -313,7 +337,16 @@ export function createKouppiServer(opts?: {
 
       try {
         syncGamePlayersToRoom(roomId);
-      } catch {}
+      } catch (err) {
+        console.error(
+          JSON.stringify({
+            ts: new Date().toISOString(),
+            event: "sync_game_players_failed",
+            roomId,
+            errorMessage: err instanceof Error ? err.message : "unknown",
+          })
+        );
+      }
 
       if (room.state && room.state.phase === "Round" && room.state.players.length <= 1) {
         try {
@@ -326,7 +359,16 @@ export function createKouppiServer(opts?: {
           room.state.turn = null;
           room.state.phase = "RoundEnd" as any;
           room.state.history.push("Round ended - not enough players");
-        } catch {}
+        } catch (err) {
+          console.error(
+            JSON.stringify({
+              ts: new Date().toISOString(),
+              event: "force_round_end_failed",
+              roomId,
+              errorMessage: err instanceof Error ? err.message : "unknown",
+            })
+          );
+        }
       }
 
       if (room.state?.phase === "RoundEnd" && !room.decision?.active) {
@@ -337,7 +379,16 @@ export function createKouppiServer(opts?: {
         if (room.state && room.state.phase === "Round" && !room.state.turn && !room.state.awaitNext && room.state.players.length > 1) {
           startEligibleTurn(roomId);
         }
-      } catch {}
+      } catch (err) {
+        console.error(
+          JSON.stringify({
+            ts: new Date().toISOString(),
+            event: "start_eligible_turn_failed",
+            roomId,
+            errorMessage: err instanceof Error ? err.message : "unknown",
+          })
+        );
+      }
 
       const snap = snapshot(roomId);
       if (snap) emitState(roomId);
@@ -416,7 +467,7 @@ export function createKouppiServer(opts?: {
         const roomData = buildJoinAck(room, creator.id, "player");
         logServerEvent("room_created", { roomId, code: room.code, socketId: socket.id });
         if (data.authToken) {
-          const authPayload = verifyToken(data.authToken);
+          const authPayload = verifyActiveAuthToken(data.authToken);
           if (authPayload) {
             void updateAndBroadcastPresence(io, authPayload.userId, {
               status: "in_room",
@@ -503,7 +554,7 @@ export function createKouppiServer(opts?: {
         }
         emitSystemMessage(resolvedId!, `${resolvedPlayer.name} joined the room`);
         if (data.authToken) {
-          const authPayload = verifyToken(data.authToken);
+          const authPayload = verifyActiveAuthToken(data.authToken);
           if (authPayload) {
             void updateAndBroadcastPresence(io, authPayload.userId, {
               status: room.started ? "in_game" : "in_room",
@@ -908,7 +959,11 @@ export function createKouppiServer(opts?: {
           }
         }
       } catch (e: any) {
-        const err = { code: "intent_error", message: e.message };
+        const code =
+          e?.code === "illegal_action" || e?.name === "IllegalActionError"
+            ? "illegal_action"
+            : "intent_error";
+        const err = { code, message: e.message };
         cb ? cb(err) : socket.emit("error", err);
       }
     });
@@ -1315,7 +1370,16 @@ export function createKouppiServer(opts?: {
       // Sync game state players to room players
       try {
         syncGamePlayersToRoom(roomId);
-      } catch {}
+      } catch (err) {
+        console.error(
+          JSON.stringify({
+            ts: new Date().toISOString(),
+            event: "sync_game_players_after_decision_failed",
+            roomId,
+            errorMessage: err instanceof Error ? err.message : "unknown",
+          })
+        );
+      }
 
       // Start the next round automatically: nextRound -> ante -> startTurn (via eligibility)
       try {
@@ -1779,7 +1843,13 @@ export function createKouppiServer(opts?: {
     app, 
     httpServer, 
     io,
-    // Call this to stop the cleanup interval when shutting down
-    stopCleanup: () => clearInterval(cleanupInterval),
+    // Call this to stop intervals and clear matchmaking handler when shutting down
+    stopCleanup: () => {
+      clearInterval(cleanupInterval);
+      if (matchmakingInterval) clearInterval(matchmakingInterval);
+      clearOnMatchFound();
+    },
+    /** True when createKouppiServer registered the Career matchmaking callback. */
+    careerMatchmakingWired: careerDbInitialized,
   };
 }

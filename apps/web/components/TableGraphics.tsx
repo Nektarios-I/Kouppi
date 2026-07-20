@@ -222,7 +222,8 @@ export default function SinglePlayerTableGraphics() {
         </RoundEndPanel>
       )}
 
-      <div className="container mx-auto px-3 sm:px-4 py-4 sm:py-6">
+      <div className="game-stage">
+        <div className="game-stage-hud">
         <GameHUD
           title="KOUPPI"
           badges={[{ id: "mode", label: "Single Player", variant: "gold" }]}
@@ -265,8 +266,9 @@ export default function SinglePlayerTableGraphics() {
             ) : undefined
           }
         />
+        </div>
 
-        <div className="mb-4 sm:mb-6">
+        <div className="game-stage-table-region">
           <PokerTable
             pot={state.round.pot}
             players={state.players}
@@ -285,10 +287,13 @@ export default function SinglePlayerTableGraphics() {
         </div>
 
         {awaitingNext && state.phase === "Round" && (
-          <NextTurnButton onClick={() => dispatch({ type: "nextPlayer" })} />
+          <div className="game-stage-dock py-1">
+            <NextTurnButton onClick={() => dispatch({ type: "nextPlayer" })} />
+          </div>
         )}
 
         {isMyTurn && up && !awaitingNext && state.phase === "Round" && (
+          <div className="game-stage-dock">
           <GameActionPanel
             bet={bet}
             onBetChange={setBet}
@@ -299,6 +304,7 @@ export default function SinglePlayerTableGraphics() {
             canKouppi={canKouppi}
             shistriEligible={shistriEligible}
             shistriAmount={shistriAmount}
+            shistriPercent={state.config.shistri.percent}
             disabled={!ready || state.phase !== "Round" || awaitingNext}
             showPairWarning={
               !!(up.a && up.b && (up.a.rank === up.b.rank || Math.abs(up.a.rank - up.b.rank) === 1))
@@ -327,15 +333,17 @@ export default function SinglePlayerTableGraphics() {
               dispatch({ type: "shistri" });
             }}
           />
+          </div>
         )}
 
-        <GameLog entries={state.history} />
-
-        <p className="mt-4 text-center text-xs text-gray-600 font-ui">
-          <Link href="/3d-preview" className="text-gold/60 hover:text-gold transition-colors">
-            3D preview
-          </Link>
-        </p>
+        <div className="game-stage-secondary">
+          <GameLog entries={state.history} />
+          <p className="mt-1 text-center text-xs text-gray-600 font-ui">
+            <Link href="/3d-preview" className="text-gold/60 hover:text-gold transition-colors">
+              3D preview
+            </Link>
+          </p>
+        </div>
       </div>
     </CasinoBackground>
   );

@@ -3,13 +3,24 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
-import { useCareerLobbyStore, type Tier, type AnteOption } from "@/store/careerLobbyStore";
+import {
+  useCareerLobbyStore,
+  type Tier,
+  type AnteOption,
+  type WaitingRoomSummary,
+} from "@/store/careerLobbyStore";
 import { HudButton } from "@/components/game/HudButton";
 import {
   LobbyCard,
   LobbyAlert,
 } from "@/components/game/LobbyUI";
 
+/**
+ * Career entry: three parallel paths
+ * 1) Quick Match (queue search)
+ * 2) Create Waiting Table
+ * 3) Browse all live waiting tables and join anytime
+ */
 export default function CareerLobby() {
   const router = useRouter();
   const { token, user, isLoggedIn } = useAuthStore();
@@ -23,22 +34,28 @@ export default function CareerLobby() {
     selectedTierId,
     isLoadingTiers,
     queueState,
+    queueJoinedAt,
     isJoiningQueue,
     matchFound,
     currentRoom,
     isJoiningRoom,
     gameRoomId,
+    waitingRooms,
+    isLoadingWaitingRooms,
     error,
     connect,
-    fetchTiers,
     selectTier,
     joinQueue,
     leaveQueue,
     leaveRoom,
+    browseAllWaitingRooms,
+    createWaitingRoom,
+    joinWaitingRoom,
     clearError,
   } = useCareerLobbyStore();
 
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [elapsedSec, setElapsedSec] = useState(0);
 
   useEffect(() => {
     if (isLoggedIn() && token && !socket) {
@@ -60,10 +77,41 @@ export default function CareerLobby() {
   }, [currentRoom?.autoStartAt]);
 
   useEffect(() => {
+    if (!queueState?.inQueue || !queueJoinedAt) {
+      setElapsedSec(0);
+      return;
+    }
+    const tick = () => setElapsedSec(Math.max(0, Math.floor((Date.now() - queueJoinedAt) / 1000)));
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [queueState?.inQueue, queueJoinedAt]);
+
+  useEffect(() => {
     if (gameRoomId) {
       router.push(`/room/${gameRoomId}`);
     }
   }, [gameRoomId, router]);
+
+  // Always refresh the global live-table browser while idle in Career lobby
+  useEffect(() => {
+    if (!token || !isConnected) return;
+    if (queueState?.inQueue || isJoiningQueue || currentRoom || matchFound) return;
+
+    void browseAllWaitingRooms(token);
+    const interval = setInterval(() => {
+      void browseAllWaitingRooms(token);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [
+    token,
+    isConnected,
+    queueState?.inQueue,
+    isJoiningQueue,
+    currentRoom,
+    matchFound,
+    browseAllWaitingRooms,
+  ]);
 
   const handleJoinAnte = async (anteId: string) => {
     if (!token) return;
@@ -80,7 +128,24 @@ export default function CareerLobby() {
     leaveRoom(token);
   };
 
+  const handleCreateWaiting = async (anteId: string) => {
+    if (!token) return;
+    const ok = await createWaitingRoom(token, anteId);
+    if (ok) {
+      await browseAllWaitingRooms(token);
+    }
+  };
+
+  const handleJoinWaiting = async (roomId: string) => {
+    if (!token) return;
+    await joinWaitingRoom(token, roomId);
+  };
+
   const selectedTier = tiers.find((t) => t.id === selectedTierId);
+  const searchingLeagueName =
+    selectedTier?.name ??
+    tiers.find((t) => t.id === queueState?.tierId)?.name ??
+    "Career";
 
   if (!isLoggedIn()) {
     return (
@@ -115,42 +180,26 @@ export default function CareerLobby() {
     );
   }
 
-  if (queueState?.inQueue) {
-    const queueTier = tiers.find((t) => t.id === queueState.tierId);
+  if (queueState?.inQueue || isJoiningQueue) {
+    const queueTier = tiers.find((t) => t.id === queueState?.tierId) ?? selectedTier;
     return (
       <LobbyCard title={`${queueTier?.emoji ?? "🔍"} Finding Match`} icon="◎">
         <div className="space-y-4">
-          <div className="hud-status-banner !bg-gold/10 !border-gold/30 text-center">
+          <div
+            className="hud-status-banner !bg-gold/10 !border-gold/30 text-center"
+            role="status"
+            aria-live="polite"
+          >
             <div className="text-2xl mb-2">🔍</div>
-            <div className="font-display text-lg font-bold text-gold mb-1">Searching for opponent...</div>
+            <div className="font-display text-lg font-bold text-gold mb-1">
+              Searching for a {searchingLeagueName} table…
+            </div>
             <div className="text-sm text-gray-400">
-              Position #{queueState.position} · {queueState.waitTime}s wait
+              {queueState?.position ? `Position #${queueState.position} · ` : null}
+              {elapsedSec}s elapsed
+              {queueState?.queueSize ? ` · ${queueState.queueSize} in queue` : null}
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="career-stat-tile">
-              <div className="text-xs text-gray-500 font-ui uppercase tracking-wide">Search Range</div>
-              <div className="text-lg font-display font-bold text-gold">±{queueState.searchRange}</div>
-            </div>
-            <div className="career-stat-tile">
-              <div className="text-xs text-gray-500 font-ui uppercase tracking-wide">Players in Queue</div>
-              <div className="text-lg font-display font-bold text-gold">{queueState.queueSize}</div>
-            </div>
-          </div>
-          {queueState.fallbackMode && (
-            <div className="hud-status-banner text-center !py-3 font-ui">
-              <div className="text-lg mb-1">
-                {queueState.fallbackMode === "quick-match" && "🌍 Quick Match Mode"}
-                {queueState.fallbackMode === "cross-tier" && "📡 Searching All Leagues"}
-                {queueState.fallbackMode === "expanded" && "🔎 Expanding Search Range"}
-              </div>
-              <div className="text-xs text-gray-400">
-                {queueState.fallbackMode === "quick-match" && "Accepting any opponent to get you in a game"}
-                {queueState.fallbackMode === "cross-tier" && "Looking for players in nearby leagues"}
-                {queueState.fallbackMode === "expanded" && "Widening rating range to find more matches"}
-              </div>
-            </div>
-          )}
           <HudButton variant="danger" fullWidth onClick={handleCancelSearch}>
             Cancel Search
           </HudButton>
@@ -162,11 +211,15 @@ export default function CareerLobby() {
   if (matchFound && !currentRoom) {
     return (
       <LobbyCard title="Match Found!" icon="✨">
-        <div className="hud-result-win text-center py-6">
+        <div className="hud-result-win text-center py-6" role="status" aria-live="polite">
           <div className="text-4xl mb-3">⚔️</div>
-          <div className="font-display text-xl font-bold text-success mb-2">Opponent Found!</div>
-          <div className="text-sm text-gray-400">{matchFound.opponent.username} · Rating {matchFound.opponent.rating}</div>
-          <div className="hud-status-banner text-center !py-2 mt-4 font-ui text-sm">Preparing game room...</div>
+          <div className="font-display text-xl font-bold text-success mb-2">Match found</div>
+          <div className="text-sm text-gray-400">
+            {matchFound.opponent.username} · Rating {matchFound.opponent.rating}
+          </div>
+          <div className="hud-status-banner text-center !py-2 mt-4 font-ui text-sm">
+            Preparing game room...
+          </div>
         </div>
       </LobbyCard>
     );
@@ -184,7 +237,7 @@ export default function CareerLobby() {
         }
       >
         <p className="text-sm text-gray-400 font-ui mb-4">
-          Ante: {currentRoom.ante} · Bet: {currentRoom.minBet}–{currentRoom.maxBet}
+          Waiting table · Ante: {currentRoom.ante} · Bet: {currentRoom.minBet}–{currentRoom.maxBet}
         </p>
 
         <div className="space-y-2 mb-4">
@@ -217,10 +270,7 @@ export default function CareerLobby() {
           ))}
 
           {Array.from({ length: currentRoom.maxPlayers - currentRoom.playerCount }).map((_, i) => (
-            <div
-              key={`empty-${i}`}
-              className="lobby-player-row border-dashed opacity-60"
-            >
+            <div key={`empty-${i}`} className="lobby-player-row border-dashed opacity-60">
               <div className="flex items-center gap-3">
                 <div className="avatar-display w-10 h-10 text-lg bg-black/40 text-gray-600 border-2 border-white/10">
                   ?
@@ -274,6 +324,14 @@ export default function CareerLobby() {
         </div>
       </LobbyCard>
 
+      <LiveTablesBrowser
+        rooms={waitingRooms}
+        isLoading={isLoadingWaitingRooms}
+        isJoining={isJoiningRoom || isJoiningQueue}
+        onRefresh={() => token && browseAllWaitingRooms(token)}
+        onJoin={handleJoinWaiting}
+      />
+
       {isLoadingTiers ? (
         <LobbyCard title="Loading Leagues" icon="🏆">
           <div className="flex justify-center py-8">
@@ -284,6 +342,9 @@ export default function CareerLobby() {
         </LobbyCard>
       ) : !selectedTierId ? (
         <LobbyCard title="Select a League" icon="🏆">
+          <p className="text-sm text-gray-400 font-ui mb-3">
+            Quick Match or create a waiting table for a specific league stake.
+          </p>
           <div className="space-y-2">
             {tiers.map((tier) => (
               <TierCard
@@ -307,14 +368,15 @@ export default function CareerLobby() {
             }
           >
             <p className="text-sm text-gray-400 font-ui mb-4">{selectedTier.description}</p>
-            <div className="space-y-2">
+            <div className="space-y-3">
               {selectedTier.antes.map((ante) => (
                 <AnteCard
                   key={ante.id}
                   ante={ante}
                   tierColor={selectedTier.color}
-                  isJoining={isJoiningQueue}
-                  onJoin={() => handleJoinAnte(ante.id)}
+                  isJoining={isJoiningQueue || isJoiningRoom}
+                  onQuickMatch={() => handleJoinAnte(ante.id)}
+                  onCreateWaiting={() => handleCreateWaiting(ante.id)}
                 />
               ))}
             </div>
@@ -322,6 +384,71 @@ export default function CareerLobby() {
         )
       )}
     </div>
+  );
+}
+
+function LiveTablesBrowser({
+  rooms,
+  isLoading,
+  isJoining,
+  onRefresh,
+  onJoin,
+}: {
+  rooms: WaitingRoomSummary[];
+  isLoading: boolean;
+  isJoining: boolean;
+  onRefresh: () => void;
+  onJoin: (roomId: string) => void;
+}) {
+  return (
+    <LobbyCard
+      title="Live Waiting Tables"
+      icon="◎"
+      badge={
+        <HudButton variant="ghost" size="sm" onClick={onRefresh} disabled={isLoading || isJoining}>
+          {isLoading ? "…" : "Refresh"}
+        </HudButton>
+      }
+    >
+      <p className="text-sm text-gray-400 font-ui mb-3">
+        Browse every open Career waiting table and join anytime. In-progress games are never listed.
+      </p>
+      {rooms.length === 0 ? (
+        <div className="hud-status-banner text-center !py-4 font-ui text-sm text-gray-400">
+          {isLoading ? "Loading live tables…" : "No waiting tables right now — Quick Match or create one below."}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {rooms.map((room) => {
+            const joinable = room.canJoin !== false && room.status === "waiting";
+            return (
+              <div key={room.roomId} className="lobby-room-row items-center">
+                <div className="min-w-0 flex-1">
+                  <div className="font-ui font-semibold text-white truncate">
+                    {room.tierEmoji ?? "♠"} {room.tierName ?? room.tierId} ·{" "}
+                    {room.anteLabel ?? `Ante ${room.ante}`}
+                  </div>
+                  <div className="text-sm text-gray-400">
+                    {room.playerCount}/{room.maxPlayers} seated
+                    {typeof room.buyIn === "number" ? ` · Buy-in ${room.buyIn.toLocaleString()}` : ""}
+                    {typeof room.seatsOpen === "number" ? ` · ${room.seatsOpen} open` : ""}
+                  </div>
+                </div>
+                <HudButton
+                  variant={joinable ? "success" : "ghost"}
+                  size="sm"
+                  disabled={!joinable || isJoining}
+                  onClick={() => onJoin(room.roomId)}
+                  className="shrink-0"
+                >
+                  {isJoining ? "…" : joinable ? "Join" : "Unavailable"}
+                </HudButton>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </LobbyCard>
   );
 }
 
@@ -370,33 +497,39 @@ function AnteCard({
   ante,
   tierColor,
   isJoining,
-  onJoin,
+  onQuickMatch,
+  onCreateWaiting,
 }: {
   ante: AnteOption;
   tierColor: string;
   isJoining: boolean;
-  onJoin: () => void;
+  onQuickMatch: () => void;
+  onCreateWaiting: () => void;
 }) {
   return (
-    <div
-      className="lobby-room-row"
-      style={{ borderColor: tierColor + "30" }}
-    >
+    <div className="lobby-room-row flex-col items-stretch gap-3" style={{ borderColor: tierColor + "30" }}>
       <div className="min-w-0">
         <div className="font-ui font-semibold text-white">{ante.label}</div>
-        <div className="text-sm text-gray-400">
-          Buy-in: {ante.buyIn.toLocaleString()} chips
-        </div>
+        <div className="text-sm text-gray-400">Buy-in: {ante.buyIn.toLocaleString()} chips</div>
       </div>
-      <HudButton
-        variant={ante.canAfford && !isJoining ? "success" : "ghost"}
-        size="sm"
-        onClick={onJoin}
-        disabled={!ante.canAfford || isJoining}
-        className="shrink-0"
-      >
-        {isJoining ? "…" : ante.canAfford ? "Find Match" : "Not enough"}
-      </HudButton>
+      <div className="flex flex-wrap gap-2">
+        <HudButton
+          variant={ante.canAfford && !isJoining ? "success" : "ghost"}
+          size="sm"
+          onClick={onQuickMatch}
+          disabled={!ante.canAfford || isJoining}
+        >
+          {isJoining ? "Searching…" : ante.canAfford ? "Quick Match" : "Not enough"}
+        </HudButton>
+        <HudButton
+          variant="bet"
+          size="sm"
+          onClick={onCreateWaiting}
+          disabled={!ante.canAfford || isJoining}
+        >
+          Create Waiting Table
+        </HudButton>
+      </div>
     </div>
   );
 }

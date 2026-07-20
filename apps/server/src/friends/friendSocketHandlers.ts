@@ -3,7 +3,7 @@
  */
 
 import { Server, Socket } from "socket.io";
-import { verifyToken } from "../auth/jwt.js";
+import { verifyActiveAuthToken } from "../auth/verifyActiveAuth.js";
 import {
   getUserById,
   listFriends,
@@ -25,7 +25,7 @@ const authenticatedSockets = new Map<string, { userId: string; username: string 
 const userSocketCounts = new Map<string, number>();
 
 function authenticateSocket(socket: Socket, token: string): { userId: string; username: string } | null {
-  const payload = verifyToken(token);
+  const payload = verifyActiveAuthToken(token);
   if (!payload) return null;
   const user = getUserById(payload.userId);
   if (!user) return null;

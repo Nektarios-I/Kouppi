@@ -81,6 +81,24 @@ export interface MatchFoundData {
   };
 }
 
+export interface WaitingRoomSummary {
+  roomId: string;
+  tierId: string;
+  tierName?: string;
+  tierEmoji?: string;
+  anteId: string;
+  ante: number;
+  anteLabel?: string;
+  buyIn?: number;
+  minBet?: number;
+  maxBet?: number;
+  playerCount: number;
+  maxPlayers: number;
+  status: "waiting" | "starting" | "in-game" | "finished";
+  canJoin?: boolean;
+  seatsOpen?: number;
+}
+
 interface CareerLobbyState {
   socket: Socket | null;
   isConnected: boolean;
@@ -94,11 +112,14 @@ interface CareerLobbyState {
   isLoadingTiers: boolean;
   queueState: QueueState | null;
   isJoiningQueue: boolean;
+  queueJoinedAt: number | null;
   queuePollInterval: ReturnType<typeof setInterval> | null;
   matchFound: MatchFoundData | null;
   currentRoom: CareerRoomState | null;
   isJoiningRoom: boolean;
   gameRoomId: string | null;
+  waitingRooms: WaitingRoomSummary[];
+  isLoadingWaitingRooms: boolean;
   error: string | null;
   connect: (token: string) => void;
   disconnect: () => void;
@@ -109,8 +130,36 @@ interface CareerLobbyState {
   startQueuePolling: (token: string) => void;
   stopQueuePolling: () => void;
   leaveRoom: (token: string) => void;
+  listWaitingRooms: (token: string, anteId?: string) => Promise<void>;
+  browseAllWaitingRooms: (token: string) => Promise<void>;
+  createWaitingRoom: (token: string, anteId: string) => Promise<boolean>;
+  joinWaitingRoom: (token: string, roomId: string) => Promise<boolean>;
   clearError: () => void;
   reset: () => void;
+}
+
+function applyQueueJoined(
+  set: (partial: Partial<CareerLobbyState>) => void,
+  get: () => CareerLobbyState,
+  data: Partial<QueueState> & { anteId?: string; tierId?: string; position?: number }
+) {
+  set({
+    queueState: {
+      inQueue: true,
+      position: data.position ?? 1,
+      waitTime: data.waitTime ?? 0,
+      searchRange: data.searchRange ?? 100,
+      queueSize: data.queueSize ?? 0,
+      anteId: data.anteId,
+      tierId: data.tierId,
+      fallbackMode: data.fallbackMode,
+    },
+    isJoiningQueue: false,
+    queueJoinedAt: Date.now(),
+    error: null,
+  });
+  const { authToken } = get();
+  if (authToken) get().startQueuePolling(authToken);
 }
 
 export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
@@ -126,11 +175,14 @@ export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
   isLoadingTiers: false,
   queueState: null,
   isJoiningQueue: false,
+  queueJoinedAt: null,
   queuePollInterval: null,
   matchFound: null,
   currentRoom: null,
   isJoiningRoom: false,
   gameRoomId: null,
+  waitingRooms: [],
+  isLoadingWaitingRooms: false,
   error: null,
 
   connect: (token: string) => {
@@ -174,30 +226,16 @@ export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
     });
 
     newSocket.on("career:queueJoined", (data: QueueState & { anteId: string; tierId: string }) => {
-      set({
-        queueState: {
-          inQueue: true,
-          position: data.position,
-          waitTime: data.waitTime ?? 0,
-          searchRange: data.searchRange ?? 100,
-          queueSize: data.queueSize ?? 0,
-          anteId: data.anteId,
-          tierId: data.tierId,
-          fallbackMode: data.fallbackMode,
-        },
-        isJoiningQueue: false,
-      });
-      const { authToken } = get();
-      if (authToken) get().startQueuePolling(authToken);
+      applyQueueJoined(set, get, data);
     });
 
     newSocket.on("career:queueStatus", (data: QueueState) => {
       if (get().matchFound) return;
-      set({ queueState: data.inQueue ? data : null });
+      set({ queueState: data.inQueue ? data : null, queueJoinedAt: data.inQueue ? get().queueJoinedAt : null });
     });
 
     newSocket.on("career:matchFound", (data: MatchFoundData) => {
-      set({ matchFound: data, queueState: null });
+      set({ matchFound: data, queueState: null, isJoiningQueue: false, queueJoinedAt: null });
       get().stopQueuePolling();
     });
 
@@ -270,33 +308,69 @@ export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
   },
 
   joinQueue: async (token: string, anteId: string): Promise<boolean> => {
-    const { socket } = get();
+    const { socket, selectedTierId, isJoiningQueue, queueState } = get();
     if (!socket?.connected) {
       set({ error: "Not connected to server" });
       return false;
     }
-    set({ isJoiningQueue: true, error: null, authToken: token });
+    if (isJoiningQueue || queueState?.inQueue) {
+      return false;
+    }
+    // Immediate feedback before ACK (CAREER-UX-001)
+    set({
+      isJoiningQueue: true,
+      error: null,
+      authToken: token,
+      matchFound: null,
+      queueJoinedAt: Date.now(),
+      queueState: {
+        inQueue: true,
+        position: 0,
+        waitTime: 0,
+        searchRange: 100,
+        queueSize: 0,
+        anteId,
+        tierId: selectedTierId ?? undefined,
+      },
+    });
     return new Promise((resolve) => {
-      socket.emit("career:joinAnte", { token, anteId }, (err: any) => {
-        if (err) {
-          set({ isJoiningQueue: false, error: err.message });
-          resolve(false);
-          return;
+      socket.emit(
+        "career:joinAnte",
+        { token, anteId },
+        (err: { message?: string } | null, data?: QueueState & { anteId?: string; tierId?: string }) => {
+          if (err) {
+            set({
+              isJoiningQueue: false,
+              queueState: null,
+              queueJoinedAt: null,
+              error: err.message ?? "Could not join queue",
+            });
+            resolve(false);
+            return;
+          }
+          if (data) {
+            applyQueueJoined(set, get, { ...data, anteId: data.anteId ?? anteId });
+          } else {
+            set({ isJoiningQueue: false });
+          }
+          resolve(true);
         }
-        resolve(true);
-      });
+      );
     });
   },
 
   leaveQueue: (token: string) => {
     const { socket, queueState } = get();
-    if (!socket?.connected || !queueState?.inQueue) return;
-    socket.emit("career:leaveQueue", { token }, (err: any) => {
+    if (!socket?.connected || !queueState?.inQueue) {
+      set({ queueState: null, isJoiningQueue: false, queueJoinedAt: null });
+      return;
+    }
+    socket.emit("career:leaveQueue", { token }, (err: { message?: string } | null) => {
       if (err) {
-        set({ error: err.message });
+        set({ error: err.message ?? "Could not leave queue" });
         return;
       }
-      set({ queueState: null, matchFound: null, isJoiningQueue: false });
+      set({ queueState: null, matchFound: null, isJoiningQueue: false, queueJoinedAt: null });
       get().stopQueuePolling();
     });
   },
@@ -337,12 +411,94 @@ export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
   leaveRoom: (token: string) => {
     const { socket, currentRoom } = get();
     if (!socket?.connected || !currentRoom) return;
-    socket.emit("career:leaveRoom", { token }, (err: any) => {
+    socket.emit("career:leaveRoom", { token }, (err: { message?: string } | null) => {
       if (err) {
-        set({ error: err.message });
+        set({ error: err.message ?? "Could not leave room" });
         return;
       }
       set({ currentRoom: null, matchFound: null });
+    });
+  },
+
+  listWaitingRooms: async (token: string, anteId?: string): Promise<void> => {
+    const { socket } = get();
+    if (!socket?.connected) {
+      set({ error: "Not connected to server" });
+      return;
+    }
+    set({ isLoadingWaitingRooms: true, error: null });
+    return new Promise((resolve) => {
+      const payload = anteId ? { token, anteId } : { token };
+      socket.emit(
+        "career:listWaitingRooms",
+        payload,
+        (err: { message?: string } | null, data?: { rooms?: WaitingRoomSummary[] }) => {
+          if (err) {
+            set({ isLoadingWaitingRooms: false, error: err.message ?? "Could not list tables" });
+            resolve();
+            return;
+          }
+          set({
+            waitingRooms: (data?.rooms ?? []).filter((r) => r.status === "waiting"),
+            isLoadingWaitingRooms: false,
+          });
+          resolve();
+        }
+      );
+    });
+  },
+
+  browseAllWaitingRooms: async (token: string): Promise<void> => {
+    return get().listWaitingRooms(token);
+  },
+
+  createWaitingRoom: async (token: string, anteId: string): Promise<boolean> => {
+    const { socket, isJoiningRoom } = get();
+    if (!socket?.connected) {
+      set({ error: "Not connected to server" });
+      return false;
+    }
+    if (isJoiningRoom) return false;
+    set({ isJoiningRoom: true, error: null, authToken: token });
+    return new Promise((resolve) => {
+      socket.emit(
+        "career:createWaitingRoom",
+        { token, anteId },
+        (err: { message?: string } | null) => {
+          set({ isJoiningRoom: false });
+          if (err) {
+            set({ error: err.message ?? "Could not create waiting table" });
+            resolve(false);
+            return;
+          }
+          resolve(true);
+        }
+      );
+    });
+  },
+
+  joinWaitingRoom: async (token: string, roomId: string): Promise<boolean> => {
+    const { socket, isJoiningRoom } = get();
+    if (!socket?.connected) {
+      set({ error: "Not connected to server" });
+      return false;
+    }
+    if (isJoiningRoom) return false;
+    set({ isJoiningRoom: true, error: null, authToken: token });
+    return new Promise((resolve) => {
+      socket.emit(
+        "career:joinWaitingRoom",
+        { token, roomId },
+        (err: { message?: string } | null) => {
+          set({ isJoiningRoom: false });
+          if (err) {
+            set({ error: err.message ?? "Could not join waiting table" });
+            resolve(false);
+            return;
+          }
+          resolve(true);
+        }
+      );
     });
   },
 
@@ -367,11 +523,14 @@ export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
       isLoadingTiers: false,
       queueState: null,
       isJoiningQueue: false,
+      queueJoinedAt: null,
       queuePollInterval: null,
       matchFound: null,
       currentRoom: null,
       isJoiningRoom: false,
       gameRoomId: null,
+      waitingRooms: [],
+      isLoadingWaitingRooms: false,
       error: null,
     });
   },

@@ -3,7 +3,8 @@ export type TableThemeId = "classic-green" | "midnight-blue" | "royal-blue" | "w
 export type FloorType = "carpet" | "wood";
 
 export interface TableThemeProps {
-  plants?: boolean;
+  /** Decorative corner plants — must stay false for all shipped themes (UI-PLANT-001). */
+  plants: boolean;
   distantPeople?: boolean;
   extraTables?: boolean;
   barSilhouette?: boolean;
@@ -66,7 +67,7 @@ export const TABLE_THEMES: TableTheme[] = [
     floorFallback:
       "linear-gradient(180deg, #1a1228 0%, #120c1a 35%, #2a1838 60%, #1a1028 100%)",
     props: {
-      plants: true,
+      plants: false,
       distantPeople: true,
       extraTables: false,
       barSilhouette: true,
@@ -122,7 +123,7 @@ export const TABLE_THEMES: TableTheme[] = [
     floorFallback:
       "linear-gradient(180deg, #0e1428 0%, #0a0e1a 35%, #141828 60%, #0a0c14 100%)",
     props: {
-      plants: true,
+      plants: false,
       distantPeople: false,
       extraTables: true,
       barSilhouette: false,
@@ -150,7 +151,7 @@ export const TABLE_THEMES: TableTheme[] = [
     floorFallback:
       "linear-gradient(180deg, #1a140e 0%, #120e0a 35%, #2a1f14 60%, #1a120a 100%)",
     props: {
-      plants: true,
+      plants: false,
       distantPeople: false,
       extraTables: false,
       barSilhouette: false,

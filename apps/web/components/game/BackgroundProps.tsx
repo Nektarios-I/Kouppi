@@ -164,8 +164,8 @@ export default function BackgroundProps({ theme }: BackgroundPropsProps) {
         />
       )}
 
-      {/* ── Foreground floor-edge props ── */}
-      {props.plants && (
+      {/* ── Foreground floor-edge props (UI-PLANT-001: shipped themes keep plants === false) ── */}
+      {props.plants === true && (
         <>
           <PropImage
             src={PROP_ASSETS.plantLeft}

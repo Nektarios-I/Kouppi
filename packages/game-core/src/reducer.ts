@@ -1,6 +1,7 @@
 import type {
   Card, Chips, GameState, Player, TableConfig, Upcards, Rank
 } from "./types.js";
+import { SHISTRI_DEFAULT_MIN_CHIP, SHISTRI_DEFAULT_PERCENT } from "./types.js";
 import { fullDeck, shuffle, draw } from "./deck.js";
 import { makeRng } from "./rng.js";
 import {
@@ -20,6 +21,15 @@ export type Action =
   | { type: "nextPlayer" }
   | { type: "nextRound" };
 
+/** Thrown when a client gameplay intent is illegal (SOFT-REJECT-001). */
+export class IllegalActionError extends Error {
+  readonly code = "illegal_action" as const;
+  constructor(message: string) {
+    super(message);
+    this.name = "IllegalActionError";
+  }
+}
+
 /** Create a new game with default config merged with overrides. */
 export function initGame(params: {
   players: { id: string; name: string; isBot?: boolean }[];
@@ -30,7 +40,7 @@ export function initGame(params: {
     ante: 10,
     startingBankroll: 100,
     minBetPolicy: { type: "fixed", value: 10 },
-    shistri: { enabled: true, percent: 5, minChip: 1 },
+    shistri: { enabled: true, percent: SHISTRI_DEFAULT_PERCENT, minChip: SHISTRI_DEFAULT_MIN_CHIP },
     maxPlayers: 20,
     deckPolicy: "single_no_reshuffle_until_empty",
     allowKouppi: true,
@@ -190,7 +200,7 @@ export function applyAction(s: GameState, action: Action): GameState {
     }
 
   case "pass": {
-    if (!state.turn) return state;
+    if (!state.turn) throw new IllegalActionError("No active turn");
     const up = state.turn.upcards!;
     const p = state.players[state.currentIndex];
     // discard upcards
@@ -214,7 +224,7 @@ export function applyAction(s: GameState, action: Action): GameState {
     case "bet":
     case "kouppi":
 case "shistri": {
-  if (!state.turn) return state;
+  if (!state.turn) throw new IllegalActionError("No active turn");
   const p = state.players[state.currentIndex];
   const up = state.turn.upcards!;
   const potBefore = state.round.pot;
@@ -225,14 +235,12 @@ case "shistri": {
 
   if (action.type === "kouppi") {
     if (p.bankroll < potBefore || potBefore <= 0) {
-      log("KOUPPI not allowed");
-      return state;
+      throw new IllegalActionError("KOUPPI not allowed");
     }
     amount = potBefore; // KOUPPI bets the whole pot
   } else if (action.type === "shistri") {
     if (!state.config.shistri.enabled || !canShistri(up)) {
-      log("SHISTRI not allowed");
-      return state;
+      throw new IllegalActionError("SHISTRI not allowed");
     }
     // SHISTRI small bet; ignore table min. Cap by bankroll and pot.
     amount = Math.min(
@@ -257,13 +265,11 @@ case "shistri": {
     const legalRegular =
       (amount >= effMin && amount <= maxBet) || (isAllIn && amount <= maxBet);
     if (!legalRegular) {
-      log(`Illegal bet ${amount}; allowed [${effMin}, ${maxBet}]`);
-      return state;
+      throw new IllegalActionError(`Illegal bet ${amount}; allowed [${effMin}, ${maxBet}]`);
     }
   } else {
     if (!(amount >= 1 && amount <= maxBet)) {
-      log(`Illegal SHISTRI ${amount}; allowed [1, ${maxBet}]`);
-      return state;
+      throw new IllegalActionError(`Illegal SHISTRI ${amount}; allowed [1, ${maxBet}]`);
     }
   }
 

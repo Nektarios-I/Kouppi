@@ -54,10 +54,21 @@ function nowMs(): number {
 let onMatchFoundCallback: ((match: MatchFound) => void) | null = null;
 
 /**
- * Set the callback for when a match is found
+ * Set the callback for when a match is found.
+ * Production server factory registers this once per server instance.
  */
 export function setOnMatchFound(callback: (match: MatchFound) => void): void {
   onMatchFoundCallback = callback;
+}
+
+/** Clear the match-found handler (server shutdown / test cleanup). */
+export function clearOnMatchFound(): void {
+  onMatchFoundCallback = null;
+}
+
+/** Whether a match-found handler is currently registered. */
+export function hasMatchFoundHandler(): boolean {
+  return onMatchFoundCallback !== null;
 }
 
 /**

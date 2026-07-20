@@ -16,6 +16,8 @@ export default function AuthModal({ isOpen, onClose, initialMode = "login" }: Au
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [localError, setLocalError] = useState("");
 
   const { login, register, isLoading, error, clearError } = useAuthStore();
@@ -36,6 +38,14 @@ export default function AuthModal({ isOpen, onClose, initialMode = "login" }: Au
       }
       if (username.length < 3) {
         setLocalError("Username must be at least 3 characters");
+        return;
+      }
+      if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+        setLocalError("Username can only contain letters, numbers, and underscores");
+        return;
+      }
+      if (username.length > 20) {
+        setLocalError("Username must be at most 20 characters");
         return;
       }
 
@@ -92,26 +102,50 @@ export default function AuthModal({ isOpen, onClose, initialMode = "login" }: Au
           </LobbyField>
 
           <LobbyField label="Password">
-            <LobbyInput
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter password"
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
-              required
-            />
+            <div className="relative">
+              <LobbyInput
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter password"
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
+                className="pr-12"
+                required
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 text-sm font-ui"
+                onClick={() => setShowPassword((v) => !v)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-pressed={showPassword}
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </div>
           </LobbyField>
 
           {mode === "register" && (
             <LobbyField label="Confirm password">
-              <LobbyInput
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Confirm password"
-                autoComplete="new-password"
-                required
-              />
+              <div className="relative">
+                <LobbyInput
+                  type={showConfirmPassword ? "text" : "password"}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm password"
+                  autoComplete="new-password"
+                  className="pr-12"
+                  required
+                />
+                <button
+                  type="button"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 text-sm font-ui"
+                  onClick={() => setShowConfirmPassword((v) => !v)}
+                  aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                  aria-pressed={showConfirmPassword}
+                >
+                  {showConfirmPassword ? "Hide" : "Show"}
+                </button>
+              </div>
             </LobbyField>
           )}
 
@@ -134,6 +168,8 @@ export default function AuthModal({ isOpen, onClose, initialMode = "login" }: Au
               setMode(mode === "login" ? "register" : "login");
               setLocalError("");
               clearError();
+              setShowPassword(false);
+              setShowConfirmPassword(false);
             }}
             className="text-gold hover:text-gold-light font-medium"
           >

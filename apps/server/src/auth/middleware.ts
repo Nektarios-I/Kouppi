@@ -1,12 +1,14 @@
 /**
  * Authentication Middleware
- * 
- * Express middleware for protecting routes and extracting user info
+ *
+ * Express middleware for protecting routes and extracting user info.
+ * JWT must include a valid, non-expired `sid` that exists in the sessions table.
  */
 
 import { Request, Response, NextFunction } from "express";
 import { verifyToken, extractBearerToken, JWTPayload } from "./jwt.js";
-import { getUserById, UserProfile, getProfileById } from "@kouppi/database";
+import { getProfileById, UserProfile } from "@kouppi/database";
+import { verifyActiveAuthToken } from "./verifyActiveAuth.js";
 
 /**
  * Extended Request type with authenticated user
@@ -18,7 +20,7 @@ export interface AuthenticatedRequest extends Request {
 
 /**
  * Middleware that requires authentication
- * Rejects requests without valid token
+ * Rejects requests without valid token or revoked/expired session
  */
 export function requireAuth(
   req: AuthenticatedRequest,
@@ -26,18 +28,18 @@ export function requireAuth(
   next: NextFunction
 ): void {
   const token = extractBearerToken(req.headers.authorization);
-  
+
   if (!token) {
     res.status(401).json({ error: "Authentication required", code: "no_token" });
     return;
   }
-  
-  const payload = verifyToken(token);
+
+  const payload = verifyActiveAuthToken(token);
   if (!payload) {
-    res.status(401).json({ error: "Invalid or expired token", code: "invalid_token" });
+    res.status(401).json({ error: "Invalid, expired, or revoked session", code: "invalid_token" });
     return;
   }
-  
+
   req.user = payload;
   next();
 }
@@ -52,14 +54,14 @@ export function optionalAuth(
   next: NextFunction
 ): void {
   const token = extractBearerToken(req.headers.authorization);
-  
+
   if (token) {
-    const payload = verifyToken(token);
+    const payload = verifyActiveAuthToken(token);
     if (payload) {
       req.user = payload;
     }
   }
-  
+
   next();
 }
 
@@ -76,13 +78,13 @@ export async function loadUserProfile(
     res.status(401).json({ error: "Authentication required", code: "no_user" });
     return;
   }
-  
+
   const profile = getProfileById(req.user.userId);
   if (!profile) {
     res.status(404).json({ error: "User not found", code: "user_not_found" });
     return;
   }
-  
+
   req.userProfile = profile;
   next();
 }

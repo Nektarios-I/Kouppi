@@ -23,6 +23,7 @@ import {
   snapshot,
 } from "../rooms.js";
 import type { TableConfig } from "@kouppi/game-core";
+import { SHISTRI_DEFAULT_MIN_CHIP, SHISTRI_DEFAULT_PERCENT } from "@kouppi/game-core";
 
 const MAX_PLAYERS_PER_ROOM = 8;
 const AUTO_START_DELAY_MS = 30000; // 30 seconds
@@ -337,7 +338,7 @@ function triggerGameStart(room: CareerRoom, io: Server) {
     startingBankroll: room.players[0].bankroll, // Use player's bankroll
     minBetPolicy: { type: "fixed", value: room.minBet },
     maxPlayers: room.maxPlayers,
-    shistri: { enabled: true, percent: 5, minChip: 1 },
+    shistri: { enabled: true, percent: SHISTRI_DEFAULT_PERCENT, minChip: SHISTRI_DEFAULT_MIN_CHIP },
     deckPolicy: "single_no_reshuffle_until_empty",
     allowKouppi: true,
     spectatorsAllowed: false,
@@ -446,6 +447,7 @@ export function markRoomInGame(roomId: string, gameRoomId: string): boolean {
 
   room.status = "in-game";
   room.gameRoomId = gameRoomId;
+  careerGameMapping.set(gameRoomId, room.id);
   console.log(`[Career] Room ${roomId} now in-game as ${gameRoomId}`);
   return true;
 }
@@ -647,22 +649,25 @@ export function handleCareerGameEnd(
         .reduce((sum, p) => sum + p.rating, 0) / (careerRoom.players.length - 1);
       
       const isWinner = result.placement === 1;
+      const previousRating = careerPlayer.rating;
       const newRating = calculateNewRating(
-        careerPlayer.rating,
+        previousRating,
         avgOpponentRating,
         isWinner ? 1 : 0 // Simple win/loss
       );
+      // updateRatingAndTrophies expects a rating *delta*, not an absolute rating.
+      const ratingDelta = newRating - previousRating;
 
       try {
         // Update rating and trophies
-        updateRatingAndTrophies(result.userId, newRating, trophyChange);
+        updateRatingAndTrophies(result.userId, ratingDelta, trophyChange);
         
         // Update bankroll
         updateBankroll(result.userId, result.finalBankroll);
 
         updateMatchStats(result.userId, isWinner, Math.max(0, result.chipsWon));
         
-        console.log(`[Career] Updated ${careerPlayer.username}: rating ${careerPlayer.rating} -> ${newRating}, trophies ${trophyChange >= 0 ? '+' : ''}${trophyChange}, bankroll -> ${result.finalBankroll}`);
+        console.log(`[Career] Updated ${careerPlayer.username}: rating ${previousRating} -> ${newRating} (delta ${ratingDelta >= 0 ? "+" : ""}${ratingDelta}), trophies ${trophyChange >= 0 ? '+' : ''}${trophyChange}, bankroll -> ${result.finalBankroll}`);
       } catch (error) {
         console.error(`[Career] Failed to update player ${result.userId}:`, error);
       }

@@ -14,7 +14,7 @@ import {
   getRawDb,
 } from "@kouppi/database";
 import { createKouppiServer } from "../../src/serverFactory.js";
-import { generateToken } from "../../src/auth/jwt.js";
+import { issueTestAuthToken } from "../helpers/authToken.js";
 import { clearQueue } from "../../src/career/queue.js";
 import { roomsInfo } from "../../src/rooms.js";
 import type { AddressInfo } from "net";
@@ -44,8 +44,8 @@ describe("Career queue integration", () => {
 
     const user1 = await createUser("career_queue_a", "password123");
     const user2 = await createUser("career_queue_b", "password123");
-    user1Token = generateToken(user1.id, user1.username);
-    user2Token = generateToken(user2.id, user2.username);
+    user1Token = issueTestAuthToken(user1.id, user1.username);
+    user2Token = issueTestAuthToken(user2.id, user2.username);
 
     const server = createKouppiServer({ corsOrigin: "*", websocketOnly: true });
     httpServer = server.httpServer;
@@ -70,8 +70,12 @@ describe("Career queue integration", () => {
     clearQueue();
   });
 
-  it("matches two authenticated clients and emits career:matchFound with same room id", async () => {
+  it("matches two authenticated clients and emits career:matchFound with same room id via production wiring", async () => {
     if (!dbAvailable()) return;
+
+    // Production createKouppiServer already registered setOnMatchFound — do not inject a test callback.
+    const { hasMatchFoundHandler } = await import("../../src/career/queue.js");
+    expect(hasMatchFoundHandler()).toBe(true);
 
     const client1 = ioClient(serverUrl, { transports: ["websocket"] });
     const client2 = ioClient(serverUrl, { transports: ["websocket"] });

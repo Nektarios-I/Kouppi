@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { io, Socket } from "socket.io-client";
 import { formatConnectionError, getServerUrl } from "@/lib/serverUrl";
 import type { GameState } from "@kouppi/game-core";
+import { SHISTRI_DEFAULT_MIN_CHIP, SHISTRI_DEFAULT_PERCENT } from "@kouppi/game-core";
 import { formatSocketError } from "@/lib/errorMessages";
 import { isPlayerMuted } from "@/lib/mutedPlayers";
 import { useAuthStore } from "@/store/authStore";
@@ -671,7 +672,11 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
           ante: config.ante ?? 10,
           startingBankroll: config.startingBankroll ?? 100,
           maxPlayers: config.maxPlayers ?? 8,
-          shistri: config.shistri ?? { enabled: true, percent: 5, minChip: 1 },
+          shistri: config.shistri ?? {
+            enabled: true,
+            percent: SHISTRI_DEFAULT_PERCENT,
+            minChip: SHISTRI_DEFAULT_MIN_CHIP,
+          },
           spectatorsAllowed: config.spectatorsAllowed ?? true,
           turnTimeout: options?.turnTimeout,
         },

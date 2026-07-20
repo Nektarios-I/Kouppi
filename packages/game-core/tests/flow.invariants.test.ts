@@ -44,8 +44,13 @@ describe("flow invariants", () => {
     s = applyAction(s, { type: "startTurn" });
     assertInvariant(s);
 
-    // Simulate a regular bet flow
-    s = applyAction(s, { type: "bet", amount: 5 });
+    // Simulate a regular bet flow (must meet table min / pot caps)
+    const maxBet = Math.min(s.players[s.currentIndex]!.bankroll, s.round.pot);
+    const minBet = Math.min(
+      s.config.minBetPolicy.type === "fixed" ? s.config.minBetPolicy.value : 1,
+      s.round.pot
+    );
+    s = applyAction(s, { type: "bet", amount: Math.max(minBet, Math.min(10, maxBet)) });
     assertInvariant(s);
     s = applyAction(s, { type: "nextPlayer" });
     s = applyAction(s, { type: "startTurn" });

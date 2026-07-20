@@ -48,10 +48,8 @@ router.post("/register", async (req, res) => {
     const data = RegisterSchema.parse(req.body);
     
     const profile = await createUser(data.username, data.password, data.avatar);
-    const token = generateToken(profile.id, profile.username);
-    
-    // Also create a database session for token tracking
-    createSession(profile.id);
+    const session = createSession(profile.id);
+    const token = generateToken(profile.id, profile.username, session.token);
     
     res.status(201).json({
       success: true,
@@ -89,7 +87,15 @@ router.post("/register", async (req, res) => {
       return;
     }
     
-    console.error("[Auth] Registration error:", error);
+    console.error(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        event: "auth_register_failed",
+        code: "server_error",
+        errorName: error?.name ?? "Error",
+        errorMessage: typeof error?.message === "string" ? error.message : "unknown",
+      })
+    );
     res.status(500).json({
       success: false,
       error: "Failed to create account",
@@ -117,11 +123,8 @@ router.post("/login", async (req, res) => {
       return;
     }
     
-    const token = generateToken(user.id, user.username);
+    const token = generateToken(user.id, user.username, createSession(user.id).token);
     const profile = getProfileById(user.id);
-    
-    // Create database session
-    createSession(user.id);
     
     res.json({
       success: true,
@@ -138,7 +141,15 @@ router.post("/login", async (req, res) => {
       return;
     }
     
-    console.error("[Auth] Login error:", error);
+    console.error(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        event: "auth_login_failed",
+        code: "server_error",
+        errorName: error?.name ?? "Error",
+        errorMessage: typeof error?.message === "string" ? error.message : "unknown",
+      })
+    );
     res.status(500).json({
       success: false,
       error: "Login failed",
@@ -153,9 +164,10 @@ router.post("/login", async (req, res) => {
  */
 router.post("/logout", requireAuth, (req: AuthenticatedRequest, res) => {
   try {
-    // Note: JWT tokens can't be truly "invalidated" without a blacklist
-    // But we can delete the database session for tracking purposes
-    
+    if (req.user?.sid) {
+      deleteSession(req.user.sid);
+    }
+
     res.json({
       success: true,
       message: "Logged out successfully",
@@ -236,8 +248,12 @@ router.post("/refresh", requireAuth, (req: AuthenticatedRequest, res) => {
       return;
     }
     
-    // Generate new token
-    const token = generateToken(req.user.userId, req.user.username);
+    // Rotate session: revoke old, issue new bound JWT
+    if (req.user.sid) {
+      deleteSession(req.user.sid);
+    }
+    const session = createSession(req.user.userId);
+    const token = generateToken(req.user.userId, req.user.username, session.token);
     
     res.json({
       success: true,
