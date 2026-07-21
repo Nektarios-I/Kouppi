@@ -5,9 +5,18 @@
 import { create } from "zustand";
 import { io, Socket } from "socket.io-client";
 import { formatConnectionError, getServerUrl } from "@/lib/serverUrl";
+import { isAuthFailureCode, parseSocketAck } from "@/lib/socketAck";
+import { useAuthStore } from "./authStore";
 
 function getApiUrl() {
   return getServerUrl();
+}
+
+function clearAuthIfNeeded(code?: string, message?: string) {
+  if (!isAuthFailureCode(code)) return;
+  useAuthStore.getState().clearStaleSession(
+    message || "Your login session expired. Sign in again to use Career Mode."
+  );
 }
 
 export interface AnteOption {
@@ -198,17 +207,24 @@ export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
 
     newSocket.on("connect", () => {
       set({ isConnected: true, isConnecting: false });
-      newSocket.emit("career:auth", { token }, (err: any, data: any) => {
-        if (err) {
-          set({ error: err.message, isAuthenticated: false });
+      newSocket.emit("career:auth", { token }, (err: unknown, data?: unknown) => {
+        const parsed = parseSocketAck<{ rating: number; bankroll: number }>(err, data);
+        if (!parsed.ok) {
+          clearAuthIfNeeded(parsed.code, parsed.error);
+          set({
+            error: parsed.error || "Career authentication failed",
+            isAuthenticated: false,
+            tiers: [],
+            isLoadingTiers: false,
+          });
           return;
         }
         set({
           isAuthenticated: true,
-          playerRating: data.rating,
-          playerBankroll: data.bankroll,
+          playerRating: parsed.data.rating,
+          playerBankroll: parsed.data.bankroll,
         });
-        get().fetchTiers(token);
+        void get().fetchTiers(token);
       });
     });
 
@@ -287,19 +303,81 @@ export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
 
   fetchTiers: (token: string) => {
     const { socket } = get();
-    if (!socket?.connected) return;
     set({ isLoadingTiers: true, error: null });
-    socket.emit("career:getTiers", { token }, (err: any, data: any) => {
-      if (err) {
-        set({ isLoadingTiers: false, error: err.message });
+
+    const applyTiers = (payload: {
+      tiers: Tier[];
+      playerRating: number;
+      playerBankroll: number;
+    }) => {
+      set({
+        tiers: payload.tiers ?? [],
+        playerRating: payload.playerRating,
+        playerBankroll: payload.playerBankroll,
+        isLoadingTiers: false,
+        isAuthenticated: true,
+        error: null,
+      });
+    };
+
+    const fetchViaHttp = async () => {
+      try {
+        const res = await fetch(`${getApiUrl()}/api/career/tiers`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const body = await res.json().catch(() => null);
+        if (res.status === 401) {
+          clearAuthIfNeeded("auth_failed", body?.error);
+          set({
+            isLoadingTiers: false,
+            isAuthenticated: false,
+            tiers: [],
+            error: body?.error || "Sign in again to load Career leagues",
+          });
+          return;
+        }
+        if (!res.ok || !body?.success || !Array.isArray(body.tiers)) {
+          set({
+            isLoadingTiers: false,
+            error: body?.error || "Could not load Career leagues",
+          });
+          return;
+        }
+        applyTiers({
+          tiers: body.tiers,
+          playerRating: body.playerRating,
+          playerBankroll: body.playerBankroll,
+        });
+      } catch {
+        set({
+          isLoadingTiers: false,
+          error: "Could not load Career leagues — check your connection",
+        });
+      }
+    };
+
+    if (!socket?.connected) {
+      void fetchViaHttp();
+      return;
+    }
+
+    socket.emit("career:getTiers", { token }, (err: unknown, data?: unknown) => {
+      const parsed = parseSocketAck<{
+        tiers: Tier[];
+        playerRating: number;
+        playerBankroll: number;
+      }>(err, data);
+      if (!parsed.ok) {
+        clearAuthIfNeeded(parsed.code, parsed.error);
+        // Socket ack failed — try HTTP before giving up on an empty league list
+        void fetchViaHttp();
         return;
       }
-      set({
-        tiers: data.tiers,
-        playerRating: data.playerRating,
-        playerBankroll: data.playerBankroll,
-        isLoadingTiers: false,
-      });
+      if (!Array.isArray(parsed.data.tiers) || parsed.data.tiers.length === 0) {
+        void fetchViaHttp();
+        return;
+      }
+      applyTiers(parsed.data);
     });
   },
 

@@ -7,6 +7,7 @@ import { io, Socket } from "socket.io-client";
 import type { FriendProfile, FriendRequestInfo, UserPresence, FriendsGameInvite } from "@kouppi/protocol";
 import { useAuthStore } from "./authStore";
 import { getServerUrl as getGameServerUrl } from "@/lib/serverUrl";
+import { isAuthFailureCode, parseSocketAck } from "@/lib/socketAck";
 
 function getServerUrl(): string {
   return getGameServerUrl();
@@ -78,18 +79,32 @@ export const useFriendsStore = create<FriendsState>((set, get) => ({
     socket = io(getServerUrl(), { transports: ["websocket", "polling"], autoConnect: true });
 
     socket.on("connect", () => {
-      socket?.emit("friends:auth", { token }, (err: unknown, data?: {
-        friends: FriendProfile[];
-        presence: Record<string, UserPresence>;
-      }) => {
-        if (err) {
-          set({ connected: false, error: "Friends auth failed" });
+      socket?.emit("friends:auth", { token }, (err: unknown, data?: unknown) => {
+        const parsed = parseSocketAck<{
+          friends: FriendProfile[];
+          presence: Record<string, UserPresence>;
+        }>(err, data);
+        if (!parsed.ok) {
+          if (isAuthFailureCode(parsed.code)) {
+            useAuthStore
+              .getState()
+              .clearStaleSession("Your login session expired. Sign in again.");
+            set({
+              connected: false,
+              error: "Session expired — sign in again to use Friends",
+            });
+            return;
+          }
+          set({
+            connected: false,
+            error: parsed.error || "Friends auth failed",
+          });
           return;
         }
         set({
           connected: true,
-          friends: data?.friends ?? [],
-          presence: data?.presence ?? {},
+          friends: parsed.data.friends ?? [],
+          presence: parsed.data.presence ?? {},
           error: null,
         });
       });

@@ -413,7 +413,7 @@ export default function MultiplayerTableGraphics() {
   const currentTurnPlayerId = gameState.players[gameState.currentIndex]?.id;
 
   return (
-    <CasinoBackground className="text-white" theme={theme}>
+    <CasinoBackground className="text-white" theme={theme} lockViewport>
       <ConnectionStatusBanner />
       <Celebration
         active={showCelebration}

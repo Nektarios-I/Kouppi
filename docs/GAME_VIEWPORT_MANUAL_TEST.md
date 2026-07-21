@@ -7,7 +7,7 @@
 
 | Region | CSS | Budget |
 |--------|-----|--------|
-| Shell | `.game-viewport-shell` → `100dvh`, `overflow: hidden` | Full viewport |
+| Shell | `.game-viewport-shell` → `100dvh`, `overflow: hidden` (**in-game only**; lobbies use `.lobby-viewport-shell` and may scroll) | Full viewport |
 | Stage | `.game-stage` flex column | Remaining |
 | HUD | `.game-stage-hud` | flex-none |
 | Table | `.game-stage-table-region` + `max-height: calc(100dvh - var(--game-chrome-h))` | flex 1 |

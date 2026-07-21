@@ -124,8 +124,14 @@ photo/
 
 ### Prerequisites
 
-- Node.js 20+
-- pnpm 10.12.4 (see `packageManager` in root `package.json`; enable via Corepack)
+- **Node.js 20 LTS** (required). Node 23+ / 25 will break `better-sqlite3` native bindings.
+- pnpm 10.12.4 (see `packageManager` in root `package.json`)
+
+On Windows, if your default `node -v` is not 20.x, activate the bundled toolchain first:
+
+```powershell
+. .\scripts\use-node20.ps1
+```
 
 ### Install
 
@@ -137,6 +143,13 @@ pnpm install --frozen-lockfile
 
 ```bash
 pnpm dev
+```
+
+Or separately (two terminals, after `use-node20.ps1` on Windows):
+
+```bash
+pnpm --filter @kouppi/server dev
+pnpm --filter @kouppi/web dev
 ```
 
 ### Build everything

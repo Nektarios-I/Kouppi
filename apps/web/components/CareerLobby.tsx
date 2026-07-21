@@ -51,6 +51,7 @@ export default function CareerLobby() {
     browseAllWaitingRooms,
     createWaitingRoom,
     joinWaitingRoom,
+    fetchTiers,
     clearError,
   } = useCareerLobbyStore();
 
@@ -345,16 +346,32 @@ export default function CareerLobby() {
           <p className="text-sm text-gray-400 font-ui mb-3">
             Quick Match or create a waiting table for a specific league stake.
           </p>
-          <div className="space-y-2">
-            {tiers.map((tier) => (
-              <TierCard
-                key={tier.id}
-                tier={tier}
-                playerRating={playerRating}
-                onSelect={() => selectTier(tier.id)}
-              />
-            ))}
-          </div>
+          {tiers.length === 0 ? (
+            <div className="space-y-3">
+              <div className="hud-status-banner text-center !py-4 font-ui text-sm text-gray-300">
+                No leagues loaded. If you were already signed in, your session may have expired —
+                sign in again, then tap Retry.
+              </div>
+              <HudButton
+                variant="bet"
+                fullWidth
+                onClick={() => token && fetchTiers(token)}
+              >
+                Retry loading leagues
+              </HudButton>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {tiers.map((tier) => (
+                <TierCard
+                  key={tier.id}
+                  tier={tier}
+                  playerRating={playerRating}
+                  onSelect={() => selectTier(tier.id)}
+                />
+              ))}
+            </div>
+          )}
         </LobbyCard>
       ) : (
         selectedTier && (

@@ -57,6 +57,8 @@ interface AuthState {
   login: (username: string, password: string) => Promise<boolean>;
   register: (username: string, password: string, avatar?: Partial<Avatar>) => Promise<boolean>;
   logout: () => void;
+  /** Clear local JWT when the server rejects the session (DB wipe / expired sid). */
+  clearStaleSession: (reason?: string) => void;
   refreshUser: () => Promise<void>;
   clearError: () => void;
   
@@ -173,6 +175,15 @@ export const useAuthStore = create<AuthState>()(
         }
         set({ token: null, user: null, error: null });
       },
+
+      clearStaleSession: (reason?: string) => {
+        // Do not call logout HTTP — session is already invalid server-side.
+        set({
+          token: null,
+          user: null,
+          error: reason || "Your login session expired. Sign in again.",
+        });
+      },
       
       refreshUser: async () => {
         const { token } = get();
@@ -199,7 +210,7 @@ export const useAuthStore = create<AuthState>()(
           
           if (!response.ok || !parsed.data.success) {
             if (response.status === 401) {
-              set({ token: null, user: null });
+              get().clearStaleSession("Your login session expired. Sign in again.");
             }
             return;
           }

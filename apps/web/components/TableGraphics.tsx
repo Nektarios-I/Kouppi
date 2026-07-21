@@ -181,7 +181,7 @@ export default function SinglePlayerTableGraphics() {
   }, [state, dispatch, ready, awaitingNext, botProfiles]);
 
   return (
-    <CasinoBackground className="text-white" theme={theme}>
+    <CasinoBackground className="text-white" theme={theme} lockViewport>
       <Celebration
         active={showCelebration}
         type={celebrationType}

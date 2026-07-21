@@ -25,6 +25,7 @@ import { applyAction } from "@kouppi/game-core";
 import { getDatabase, cleanupExpiredSessions } from "@kouppi/database";
 import { authRoutes } from "./auth/index.js";
 import profileRoutes, { leaderboardRouter, matchesRouter } from "./career/profileRoutes.js";
+import careerHttpRoutes from "./career/careerHttpRoutes.js";
 import casualRoutes from "./casual/casualRoutes.js";
 import friendsRoutes from "./friends/friendsRoutes.js";
 import { persistCasualFriendsSessionFromRoom } from "./casual/persistCasualSession.js";
@@ -49,14 +50,29 @@ function resolveJoinIdentity(
   authToken: string | undefined,
   skipCareerDatabase: boolean
 ): { identity: { id: string; name: string; avatar?: AvatarConfig } } | { error: string } {
+  const guest = { identity: { id: identity.id, name: identity.name, avatar: identity.avatar } };
   if (!authToken) {
-    return { identity: { id: identity.id, name: identity.name, avatar: identity.avatar } };
+    return guest;
   }
   const payload = verifyActiveAuthToken(authToken);
-  if (!payload) return { error: "invalid_auth_token" };
+  if (!payload) {
+    // Stale browser JWT after DB/session reset — allow casual multiplayer as guest
+    // instead of blocking Create/Join with "login session expired".
+    logServerEvent("auth_token_stale_guest_fallback", {
+      playerId: identity.id,
+      skipCareerDatabase,
+    });
+    return guest;
+  }
   if (!skipCareerDatabase) {
     const user = getUserById(payload.userId);
-    if (!user) return { error: "invalid_auth_token" };
+    if (!user) {
+      logServerEvent("auth_token_user_missing_guest_fallback", {
+        playerId: identity.id,
+        userId: payload.userId,
+      });
+      return guest;
+    }
     return {
       identity: {
         id: user.id,
@@ -136,6 +152,7 @@ export function createKouppiServer(opts?: {
   app.use("/api/matches", matchesRouter);
   app.use("/api/casual", casualRoutes);
   app.use("/api/friends", friendsRoutes);
+  app.use("/api/career", careerHttpRoutes);
 
   const httpServer = createServer(app);
   const websocketOnly = opts?.websocketOnly ?? process.env.NODE_ENV === "production";

@@ -85,6 +85,9 @@ describe("Multiplayer lobby UI", () => {
   it("renders lobby list and join buttons", async () => {
     renderLobby();
     expect(await screen.findByText("LOBBY1")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Create Room/i })).toBeInTheDocument();
+    expect(screen.getByText("Available Rooms")).toBeInTheDocument();
+    expect(screen.getByText("Watch Games")).toBeInTheDocument();
     const joinButtons = await screen.findAllByRole("button", { name: /Join/i });
     expect(joinButtons.length).toBeGreaterThan(0);
   });

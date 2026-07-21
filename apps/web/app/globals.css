@@ -804,7 +804,13 @@ body {
   backdrop-filter: blur(6px);
 }
 
-/* ─── Viewport-aware game stage (UI-VIEWPORT-001 / Phase 4) ─── */
+/* ─── Viewport shells ─── */
+/* Lobby / mode pages: full casino look, document may scroll */
+.lobby-viewport-shell {
+  min-height: 100dvh;
+}
+
+/* In-game only (UI-VIEWPORT-001 / Phase 4): lock to one screen */
 .game-viewport-shell {
   min-height: 100dvh;
   max-height: 100dvh;
