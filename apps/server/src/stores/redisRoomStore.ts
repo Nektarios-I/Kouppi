@@ -2,7 +2,7 @@ import type { Room } from "../types.js";
 import { InMemoryRoomStore } from "./roomStore.js";
 import { serializeRoom, deserializeRoom, mergeRoomSnapshot } from "./roomSnapshot.js";
 
-type RedisClient = {
+export type RedisClient = {
   get: (key: string) => Promise<string | null>;
   set: (key: string, value: string) => Promise<string | null>;
   del: (key: string) => Promise<number>;
@@ -197,5 +197,3 @@ export class RedisRoomStore extends InMemoryRoomStore {
     return this.serverId;
   }
 }
-
-export type { RedisClient };

@@ -343,8 +343,9 @@ function finalizeCareerPlayerRemoval(
 
   broadcastRoomState(room, io);
 
-  // Cleanup empty rooms (waiting only — do not wipe in-game)
-  if (room.players.length === 0 && (room.status === "waiting" || room.status === "starting")) {
+  // Cleanup empty rooms (waiting only — do not wipe in-game).
+  // Status "starting" was already normalized to "waiting" above when a player left.
+  if (room.players.length === 0 && room.status === "waiting") {
     cleanupRoom(room.id);
   }
 

@@ -7,6 +7,12 @@ import { InMemoryRoomStore } from "./stores/roomStore.js";
 import { RedisRoomStore, type RedisClient } from "./stores/redisRoomStore.js";
 import { initRoomStore, type RoomStoreHandle } from "./stores/initRoomStore.js";
 
+type ConnectableRedisClient = RedisClient & {
+  connect: () => Promise<unknown>;
+  on: (event: string, handler: (err: Error) => void) => void;
+  duplicate: () => ConnectableRedisClient;
+};
+
 let sharedClient: RedisClient | null = null;
 
 export function getSharedRedisClient(): RedisClient | null {
@@ -23,13 +29,11 @@ export async function initRedisServices(): Promise<boolean> {
   }
 
   try {
-    // @ts-expect-error optional runtime dependency
-    const { createClient } = await import("redis");
-    const client = createClient({ url: redisUrl }) as RedisClient & {
-      connect: () => Promise<void>;
-      on: (event: string, handler: (err: Error) => void) => void;
-      duplicate: () => RedisClient & { connect: () => Promise<void> };
+    // Optional peer dep — present when REDIS_URL is configured on the host.
+    const redisMod = (await import("redis")) as unknown as {
+      createClient: (opts: { url: string }) => ConnectableRedisClient;
     };
+    const client = redisMod.createClient({ url: redisUrl });
 
     client.on("error", (err: Error) => console.error("[Redis] Client error:", err));
     await client.connect();

@@ -252,12 +252,12 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
           return;
         }
         const response = {
+          ...getQueueStatus(user.id),
           inQueue: true,
           position: result.position,
           anteId: payload.anteId,
           tierId: anteOption.tier.id,
           message: "Searching for opponent...",
-          ...getQueueStatus(user.id),
         };
         cb?.(null, response);
         socket.emit("career:queueJoined", response);
@@ -294,12 +294,12 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
       console.log(`[Career] ${user.username} joined queue (position ${result.position})`);
       
       const response = {
+        ...getQueueStatus(user.id),
         inQueue: true,
         position: result.position,
         anteId: payload.anteId,
         tierId: anteOption.tier.id,
         message: "Searching for opponent...",
-        ...getQueueStatus(user.id),
       };
       
       cb?.(null, response);
