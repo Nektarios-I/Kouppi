@@ -4,6 +4,36 @@ The Socket.IO game server **cannot run on Vercel**. Deploy it to a persistent No
 
 See also: [DEPLOYMENT_AND_WEBSOCKET_DIAGNOSIS.md](./DEPLOYMENT_AND_WEBSOCKET_DIAGNOSIS.md)
 
+## Live production wiring (verified 2026-07-22)
+
+| Piece | Value |
+|-------|--------|
+| Frontend | `https://kouppi-web-nektarios-is-projects.vercel.app` |
+| Game server (Render free) | `https://kouppi-server-free.onrender.com` (`GET /health/ready` → `database: true`) |
+
+### Required env (Career will not create tables without both)
+
+**Vercel → Project → Settings → Environment Variables (Production):**
+
+```text
+NEXT_PUBLIC_SERVER_URL=https://kouppi-server-free.onrender.com
+```
+
+Then **Redeploy** the frontend (build-time inline). Without this, the browser cannot reach Socket.IO / Career APIs.
+
+**Render → kouppi-server-free → Environment:**
+
+```text
+CORS_ORIGIN=https://kouppi-web-nektarios-is-projects.vercel.app,https://kouppi-web.vercel.app
+```
+
+No trailing slashes. Include every Vercel host you use. A CORS allow-list that only has `https://kouppi-web.vercel.app` blocks the real production site.
+
+### Optional
+
+- Disable Vercel **Deployment Protection** (SSO) on Production if public players should open the site without a Vercel login.
+- Free Render sleeps when idle — first request after sleep can take 30–60s; wake via `/health/ready` first.
+
 ## Architecture
 
 | Component | Host | Env vars |

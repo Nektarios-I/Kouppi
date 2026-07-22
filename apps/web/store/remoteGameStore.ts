@@ -282,7 +282,8 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 500,
-      transports: ["websocket"],
+      // Match Career lobby: allow polling fallback (websocket-only breaks some hosts / proxies).
+      transports: ["websocket", "polling"],
     });
 
     set({ connectionStatus: "connecting" });
@@ -302,9 +303,12 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
       if (!roomId || !playerId || !playerName) return;
 
       const attemptRejoin = async (tryCount = 0): Promise<void> => {
+        const isCareer = roomId.startsWith("career-game-");
         const result = isSpectator
           ? await get().joinAsSpectator(roomId)
-          : await get().joinRoom(roomId);
+          : isCareer
+            ? await get().subscribeToCareerRoom(roomId)
+            : await get().joinRoom(roomId);
 
         if (result.success) return;
 
@@ -990,7 +994,17 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     const { socket, roomId, pendingIntent } = get();
     if (!socket || !roomId || pendingIntent) return;
     set({ pendingIntent: intent.type });
+    const intentType = intent.type;
+    const timeout = setTimeout(() => {
+      if (get().pendingIntent === intentType) {
+        set({
+          pendingIntent: null,
+          lastError: "Action timed out — check your connection and try again",
+        });
+      }
+    }, 8_000);
     socket.emit("intent", { roomId, intent }, (err: any) => {
+      clearTimeout(timeout);
       if (err) {
         set({ pendingIntent: null, lastError: err.message || "Action failed" });
       } else {

@@ -25,6 +25,7 @@ import {
   setPlayerReady,
   RECONNECT_GRACE_MS,
 } from "../rooms.js";
+import { runCareerGameKickoff } from "./careerGameKickoff.js";
 import type { TableConfig } from "@kouppi/game-core";
 import { SHISTRI_DEFAULT_MIN_CHIP, SHISTRI_DEFAULT_PERCENT } from "@kouppi/game-core";
 
@@ -609,12 +610,9 @@ function triggerGameStart(room: CareerRoom, io: Server) {
       setPlayerReady(gameRoomId, player.userId, true);
     }
 
-    // Start the game
+    // Start the game shell; turn kickoff runs after sockets join the game room
+    // so they receive the initial `turnTimer` / `state` broadcasts.
     startRoom(gameRoomId, firstPlayer.userId);
-    startFirstTurn(gameRoomId);
-
-    // Get the game state snapshot
-    const gameSnapshot = snapshot(gameRoomId);
 
     // Mark this career room as in-game
     room.status = "in-game";
@@ -625,13 +623,23 @@ function triggerGameStart(room: CareerRoom, io: Server) {
 
     console.log(`[Career] Game room ${gameRoomId} created and started`);
 
-    // Have all player sockets join the game room
+    // Have all player sockets join the game room before turn kickoff broadcasts
     for (const player of room.players) {
       const playerSocket = io.sockets.sockets.get(player.socketId);
       if (playerSocket) {
         playerSocket.join(gameRoomId);
       }
     }
+
+    runCareerGameKickoff(gameRoomId);
+    // Unit-test / no-IO fallback: ensure at least one startTurn was applied.
+    const started = getRoom(gameRoomId);
+    if (started?.state && !started.state.turn && started.state.phase === "Round") {
+      startFirstTurn(gameRoomId);
+    }
+
+    // Get the game state snapshot
+    const gameSnapshot = snapshot(gameRoomId);
 
     // Emit transition event to all players with game state
     io.to(room.id).emit("career:transitionToGame", {

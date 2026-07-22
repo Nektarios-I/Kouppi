@@ -32,11 +32,13 @@ import { persistCasualFriendsSessionFromRoom } from "./casual/persistCasualSessi
 import { registerCareerHandlers } from "./career/careerSocketHandlers.js";
 import { registerFriendHandlers, updateAndBroadcastPresence } from "./friends/friendSocketHandlers.js";
 import { isCareerGame, handleCareerGameEnd, getCareerRoomByGameId, handleMatchFound, startCareerStaleRoomCleanup, stopCareerStaleRoomCleanup } from "./career/careerRoomManager.js";
+import { setCareerGameKickoff } from "./career/careerGameKickoff.js";
 import {
   setOnMatchFound,
   clearOnMatchFound,
   runMatchmaking,
 } from "./career/queue.js";
+import { createCorsOriginOption } from "./config/corsOrigins.js";
 import { verifyRoomPassword, roomRequiresPassword } from "./security/password.js";
 import { sanitizeDisplayName, sanitizeChatText, sanitizeEmote } from "./security/sanitize.js";
 import { checkEventRateLimit, recordEvent, clearRateLimitsForSocket } from "./security/rateLimit.js";
@@ -125,7 +127,8 @@ export function createKouppiServer(opts?: {
   }
 
   const app = express();
-  app.use(cors({ origin: opts?.corsOrigin ?? "*" }));
+  const corsOriginOption = createCorsOriginOption(opts?.corsOrigin ?? "*");
+  app.use(cors({ origin: corsOriginOption }));
   app.use(express.json()); // Parse JSON request bodies for API routes
 
   // Root route so visiting http://localhost:4000 doesn't look broken.
@@ -157,7 +160,7 @@ export function createKouppiServer(opts?: {
   const httpServer = createServer(app);
   const websocketOnly = opts?.websocketOnly ?? process.env.NODE_ENV === "production";
   const io = new Server(httpServer, {
-    cors: { origin: opts?.corsOrigin ?? "*" },
+    cors: { origin: corsOriginOption },
     transports: websocketOnly ? ["websocket"] : ["websocket", "polling"],
   });
 
@@ -882,6 +885,16 @@ export function createKouppiServer(opts?: {
           spectators: room.spectators?.map((s: any) => ({ id: s.id, name: s.name, avatar: s.avatar })) || [],
           hostId: room.hostId,
         };
+
+        // Late subscribers (Career /room handoff) miss the initial turnTimer broadcast —
+        // replay the current timer so the HUD countdown appears immediately.
+        const timerInfo = getTurnTimerInfo(roomId);
+        if (timerInfo && room.state && !room.state.awaitNext) {
+          socket.emit("turnTimer", {
+            ...timerInfo,
+            currentPlayerId: getCurrentPlayerId(roomId),
+          });
+        }
         
         console.log(`[Career] Player ${playerName} (${playerId}) subscribed to room ${roomId}`);
         
@@ -1207,6 +1220,11 @@ export function createKouppiServer(opts?: {
       // Otherwise start timer for the active player
       startTurnTimerForRoom(roomId);
     }
+
+    // Career auto-start uses the same eligible-turn + timer path as casual startRoom.
+    setCareerGameKickoff((gameRoomId) => {
+      startEligibleTurn(gameRoomId);
+    });
     
     // Handle turn timeout (player AFK)
     function handleTurnTimeout(roomId: string) {
@@ -1878,6 +1896,7 @@ export function createKouppiServer(opts?: {
       if (matchmakingInterval) clearInterval(matchmakingInterval);
       clearOnMatchFound();
       stopCareerStaleRoomCleanup();
+      setCareerGameKickoff(null);
     },
     /** True when createKouppiServer registered the Career matchmaking callback. */
     careerMatchmakingWired: careerDbInitialized,

@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useRemoteGameStore } from "@/store/remoteGameStore";
+import { useCareerLobbyStore } from "@/store/careerLobbyStore";
 import type { AvatarConfig } from "@/store/remoteGameStore";
 import type { GameState } from "@kouppi/game-core";
 import { canShistri, shistriBet } from "@kouppi/game-core";
@@ -21,6 +22,7 @@ import TableThemeSelector from "./game/TableThemeSelector";
 import ConnectionStatusBanner from "./game/ConnectionStatusBanner";
 import ConfirmDialog from "./game/ConfirmDialog";
 import { useTableTheme } from "@/hooks/useTableTheme";
+import { isCareerGameRoomId, postRoomExitPath } from "@/lib/careerRoom";
 
 type PendingConfirm =
   | { type: "closeRoom" }
@@ -53,6 +55,7 @@ export default function MultiplayerTableGraphics() {
     playAgain,
     sessionSummary,
     pendingIntent,
+    lastError,
   } = useRemoteGameStore();
   const { theme } = useTableTheme();
 
@@ -70,6 +73,7 @@ export default function MultiplayerTableGraphics() {
   const prevIsMyTurn = useRef<boolean>(false);
   const prevResolution = useRef<unknown>(null);
   const prevTimerLow = useRef<boolean>(false);
+  const clearCareerGameSession = useCareerLobbyStore((s) => s.clearGameSession);
 
   const gameState = state as GameState | null;
 
@@ -157,6 +161,15 @@ export default function MultiplayerTableGraphics() {
   const canKouppi =
     me && gameState && me.bankroll >= gameState.round.pot && gameState.round.pot > 0;
 
+  // Keep bet within table limits (Career antes often have minBet > default 10).
+  useEffect(() => {
+    if (!gameState || maxBet <= 0) return;
+    setBet((prev) => {
+      const clamped = Math.max(minBet, Math.min(maxBet, prev));
+      return clamped === prev ? prev : clamped;
+    });
+  }, [minBet, maxBet, gameState]);
+
   const shistriEligible = !!(
     up &&
     gameState?.config.shistri.enabled &&
@@ -199,9 +212,11 @@ export default function MultiplayerTableGraphics() {
 
   const handleLeave = async () => {
     setLeaveError(null);
+    const exitPath = postRoomExitPath(roomId);
     if (isSpectator) {
       leaveSpectator();
-      router.push("/lobby");
+      if (isCareerGameRoomId(roomId)) clearCareerGameSession();
+      router.push(exitPath);
       return;
     }
     const result = await leaveRoom();
@@ -209,7 +224,8 @@ export default function MultiplayerTableGraphics() {
       setLeaveError(result.error || "Cannot leave right now");
       return;
     }
-    router.push("/lobby");
+    if (isCareerGameRoomId(roomId)) clearCareerGameSession();
+    router.push(exitPath);
   };
 
   const handleKickPlayer = async (targetId: string) => {
@@ -244,7 +260,8 @@ export default function MultiplayerTableGraphics() {
       setHostActionError(result.error || "Could not close room");
       return;
     }
-    router.push("/lobby");
+    if (isCareerGameRoomId(roomId)) clearCareerGameSession();
+    router.push(postRoomExitPath(roomId));
   };
 
   const handlePlayAgain = async () => {
@@ -411,6 +428,16 @@ export default function MultiplayerTableGraphics() {
     </div>
   ) : null;
 
+  const actionErrorBanner =
+    lastError && !leaveError ? (
+      <div
+        className="hud-status-banner !fixed top-20 left-1/2 -translate-x-1/2 z-50 !text-center !py-2 !px-4 border-error/40 bg-error/10 text-error max-w-md"
+        role="alert"
+      >
+        {lastError}
+      </div>
+    ) : null;
+
   const currentTurnPlayerId = gameState.players[gameState.currentIndex]?.id;
 
   return (
@@ -428,6 +455,7 @@ export default function MultiplayerTableGraphics() {
       />
       {timeoutBanner}
       {leaveErrorBanner}
+      {actionErrorBanner}
 
       <div className="game-stage">
         {isSpectator && (

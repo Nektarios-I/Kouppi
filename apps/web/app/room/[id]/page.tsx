@@ -23,6 +23,8 @@ import {
 import ConnectionStatusBanner from "@/components/game/ConnectionStatusBanner";
 import { HudButton } from "@/components/game/HudButton";
 import { getServerUrl } from "@/lib/serverUrl";
+import { isCareerGameRoomId, postRoomExitPath } from "@/lib/careerRoom";
+import { useCareerLobbyStore } from "@/store/careerLobbyStore";
 
 const MultiplayerTable = dynamic(
   () => import("../../../components/MultiplayerTableGraphics"),
@@ -86,9 +88,11 @@ export default function RoomPage() {
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
 
-  const isCareerGame = roomIdParam?.startsWith("career-game-");
+  const isCareerGame = isCareerGameRoomId(roomIdParam);
   const { user, isLoggedIn, token } = useAuthStore();
   const { showToast } = useToast();
+  const clearCareerGameSession = useCareerLobbyStore((s) => s.clearGameSession);
+  const careerSubscribeKeyRef = useRef<string | null>(null);
 
   const lastSystemChatIdRef = useRef<string | null>(null);
 
@@ -111,6 +115,7 @@ export default function RoomPage() {
     setShowPasswordModal(false);
     setPasswordInput("");
     setPasswordError(null);
+    careerSubscribeKeyRef.current = null;
   }, [roomIdParam]);
 
   useEffect(() => {
@@ -121,6 +126,9 @@ export default function RoomPage() {
       setAvatar(avatar);
       return;
     }
+    // Career games must use the authenticated user id (server seats by userId).
+    // Do not fall back to a casual multiplayer sessionStorage identity.
+    if (isCareerGame) return;
     const savedId = sessionStorage.getItem("kouppi_player_id");
     const savedName = sessionStorage.getItem("kouppi_player_name");
     const savedAvatar = sessionStorage.getItem("kouppi_player_avatar");
@@ -136,7 +144,7 @@ export default function RoomPage() {
         // ignore invalid JSON
       }
     }
-  }, [isLoggedIn, user, setIdentity, setAvatar]);
+  }, [isLoggedIn, user, setIdentity, setAvatar, isCareerGame]);
 
   const attemptJoin = useCallback(
     async (password?: string) => {
@@ -172,7 +180,7 @@ export default function RoomPage() {
       }
 
       if (code === "room_not_found") {
-        router.push("/lobby");
+        router.push(postRoomExitPath(decodedRoomId));
       }
     },
     [joinRoom, decodedRoomId, clearError, router]
@@ -185,26 +193,41 @@ export default function RoomPage() {
   }, [connected, playerId, playerName, roomId, roomIdParam, joinAttempted, isCareerGame, attemptJoin]);
 
   useEffect(() => {
-    if (connected && playerId && playerName && !roomId && roomIdParam && !joinAttempted && isCareerGame) {
-      const trySubscribe = async () => {
-        const result = await subscribeToCareerRoom(decodedRoomId);
-        setJoinAttempted(true);
-        if (!result.success) {
-          setJoinErrorCode(result.error || "subscribe_failed");
-          if (result.error?.includes("not found")) {
-            router.push("/lobby");
-          }
+    if (!connected || !playerId || !playerName || roomId || !roomIdParam || !isCareerGame) return;
+    const key = `${decodedRoomId}:${playerId}`;
+    if (careerSubscribeKeyRef.current === key) return;
+    careerSubscribeKeyRef.current = key;
+
+    const trySubscribe = async () => {
+      const result = await subscribeToCareerRoom(decodedRoomId);
+      setJoinAttempted(true);
+      if (!result.success) {
+        setJoinErrorCode(result.error || "subscribe_failed");
+        if (result.error?.includes("not found") || result.error === "room_not_found") {
+          clearCareerGameSession();
+          router.push("/career");
         }
-      };
-      trySubscribe();
-    }
-  }, [connected, playerId, playerName, roomId, roomIdParam, joinAttempted, isCareerGame, subscribeToCareerRoom, decodedRoomId, router]);
+      }
+    };
+    void trySubscribe();
+  }, [
+    connected,
+    playerId,
+    playerName,
+    roomId,
+    roomIdParam,
+    isCareerGame,
+    subscribeToCareerRoom,
+    decodedRoomId,
+    router,
+    clearCareerGameSession,
+  ]);
 
   useEffect(() => {
     if (connected && playerId && !roomId && lastError && joinErrorCode === "room_not_found") {
-      router.push("/lobby");
+      router.push(postRoomExitPath(decodedRoomId));
     }
-  }, [connected, playerId, roomId, lastError, joinErrorCode, router]);
+  }, [connected, playerId, roomId, lastError, joinErrorCode, router, decodedRoomId]);
 
   const handleSetName = () => {
     if (!localName.trim()) return;
@@ -249,7 +272,8 @@ export default function RoomPage() {
   const handleLeave = async () => {
     if (isSpectator) {
       leaveSpectator();
-      router.push("/lobby");
+      if (isCareerGame) clearCareerGameSession();
+      router.push(postRoomExitPath(decodedRoomId));
       return;
     }
     const result = await leaveRoom();
@@ -257,7 +281,8 @@ export default function RoomPage() {
       showToast(result.error || "Could not leave room", "error");
       return;
     }
-    router.push("/lobby");
+    if (isCareerGame) clearCareerGameSession();
+    router.push(postRoomExitPath(decodedRoomId));
   };
 
   const handleJoinAsSpectator = async (password?: string) => {
@@ -338,7 +363,8 @@ export default function RoomPage() {
       showToast(result.error || "Could not close room", "error");
       return;
     }
-    router.push("/lobby");
+    if (isCareerGame) clearCareerGameSession();
+    router.push(postRoomExitPath(decodedRoomId));
   };
 
   const handleReportPlayer = async (targetId: string, reason: string) => {
@@ -434,8 +460,8 @@ export default function RoomPage() {
             <HudButton variant="kouppi" size="lg" fullWidth onClick={() => handleJoinAsSpectator()} disabled={joining}>
               Watch as Spectator
             </HudButton>
-            <HudButton variant="ghost" fullWidth onClick={() => router.push("/lobby")}>
-              Back to Lobby
+            <HudButton variant="ghost" fullWidth onClick={() => router.push(postRoomExitPath(decodedRoomId))}>
+              {isCareerGame ? "Back to Career" : "Back to Lobby"}
             </HudButton>
           </div>
         </PreGameCard>

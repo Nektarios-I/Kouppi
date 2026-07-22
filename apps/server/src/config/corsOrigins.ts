@@ -28,10 +28,35 @@ export function parseCorsOrigins(
 
   const origins = trimmed
     .split(",")
-    .map((part) => part.trim())
+    .map((part) => part.trim().replace(/\/$/, ""))
     .filter(Boolean);
 
   if (origins.length === 0) return nodeEnv === "production" ? [] : "*";
-  if (origins.length === 1) return origins[0];
+  // Always return an array so callers can use a reflecting origin callback.
   return origins;
+}
+
+/**
+ * cors / Socket.IO `origin` option that reflects the request Origin only when allow-listed.
+ * Avoids the single-string cors pitfall of emitting a fixed ACAO that does not match the browser.
+ */
+export function createCorsOriginOption(
+  allowed: string | string[]
+):
+  | boolean
+  | string
+  | string[]
+  | ((origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => void) {
+  if (allowed === "*") return true;
+  const list = (Array.isArray(allowed) ? allowed : [allowed]).filter(Boolean);
+  if (list.length === 0) {
+    return (_origin, cb) => cb(null, false);
+  }
+  return (requestOrigin, cb) => {
+    if (!requestOrigin) {
+      cb(null, true);
+      return;
+    }
+    cb(null, list.includes(requestOrigin));
+  };
 }

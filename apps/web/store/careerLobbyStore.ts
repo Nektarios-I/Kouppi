@@ -4,7 +4,7 @@
 
 import { create } from "zustand";
 import { io, Socket } from "socket.io-client";
-import { formatConnectionError, getServerUrl } from "@/lib/serverUrl";
+import { formatConnectionError, getServerUrl, resolveServerUrl } from "@/lib/serverUrl";
 import { isAuthFailureCode, parseSocketAck } from "@/lib/socketAck";
 import { useAuthStore } from "./authStore";
 
@@ -143,6 +143,8 @@ interface CareerLobbyState {
   createWaitingRoom: (token: string, anteId: string) => Promise<boolean>;
   joinWaitingRoom: (token: string, roomId: string) => Promise<boolean>;
   clearError: () => void;
+  /** Clear waiting/game session pointers after leaving a Career in-game room. */
+  clearGameSession: () => void;
   reset: () => void;
 }
 
@@ -224,6 +226,21 @@ export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
   connect: (token: string) => {
     const { socket } = get();
     if (socket?.connected) return;
+
+    const resolved = resolveServerUrl();
+    if (
+      resolved.issue === "frontend_origin_fallback" ||
+      resolved.issue === "missing_env_production" ||
+      resolved.issue === "localhost_in_production" ||
+      resolved.issue === "invalid_url"
+    ) {
+      set({
+        isConnecting: false,
+        isConnected: false,
+        error: formatConnectionError("misconfigured server URL", resolved),
+      });
+      return;
+    }
 
     // Reuse the existing Socket.IO client (multiplayer pattern) — do not spawn duplicates.
     if (socket) {
@@ -748,6 +765,17 @@ export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  clearGameSession: () => {
+    set({
+      gameRoomId: null,
+      currentRoom: null,
+      matchFound: null,
+      queueState: null,
+      isJoiningQueue: false,
+      isJoiningRoom: false,
+    });
+  },
 
   reset: () => {
     get().stopQueuePolling();

@@ -589,6 +589,9 @@ describe("Career flow contracts (Batch 1)", () => {
     const game1 = await connectClient(baseUrl);
     const game2 = await connectClient(baseUrl);
 
+    const timer1P = new Promise<any>((resolve) => game1.once("turnTimer", resolve));
+    const timer2P = new Promise<any>((resolve) => game2.once("turnTimer", resolve));
+
     const sub1 = await new Promise<{ err: any; snap: any }>((resolve) => {
       game1.emit(
         "subscribeCareerRoom",
@@ -608,6 +611,23 @@ describe("Career flow contracts (Batch 1)", () => {
     expect(sub2.err).toBeNull();
     expect(sub1.snap).toBeTruthy();
     expect(sub2.snap).toBeTruthy();
+    expect(sub1.snap.phase).toBe("Round");
+    expect(sub1.snap.turn?.upcards).toBeTruthy();
+
+    const [timer1, timer2] = await Promise.all([timer1P, timer2P]);
+    expect(timer1.remaining).toBeGreaterThan(0);
+    expect(timer1.total).toBeGreaterThan(0);
+    expect(timer2.remaining).toBeGreaterThan(0);
+
+    const currentId = sub1.snap.players[sub1.snap.currentIndex]?.id as string;
+    const actor = currentId === u1.id ? game1 : game2;
+    const intentResult = await new Promise<{ err: any; snap: any }>((resolve) => {
+      actor.emit("intent", { roomId: gameRoomId, intent: { type: "pass" } }, (err: any, snap: any) =>
+        resolve({ err: err ?? null, snap: snap ?? null })
+      );
+    });
+    expect(intentResult.err).toBeNull();
+    expect(intentResult.snap).toBeTruthy();
 
     lobby1.disconnect();
     lobby2.disconnect();
