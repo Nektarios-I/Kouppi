@@ -8,6 +8,7 @@ import TrophyBadge from "@/components/TrophyBadge";
 import { LobbyShell, LobbyCard, LobbyEmpty } from "@/components/game/LobbyUI";
 import { HudButton } from "@/components/game/HudButton";
 import { getServerUrl } from "@/lib/serverUrl";
+import { Avatar } from "@/components/AvatarPicker";
 
 const ARENAS = [
   { id: 0, name: "All Arenas", minTrophies: 0, color: "#d4af37" },
@@ -32,9 +33,7 @@ type LeaderboardEntry = {
   gamesLost: number;
   gamesPlayed: number;
   winRate: number;
-  avatarEmoji: string;
-  avatarColor: string;
-  avatarBorder: string;
+  avatarId: string;
 };
 
 export default function LeaderboardPage() {
@@ -161,15 +160,7 @@ export default function LeaderboardPage() {
                       >
                         {rank}
                       </div>
-                      <div
-                        className="avatar-display w-10 h-10 text-lg shrink-0"
-                        style={{
-                          backgroundColor: player.avatarColor,
-                          border: `2px solid ${player.avatarBorder}`,
-                        }}
-                      >
-                        {player.avatarEmoji}
-                      </div>
+                      <Avatar avatar={{ id: player.avatarId }} size="md" />
                       <div className="min-w-0">
                         <div className="font-ui font-medium truncate flex items-center gap-2">
                           {player.username}

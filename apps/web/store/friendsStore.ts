@@ -16,9 +16,7 @@ function getServerUrl(): string {
 type SearchResult = {
   id: string;
   username: string;
-  avatarEmoji: string;
-  avatarColor: string;
-  avatarBorder: string;
+  avatarId: string;
 };
 
 interface FriendsState {

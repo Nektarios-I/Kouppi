@@ -15,9 +15,7 @@ import {
  * Avatar configuration
  */
 export interface Avatar {
-  emoji: string;
-  color: string;
-  borderColor: string;
+  id: string;
 }
 
 /**
@@ -38,9 +36,7 @@ export interface UserProfile {
   gamesWon: number;
   totalEarnings: number;
   winRate: number;
-  avatarEmoji: string;
-  avatarColor: string;
-  avatarBorder: string;
+  avatarId: string;
 }
 
 /**

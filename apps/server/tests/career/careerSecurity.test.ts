@@ -47,10 +47,9 @@ describe("Career Security - Identity Verification", () => {
       rating: 1200,
       bankroll: 1000,
       socketId: "socket1",
-      avatarEmoji: "🎭",
-      avatarColor: "#6366f1",
-      avatarBorder: "#4f46e5",
+      avatarId: "portrait-01",
       joinedAt: Date.now(),
+      ready: false,
     };
 
     const result = findOrCreateRoom("bronze-1", mockPlayer, io);
@@ -78,10 +77,9 @@ describe("Career Security - Identity Verification", () => {
       rating: 1300,
       bankroll: 1500,
       socketId: "socket2",
-      avatarEmoji: "🎮",
-      avatarColor: "#6366f1",
-      avatarBorder: "#4f46e5",
+      avatarId: "portrait-01",
       joinedAt: Date.now(),
+      ready: false,
     };
 
     // Join first room
@@ -111,10 +109,9 @@ describe("Career Security - Identity Verification", () => {
       rating: 1400,
       bankroll: 2000,
       socketId: "socket3",
-      avatarEmoji: "⚡",
-      avatarColor: "#6366f1",
-      avatarBorder: "#4f46e5",
+      avatarId: "portrait-01",
       joinedAt: Date.now(),
+      ready: false,
     };
 
     const result = findOrCreateRoom("silver-1", mockPlayer, io);
@@ -147,10 +144,9 @@ describe("Career Security - Identity Verification", () => {
       rating: 1500,
       bankroll: 2500,
       socketId: "socket4",
-      avatarEmoji: "🚪",
-      avatarColor: "#6366f1",
-      avatarBorder: "#4f46e5",
+      avatarId: "portrait-01",
       joinedAt: Date.now(),
+      ready: false,
     };
 
     const result = findOrCreateRoom("gold-1", mockPlayer, io);
@@ -185,10 +181,9 @@ describe("Career Security - Identity Verification", () => {
       rating: 1200,
       bankroll: 1000,
       socketId: "socket5",
-      avatarEmoji: "1️⃣",
-      avatarColor: "#6366f1",
-      avatarBorder: "#4f46e5",
+      avatarId: "portrait-01",
       joinedAt: Date.now(),
+      ready: false,
     };
 
     const player2: CareerPlayer = {
@@ -202,10 +197,9 @@ describe("Career Security - Identity Verification", () => {
       rating: 1250,
       bankroll: 1100,
       socketId: "socket6-disconnected",
-      avatarEmoji: "2️⃣",
-      avatarColor: "#6366f1",
-      avatarBorder: "#4f46e5",
+      avatarId: "portrait-01",
       joinedAt: Date.now(),
+      ready: false,
     };
 
     const result1 = findOrCreateRoom("bronze-1", player1, io);

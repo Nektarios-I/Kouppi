@@ -8,6 +8,7 @@ import { useToast } from "@/components/game/Toast";
 import { useRouter } from "next/navigation";
 import { LobbyCard, LobbyInput, LobbyField } from "@/components/game/LobbyUI";
 import { HudButton } from "@/components/game/HudButton";
+import { Avatar } from "@/components/AvatarPicker";
 
 export default function FriendsPanel() {
   const router = useRouter();
@@ -140,12 +141,7 @@ export default function FriendsPanel() {
                     className="flex items-center justify-between gap-3 p-3 rounded-lg bg-black/30 border border-white/10"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <span
-                        className="text-xl shrink-0 w-9 h-9 flex items-center justify-center rounded-full"
-                        style={{ backgroundColor: friend.avatarColor, border: `2px solid ${friend.avatarBorder}` }}
-                      >
-                        {friend.avatarEmoji}
-                      </span>
+                      <Avatar avatar={{ id: friend.avatarId }} size="sm" />
                       <div className="min-w-0">
                         <p className="font-ui text-sm text-white truncate">{friend.username}</p>
                         <p className="text-xs text-gray-500 flex items-center gap-1">
@@ -205,12 +201,7 @@ export default function FriendsPanel() {
                 className="flex items-center justify-between gap-3 p-3 rounded-lg bg-black/30 border border-white/10"
               >
                 <div className="flex items-center gap-3">
-                  <span
-                    className="text-xl w-9 h-9 flex items-center justify-center rounded-full"
-                    style={{ backgroundColor: user.avatarColor, border: `2px solid ${user.avatarBorder}` }}
-                  >
-                    {user.avatarEmoji}
-                  </span>
+                  <Avatar avatar={{ id: user.avatarId }} size="sm" />
                   <span className="font-ui text-sm">{user.username}</span>
                 </div>
                 <HudButton

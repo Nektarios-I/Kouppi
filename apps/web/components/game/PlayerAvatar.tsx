@@ -1,8 +1,14 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import type { AvatarConfig } from "@/store/remoteGameStore";
-import { AVATAR_COLORS, getBotAvatar } from "@/lib/avatars";
+import {
+  AVATAR_FALLBACK_SRC,
+  AVATAR_RING,
+  getAvatarSrc,
+  getBotAvatar,
+  normalizeAvatarConfig,
+} from "@/lib/avatars";
 import { seatInitials } from "@/components/game/seatLayout";
 
 export interface PlayerAvatarProps {
@@ -23,18 +29,10 @@ const SIZE_CLASS = {
 
 const BORDER_PX = { sm: 2, md: 2, lg: 2 } as const;
 
-function hashColorIndex(seed: string): number {
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = ((hash << 5) - hash + seed.charCodeAt(i)) | 0;
-  }
-  return Math.abs(hash) % AVATAR_COLORS.length;
-}
-
 export default function PlayerAvatar({
   name,
   isBot,
-  isMe,
+  isMe: _isMe,
   avatar,
   size = "md",
   playerId,
@@ -42,52 +40,64 @@ export default function PlayerAvatar({
 }: PlayerAvatarProps) {
   const sizeClass = SIZE_CLASS[size];
   const border = BORDER_PX[size];
+  const [broken, setBroken] = useState(false);
 
-  if (isBot) {
-    const botAvatar = avatar ?? getBotAvatar(playerId || name);
+  const resolved = isBot
+    ? normalizeAvatarConfig(avatar ?? getBotAvatar(playerId || name))
+    : avatar
+      ? normalizeAvatarConfig(avatar)
+      : null;
+
+  if (resolved && !broken) {
     return (
       <div
-        className={`player-avatar player-avatar--bot avatar-display ${sizeClass} ${className}`}
+        className={`player-avatar player-avatar--portrait avatar-display avatar-display--portrait ${sizeClass} ${className}`}
         style={{
-          backgroundColor: botAvatar.color,
-          border: `${border}px solid ${botAvatar.borderColor}`,
+          backgroundColor: AVATAR_RING.fill,
+          border: `${border}px solid ${AVATAR_RING.border}`,
         }}
         aria-hidden="true"
       >
-        <span className="leading-none select-none">{botAvatar.emoji}</span>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={getAvatarSrc(resolved.id)}
+          alt=""
+          className="avatar-display__img"
+          draggable={false}
+          onError={() => setBroken(true)}
+        />
       </div>
     );
   }
 
-  if (avatar?.emoji) {
+  if (broken && resolved) {
     return (
       <div
-        className={`player-avatar avatar-display ${sizeClass} ${className}`}
+        className={`player-avatar player-avatar--portrait avatar-display avatar-display--portrait ${sizeClass} ${className}`}
         style={{
-          backgroundColor: avatar.color,
-          border: `${border}px solid ${avatar.borderColor}`,
+          backgroundColor: AVATAR_RING.fill,
+          border: `${border}px solid ${AVATAR_RING.border}`,
         }}
         aria-hidden="true"
       >
-        <span className="leading-none select-none">{avatar.emoji}</span>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={AVATAR_FALLBACK_SRC} alt="" className="avatar-display__img" draggable={false} />
       </div>
     );
   }
 
-  const color = AVATAR_COLORS[hashColorIndex(playerId || name)];
   const initials = seatInitials(name);
-  const ring = isMe ? color.border : color.border;
 
   return (
     <div
       className={`player-avatar player-avatar--initials avatar-display ${sizeClass} ${className}`}
       style={{
-        backgroundColor: color.value,
-        border: `${border}px solid ${ring}`,
+        backgroundColor: AVATAR_RING.fill,
+        border: `${border}px solid ${AVATAR_RING.border}`,
       }}
       aria-hidden="true"
     >
-      <span className="leading-none select-none font-ui font-semibold tracking-tight text-white">
+      <span className="leading-none select-none font-ui font-semibold tracking-tight text-white/85">
         {initials}
       </span>
     </div>

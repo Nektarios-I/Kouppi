@@ -107,8 +107,23 @@ Eligible iff `abs(rank1-rank2)===2` with Ace=1…King=13:
 
 - `apps/server/tests/career/queue.test.ts` — sets `setOnMatchFound` locally (does **not** prove production wiring).
 - `careerQueueIntegration.test.ts` — socket queue; depends on wiring in test server factory path.
-- `careerGameFlow.test.ts` — **placeholder; replace**.
+- `careerGameFlow.test.ts` — **real** matchmaking + rating-delta game-end tests (placeholder claim is obsolete).
+- `careerFlowContracts.test.ts` — **Batch 1** Tier-1 contracts: QJ-001..003, CT-001, JT-001, CD-001/002, ERR-001 (Node 20 + temp SQLite).
+- `apps/web/store/careerLobbyStore.test.ts` — queue/create/wait store contracts (incl. WEB-QJ/CT/WAIT).
 - `friends.test.ts` — known UNIQUE flake risk; isolate DB path carefully.
+
+### Career matchmaking / table flow (from CAREER_MATCHMAKING audit)
+
+| ID | Status | Notes |
+|----|--------|-------|
+| CAREER-IT-QJ-001..003 | Implemented | `careerFlowContracts.test.ts` |
+| CAREER-IT-CT-001 | Implemented | create + **idempotent** duplicate (Batch 3) |
+| CAREER-IT-JT-001 | Implemented | join + reject matrix |
+| CAREER-IT-CD-001/002 | Implemented (Batch 2) | Ready gate + 60s; short injectable delay for socket IT; fake-timer cancel unit |
+| CAREER-IT-NAV-001 | Implemented (Batch 3) | `transitionToGame` → `subscribeCareerRoom` dual-socket |
+| CAREER-IT-ERR-001 | Implemented | safe ACK errors |
+| CAREER-WEB-QJ/CT/WAIT | Partial (store) | `careerLobbyStore.test.ts` incl. setReady |
+| Playwright two-browser Career | **Plan only** | `docs/CAREER_E2E_TWO_BROWSER_PLAN.md` — not in CI |
 
 ---
 

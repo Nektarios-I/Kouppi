@@ -140,7 +140,7 @@ describe("Production multiplayer hardening", () => {
       guest.once("roomUpdate", (data: any) => resolve(data));
       host.emit(
         "setAvatar",
-        { roomId: code, avatar: { emoji: "🃏", color: "#111", borderColor: "#222" } },
+        { roomId: code, avatar: { id: "portrait-01" } },
         () => {}
       );
     });

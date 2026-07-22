@@ -16,6 +16,10 @@ import {
   hasMatchFoundHandler,
   setOnMatchFound,
 } from "../../src/career/queue.js";
+import {
+  isCareerStaleRoomCleanupRunning,
+  stopCareerStaleRoomCleanup,
+} from "../../src/career/careerRoomManager.js";
 
 describe("CAREER-MM-001 production matchmaking wiring", () => {
   const tmpDb = path.join(os.tmpdir(), `kouppi-mm-wire-${process.pid}-${Date.now()}.db`);
@@ -48,14 +52,17 @@ describe("CAREER-MM-001 production matchmaking wiring", () => {
     const server = createKouppiServer({ corsOrigin: "*", websocketOnly: true });
     expect(server.careerMatchmakingWired).toBe(true);
     expect(hasMatchFoundHandler()).toBe(true);
+    expect(isCareerStaleRoomCleanupRunning()).toBe(true);
 
     // Replacing with a test callback should not be required for production path;
     // factory already registered handleMatchFound.
     server.stopCleanup();
     expect(hasMatchFoundHandler()).toBe(false);
+    expect(isCareerStaleRoomCleanupRunning()).toBe(false);
   });
 
   it("skipCareerDatabase does not wire matchmaking (avoids timer leaks in MP tests)", () => {
+    stopCareerStaleRoomCleanup();
     const server = createKouppiServer({
       corsOrigin: "*",
       skipCareerDatabase: true,
@@ -63,6 +70,7 @@ describe("CAREER-MM-001 production matchmaking wiring", () => {
     });
     expect(server.careerMatchmakingWired).toBe(false);
     expect(hasMatchFoundHandler()).toBe(false);
+    expect(isCareerStaleRoomCleanupRunning()).toBe(false);
     server.stopCleanup();
   });
 

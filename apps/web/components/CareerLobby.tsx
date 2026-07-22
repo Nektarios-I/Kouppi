@@ -14,6 +14,7 @@ import {
   LobbyCard,
   LobbyAlert,
 } from "@/components/game/LobbyUI";
+import { Avatar } from "@/components/AvatarPicker";
 
 /**
  * Career entry: three parallel paths
@@ -48,6 +49,7 @@ export default function CareerLobby() {
     joinQueue,
     leaveQueue,
     leaveRoom,
+    setReady,
     browseAllWaitingRooms,
     createWaitingRoom,
     joinWaitingRoom,
@@ -129,12 +131,15 @@ export default function CareerLobby() {
     leaveRoom(token);
   };
 
+  const handleToggleReady = async () => {
+    if (!token || !user?.id || !currentRoom) return;
+    const me = currentRoom.players.find((p) => p.userId === user.id);
+    await setReady(token, !me?.ready);
+  };
+
   const handleCreateWaiting = async (anteId: string) => {
     if (!token) return;
-    const ok = await createWaitingRoom(token, anteId);
-    if (ok) {
-      await browseAllWaitingRooms(token);
-    }
+    await createWaitingRoom(token, anteId);
   };
 
   const handleJoinWaiting = async (roomId: string) => {
@@ -158,7 +163,7 @@ export default function CareerLobby() {
     );
   }
 
-  if (isConnecting) {
+  if (isConnecting && !currentRoom) {
     return (
       <LobbyCard title="Connecting" icon="◎">
         <div className="flex justify-center py-8">
@@ -170,7 +175,7 @@ export default function CareerLobby() {
     );
   }
 
-  if (!isConnected) {
+  if (!isConnected && !currentRoom) {
     return (
       <LobbyCard title="Disconnected" icon="◎">
         <p className="text-error text-center font-ui mb-4">Disconnected from server</p>
@@ -227,6 +232,14 @@ export default function CareerLobby() {
   }
 
   if (currentRoom) {
+    const me = currentRoom.players.find((p) => p.userId === user?.id);
+    const bothPresent = currentRoom.playerCount >= 2;
+    const allReady =
+      bothPresent && currentRoom.players.every((p) => p.ready);
+    const countdownActive =
+      currentRoom.status === "starting" ||
+      (countdown !== null && countdown > 0 && !!currentRoom.autoStartAt);
+
     return (
       <LobbyCard
         title={`${selectedTier?.emoji ?? "♠"} ${selectedTier?.name ?? "Career Room"}`}
@@ -237,6 +250,23 @@ export default function CareerLobby() {
           </span>
         }
       >
+        {error && (
+          <LobbyAlert variant="error" onDismiss={clearError}>
+            {error}
+          </LobbyAlert>
+        )}
+
+        {!isConnected && (
+          <div className="hud-status-banner text-center !py-2 mb-4 font-ui text-sm">
+            Connection lost — reconnecting to your table…
+            <div className="mt-2">
+              <HudButton variant="bet" size="sm" onClick={() => token && connect(token)}>
+                Reconnect now
+              </HudButton>
+            </div>
+          </div>
+        )}
+
         <p className="text-sm text-gray-400 font-ui mb-4">
           Waiting table · Ante: {currentRoom.ante} · Bet: {currentRoom.minBet}–{currentRoom.maxBet}
         </p>
@@ -248,15 +278,7 @@ export default function CareerLobby() {
               className={`lobby-player-row ${player.userId === user?.id ? "lobby-player-row-me" : ""}`}
             >
               <div className="flex items-center gap-3 min-w-0">
-                <div
-                  className="avatar-display w-10 h-10 text-lg"
-                  style={{
-                    backgroundColor: player.avatarColor,
-                    border: `2px solid ${player.avatarBorder}`,
-                  }}
-                >
-                  {player.avatarEmoji}
-                </div>
+                <Avatar avatar={{ id: player.avatarId }} size="md" />
                 <div className="min-w-0">
                   <div className="font-ui font-medium truncate">
                     {player.username}
@@ -264,40 +286,61 @@ export default function CareerLobby() {
                       <span className="text-gold text-xs ml-1">(you)</span>
                     )}
                   </div>
-                  <div className="text-xs text-gray-500">Rating {player.rating}</div>
+                  <div className="text-xs text-gray-500">
+                    Rating {player.rating}
+                    {" · "}
+                    {player.connected === false ? "Reconnecting…" : player.ready ? "Ready" : "Not ready"}
+                  </div>
                 </div>
               </div>
             </div>
           ))}
 
-          {Array.from({ length: currentRoom.maxPlayers - currentRoom.playerCount }).map((_, i) => (
+          {Array.from({ length: Math.max(0, currentRoom.maxPlayers - currentRoom.playerCount) }).map((_, i) => (
             <div key={`empty-${i}`} className="lobby-player-row border-dashed opacity-60">
               <div className="flex items-center gap-3">
                 <div className="avatar-display w-10 h-10 text-lg bg-black/40 text-gray-600 border-2 border-white/10">
                   ?
                 </div>
-                <span className="text-gray-500 text-sm font-ui">Waiting for player…</span>
+                <span className="text-gray-500 text-sm font-ui">Waiting for opponent…</span>
               </div>
             </div>
           ))}
         </div>
 
-        {countdown !== null && countdown > 0 && currentRoom.playerCount >= 2 && (
+        {countdownActive && countdown !== null && countdown > 0 && (
           <div className="hud-result-win text-center py-3 mb-4 font-ui">
             <div className="text-sm mb-1">Game starting in</div>
             <div className="font-display text-3xl font-bold text-success">{countdown}s</div>
           </div>
         )}
 
-        {currentRoom.playerCount < 2 && (
+        {!bothPresent && (
           <div className="hud-status-banner text-center !py-2 mb-4 font-ui text-sm">
-            Waiting for at least 2 players to start…
+            Waiting for an opponent to join…
           </div>
         )}
 
-        <HudButton variant="danger" fullWidth onClick={handleLeaveRoom}>
-          Leave Room
-        </HudButton>
+        {bothPresent && !allReady && !countdownActive && (
+          <div className="hud-status-banner text-center !py-2 mb-4 font-ui text-sm">
+            Both players must Ready before the 60-second countdown begins.
+          </div>
+        )}
+
+        <div className="flex flex-col gap-2">
+          {bothPresent && currentRoom.status !== "in-game" && isConnected && (
+            <HudButton
+              variant={me?.ready ? "ghost" : "success"}
+              fullWidth
+              onClick={handleToggleReady}
+            >
+              {me?.ready ? "Cancel Ready" : "Ready"}
+            </HudButton>
+          )}
+          <HudButton variant="danger" fullWidth onClick={handleLeaveRoom} disabled={!isConnected}>
+            Leave Room
+          </HudButton>
+        </div>
       </LobbyCard>
     );
   }

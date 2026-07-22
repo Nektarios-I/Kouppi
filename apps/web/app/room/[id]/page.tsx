@@ -8,7 +8,7 @@ import dynamic from "next/dynamic";
 import Chat from "../../../components/Chat";
 import SoundControl from "../../../components/SoundControl";
 import EmotePanel from "../../../components/EmotePanel";
-import { getDefaultAvatar } from "@/lib/avatars";
+import { getDefaultAvatar, normalizeAvatarConfig } from "@/lib/avatars";
 import { useToast } from "@/components/game/Toast";
 import WaitingRoom from "@/components/game/WaitingRoom";
 import RoomPasswordModal from "@/components/game/RoomPasswordModal";
@@ -22,6 +22,7 @@ import {
 } from "@/components/game/LobbyUI";
 import ConnectionStatusBanner from "@/components/game/ConnectionStatusBanner";
 import { HudButton } from "@/components/game/HudButton";
+import { getServerUrl } from "@/lib/serverUrl";
 
 const MultiplayerTable = dynamic(
   () => import("../../../components/MultiplayerTableGraphics"),
@@ -86,7 +87,7 @@ export default function RoomPage() {
   const [joining, setJoining] = useState(false);
 
   const isCareerGame = roomIdParam?.startsWith("career-game-");
-  const { user, isLoggedIn } = useAuthStore();
+  const { user, isLoggedIn, token } = useAuthStore();
   const { showToast } = useToast();
 
   const lastSystemChatIdRef = useRef<string | null>(null);
@@ -116,11 +117,7 @@ export default function RoomPage() {
     if (isLoggedIn() && user) {
       setIdentity(user.id, user.username);
       setLocalName(user.username);
-      const avatar: AvatarConfig = {
-        emoji: user.avatarEmoji || "🎮",
-        color: user.avatarColor || "#4f46e5",
-        borderColor: user.avatarBorder || "#818cf8",
-      };
+      const avatar: AvatarConfig = normalizeAvatarConfig(user.avatarId);
       setAvatar(avatar);
       return;
     }
@@ -133,7 +130,7 @@ export default function RoomPage() {
     }
     if (savedAvatar) {
       try {
-        const avatar = JSON.parse(savedAvatar) as AvatarConfig;
+        const avatar = normalizeAvatarConfig(JSON.parse(savedAvatar));
         setAvatar(avatar);
       } catch {
         // ignore invalid JSON
@@ -224,8 +221,19 @@ export default function RoomPage() {
   };
 
   const handleAvatarChange = (newAvatar: AvatarConfig) => {
-    setAvatar(newAvatar);
-    sessionStorage.setItem("kouppi_player_avatar", JSON.stringify(newAvatar));
+    const normalized = normalizeAvatarConfig(newAvatar);
+    setAvatar(normalized);
+    sessionStorage.setItem("kouppi_player_avatar", JSON.stringify(normalized));
+    if (isLoggedIn() && token) {
+      void fetch(`${getServerUrl()}/api/profile`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ avatar: { id: normalized.id } }),
+      }).catch(() => undefined);
+    }
   };
 
   const handleStartGame = async () => {

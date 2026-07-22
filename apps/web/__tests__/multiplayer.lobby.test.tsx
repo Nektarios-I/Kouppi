@@ -106,7 +106,7 @@ describe("Multiplayer lobby UI", () => {
   it("clears sessionStorage when changing name", async () => {
     sessionStorage.setItem("kouppi_player_id", "old-id");
     sessionStorage.setItem("kouppi_player_name", "OldName");
-    sessionStorage.setItem("kouppi_player_avatar", '{"emoji":"🎮","color":"#000","borderColor":"#111"}');
+    sessionStorage.setItem("kouppi_player_avatar", '{"id":"portrait-01"}');
     const user = userEvent.setup();
     renderLobby();
     await user.click(await screen.findByRole("button", { name: /Change Name/i }));

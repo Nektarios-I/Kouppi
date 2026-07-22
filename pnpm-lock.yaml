@@ -158,6 +158,9 @@ importers:
 
   packages/database:
     dependencies:
+      '@kouppi/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       bcrypt:
         specifier: ^5.1.1
         version: 5.1.1

@@ -1,7 +1,14 @@
 "use client";
 
 import React, { useState } from "react";
-import { AVATAR_CATEGORIES, AVATAR_COLORS, type AvatarConfig } from "@/lib/avatars";
+import type { AvatarConfig } from "@/store/remoteGameStore";
+import {
+  AVATAR_CATALOG,
+  AVATAR_FALLBACK_SRC,
+  AVATAR_RING,
+  getAvatarSrc,
+  normalizeAvatarConfig,
+} from "@/lib/avatars";
 import { HudButton } from "@/components/game/HudButton";
 
 interface AvatarPickerProps {
@@ -12,40 +19,40 @@ interface AvatarPickerProps {
 
 export default function AvatarPicker({ currentAvatar, onSelect, compact = false }: AvatarPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedEmoji, setSelectedEmoji] = useState(currentAvatar?.emoji || "😎");
-  const [selectedColor, setSelectedColor] = useState(
-    AVATAR_COLORS.find((c) => c.value === currentAvatar?.color) || AVATAR_COLORS[0]
-  );
-  const [activeCategory, setActiveCategory] = useState<keyof typeof AVATAR_CATEGORIES>("Faces");
+  const current = normalizeAvatarConfig(currentAvatar);
+  const [selectedId, setSelectedId] = useState(current.id);
 
   const handleSelect = () => {
-    onSelect({
-      emoji: selectedEmoji,
-      color: selectedColor.value,
-      borderColor: selectedColor.border,
-    });
+    onSelect({ id: selectedId });
     setIsOpen(false);
   };
 
-  const displayEmoji = currentAvatar?.emoji || selectedEmoji;
-  const displayColor = currentAvatar?.color || selectedColor.value;
-  const displayBorder = currentAvatar?.borderColor || selectedColor.border;
-  const sizeClass = compact ? "w-10 h-10 text-xl" : "w-14 h-14 text-2xl";
+  const displayId = currentAvatar ? normalizeAvatarConfig(currentAvatar).id : selectedId;
+  const sizeClass = compact ? "w-10 h-10" : "w-14 h-14";
 
   return (
     <div className="relative">
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`avatar-picker-trigger ${sizeClass}`}
+        className={`avatar-picker-trigger avatar-display avatar-display--portrait ${sizeClass}`}
         style={{
-          backgroundColor: displayColor,
-          border: `3px solid ${displayBorder}`,
+          backgroundColor: AVATAR_RING.fill,
+          border: `3px solid ${AVATAR_RING.border}`,
         }}
         title="Change avatar"
         aria-expanded={isOpen}
       >
-        {displayEmoji}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={getAvatarSrc(displayId)}
+          alt=""
+          className="avatar-display__img"
+          draggable={false}
+          onError={(e) => {
+            e.currentTarget.src = AVATAR_FALLBACK_SRC;
+          }}
+        />
         <span className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-black/70 border border-gold/40 text-[10px] flex items-center justify-center">
           ✎
         </span>
@@ -55,13 +62,22 @@ export default function AvatarPicker({ currentAvatar, onSelect, compact = false 
         <div className="avatar-picker-panel left-0 sm:left-auto sm:right-0">
           <div className="flex items-center gap-3 mb-4 pb-3 border-b border-white/10">
             <div
-              className="avatar-display w-14 h-14 text-2xl"
+              className="avatar-display avatar-display--portrait w-14 h-14"
               style={{
-                backgroundColor: selectedColor.value,
-                border: `3px solid ${selectedColor.border}`,
+                backgroundColor: AVATAR_RING.fill,
+                border: `3px solid ${AVATAR_RING.border}`,
               }}
             >
-              {selectedEmoji}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={getAvatarSrc(selectedId)}
+                alt=""
+                className="avatar-display__img"
+                draggable={false}
+                onError={(e) => {
+                  e.currentTarget.src = AVATAR_FALLBACK_SRC;
+                }}
+              />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-xs text-gray-500 font-ui uppercase tracking-wide">Preview</p>
@@ -72,49 +88,32 @@ export default function AvatarPicker({ currentAvatar, onSelect, compact = false 
             </HudButton>
           </div>
 
-          <p className="text-xs text-gray-500 font-ui uppercase tracking-wide mb-2">Color</p>
-          <div className="flex flex-wrap gap-2 mb-4">
-            {AVATAR_COLORS.map((color) => (
-              <button
-                key={color.name}
-                type="button"
-                onClick={() => setSelectedColor(color)}
-                className={`avatar-swatch ${selectedColor.name === color.name ? "avatar-swatch-active" : ""}`}
-                style={{ backgroundColor: color.value, borderColor: color.border }}
-                title={color.name}
-              />
-            ))}
-          </div>
-
-          <p className="text-xs text-gray-500 font-ui uppercase tracking-wide mb-2">Avatar</p>
-          <div className="flex flex-wrap gap-1 mb-3">
-            {(Object.keys(AVATAR_CATEGORIES) as (keyof typeof AVATAR_CATEGORIES)[]).map((cat) => (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => setActiveCategory(cat)}
-                className={`px-2 py-1 rounded text-xs font-ui transition-colors ${
-                  activeCategory === cat
-                    ? "bg-gold/20 text-gold-light border border-gold/30"
-                    : "bg-black/30 text-gray-400 border border-transparent hover:border-white/10"
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-5 gap-1.5 max-h-36 overflow-y-auto pr-1">
-            {AVATAR_CATEGORIES[activeCategory].map((emoji) => (
-              <button
-                key={emoji}
-                type="button"
-                onClick={() => setSelectedEmoji(emoji)}
-                className={`avatar-emoji-btn ${selectedEmoji === emoji ? "avatar-emoji-btn-active" : ""}`}
-              >
-                {emoji}
-              </button>
-            ))}
+          <p className="text-xs text-gray-500 font-ui uppercase tracking-wide mb-2">Portrait</p>
+          <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-52 overflow-y-auto pr-1">
+            {AVATAR_CATALOG.map((entry) => {
+              const active = selectedId === entry.id;
+              return (
+                <button
+                  key={entry.id}
+                  type="button"
+                  onClick={() => setSelectedId(entry.id)}
+                  className={`avatar-portrait-btn ${active ? "avatar-portrait-btn--active" : ""}`}
+                  title={entry.id}
+                  aria-pressed={active}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={getAvatarSrc(entry.id)}
+                    alt=""
+                    className="avatar-display__img"
+                    draggable={false}
+                    onError={(e) => {
+                      e.currentTarget.src = AVATAR_FALLBACK_SRC;
+                    }}
+                  />
+                </button>
+              );
+            })}
           </div>
 
           <HudButton variant="ghost" size="sm" fullWidth className="mt-3" onClick={() => setIsOpen(false)}>
@@ -130,17 +129,17 @@ export function Avatar({
   avatar,
   size = "md",
   showDefault = true,
-  playerId,
 }: {
   avatar?: AvatarConfig | null;
   size?: "sm" | "md" | "lg";
   showDefault?: boolean;
+  /** @deprecated unused — kept for call-site compat */
   playerId?: string;
 }) {
   const sizes = {
-    sm: "w-8 h-8 text-base",
-    md: "w-10 h-10 text-xl",
-    lg: "w-14 h-14 text-2xl",
+    sm: "w-8 h-8",
+    md: "w-10 h-10",
+    lg: "w-14 h-14",
   };
   const borders = { sm: 2, md: 2, lg: 3 };
 
@@ -148,22 +147,38 @@ export function Avatar({
     if (!showDefault) return null;
     return (
       <div
-        className={`avatar-display ${sizes[size]} bg-gray-700 border-2 border-gray-500 text-gray-400`}
+        className={`avatar-display avatar-display--portrait ${sizes[size]}`}
+        style={{
+          backgroundColor: AVATAR_RING.fill,
+          border: `${borders[size]}px solid ${AVATAR_RING.border}`,
+        }}
       >
-        👤
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={AVATAR_FALLBACK_SRC} alt="" className="avatar-display__img" draggable={false} />
       </div>
     );
   }
 
+  const normalized = normalizeAvatarConfig(avatar);
+
   return (
     <div
-      className={`avatar-display ${sizes[size]}`}
+      className={`avatar-display avatar-display--portrait ${sizes[size]}`}
       style={{
-        backgroundColor: avatar.color,
-        border: `${borders[size]}px solid ${avatar.borderColor}`,
+        backgroundColor: AVATAR_RING.fill,
+        border: `${borders[size]}px solid ${AVATAR_RING.border}`,
       }}
     >
-      {avatar.emoji}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={getAvatarSrc(normalized.id)}
+        alt=""
+        className="avatar-display__img"
+        draggable={false}
+        onError={(e) => {
+          e.currentTarget.src = AVATAR_FALLBACK_SRC;
+        }}
+      />
     </div>
   );
 }

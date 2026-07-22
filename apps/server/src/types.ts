@@ -1,10 +1,8 @@
 import type { GameState, TableConfig } from "@kouppi/game-core";
 
-// Avatar configuration
+// Avatar configuration — catalog id; ring styling is fixed in UI
 export type AvatarConfig = {
-  emoji: string;
-  color: string;
-  borderColor: string;
+  id: string;
 };
 
 export type PlayerSession = {

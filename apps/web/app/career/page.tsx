@@ -9,6 +9,7 @@ import TrophyBadge, { RatingBadge } from "@/components/TrophyBadge";
 import CareerLobby from "@/components/CareerLobby";
 import { LobbyShell, LobbyCard } from "@/components/game/LobbyUI";
 import { HudButton } from "@/components/game/HudButton";
+import { Avatar } from "@/components/AvatarPicker";
 
 export default function CareerPage() {
   const { user, isLoggedIn, logout, refreshUser } = useAuthStore();
@@ -50,7 +51,7 @@ export default function CareerPage() {
                 size="sm"
               />
               <span className="font-ui text-sm text-gray-300 hidden sm:inline">
-                {user.avatarEmoji} {user.username}
+                {user.username}
               </span>
               <HudButton variant="ghost" size="sm" onClick={logout}>
                 Logout
@@ -78,15 +79,7 @@ export default function CareerPage() {
           {isLoggedIn() && user && (
             <LobbyCard title="Your Profile" icon="◎">
               <div className="flex items-center gap-4 mb-4">
-                <div
-                  className="avatar-display w-16 h-16 text-3xl"
-                  style={{
-                    backgroundColor: user.avatarColor,
-                    border: `3px solid ${user.avatarBorder}`,
-                  }}
-                >
-                  {user.avatarEmoji}
-                </div>
+                <Avatar avatar={{ id: user.avatarId }} size="lg" />
                 <div>
                   <div className="font-display text-xl font-bold text-gold-light">{user.username}</div>
                   <div className="text-gray-400 text-sm font-ui">
@@ -175,15 +168,7 @@ export default function CareerPage() {
                     >
                       {index + 1}
                     </div>
-                    <div
-                      className="avatar-display w-10 h-10 text-lg shrink-0"
-                      style={{
-                        backgroundColor: player.avatarColor,
-                        border: `2px solid ${player.avatarBorder}`,
-                      }}
-                    >
-                      {player.avatarEmoji}
-                    </div>
+                    <Avatar avatar={{ id: player.avatarId }} size="md" />
                     <div className="min-w-0">
                       <div className="font-ui font-medium truncate">{player.username}</div>
                       <div className="text-xs text-gray-500">

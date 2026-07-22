@@ -23,6 +23,8 @@ import {
 } from "@/components/game/LobbyUI";
 import FriendsPanel from "@/components/FriendsPanel";
 import { getServerUrl } from "@/lib/serverUrl";
+import { Avatar } from "@/components/AvatarPicker";
+import { normalizeAvatarConfig } from "@/lib/avatars";
 
 type RoomFilter = "all" | "waiting" | "live" | "seats";
 type RoomSort = "players" | "newest";
@@ -38,6 +40,7 @@ export default function LobbyPage() {
     listRooms,
     playerId,
     playerName,
+    playerAvatar,
     setIdentity,
     joinRoom,
     joinAsSpectator,
@@ -269,9 +272,16 @@ export default function LobbyPage() {
         {playerName ? (
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-4">
-              <div className="avatar-display w-14 h-14 text-2xl bg-felt-dark border-2 border-gold/40 text-gold-light font-display">
-                {playerName.charAt(0).toUpperCase()}
-              </div>
+              <Avatar
+                avatar={
+                  playerAvatar
+                    ? normalizeAvatarConfig(playerAvatar)
+                    : user?.avatarId
+                      ? { id: user.avatarId }
+                      : null
+                }
+                size="lg"
+              />
               <div>
                 <div className="font-ui font-semibold text-white">{playerName}</div>
                 <div className="text-sm text-gray-400">Ready to play</div>

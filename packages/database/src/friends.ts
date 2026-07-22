@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
+import { resolveAvatarId } from "@kouppi/protocol";
 import { getRawDb } from "./client.js";
 import { getProfileById, getUserByUsername } from "./users.js";
 
@@ -16,9 +17,7 @@ export type FriendRequest = {
 export type FriendProfile = {
   id: string;
   username: string;
-  avatarEmoji: string;
-  avatarColor: string;
-  avatarBorder: string;
+  avatarId: string;
   friendsSince: number;
 };
 
@@ -232,9 +231,7 @@ export function listFriends(userId: string): FriendProfile[] {
   return rows.map((row) => ({
     id: row.friend_id as string,
     username: row.username as string,
-    avatarEmoji: row.avatar_emoji as string,
-    avatarColor: row.avatar_color as string,
-    avatarBorder: row.avatar_border as string,
+    avatarId: resolveAvatarId(row.avatar_emoji as string),
     friendsSince: row.created_at as number,
   }));
 }
@@ -277,14 +274,14 @@ export function searchUsersByUsername(
   query: string,
   excludeUserId: string,
   limit = 10
-): Array<{ id: string; username: string; avatarEmoji: string; avatarColor: string; avatarBorder: string }> {
+): Array<{ id: string; username: string; avatarId: string }> {
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
 
   const db = getRawDb();
   const rows = db
     .prepare(
-      `SELECT id, username, avatar_emoji, avatar_color, avatar_border
+      `SELECT id, username, avatar_emoji
        FROM users
        WHERE username LIKE ? COLLATE NOCASE AND id != ?
        ORDER BY username COLLATE NOCASE
@@ -295,9 +292,7 @@ export function searchUsersByUsername(
   return rows.map((row) => ({
     id: row.id as string,
     username: row.username as string,
-    avatarEmoji: row.avatar_emoji as string,
-    avatarColor: row.avatar_color as string,
-    avatarBorder: row.avatar_border as string,
+    avatarId: resolveAvatarId(row.avatar_emoji as string),
   }));
 }
 
@@ -338,9 +333,7 @@ export function getFriendProfile(userId: string, friendId: string): FriendProfil
   return {
     id: profile.id,
     username: profile.username,
-    avatarEmoji: profile.avatarEmoji,
-    avatarColor: profile.avatarColor,
-    avatarBorder: profile.avatarBorder,
+    avatarId: profile.avatarId,
     friendsSince: row?.created_at ?? Date.now(),
   };
 }

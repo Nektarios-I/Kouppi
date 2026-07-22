@@ -97,7 +97,7 @@ describe("remoteGameStore fixes", () => {
         {
           id: "p1",
           name: "Alice",
-          avatar: { emoji: "😎", color: "#111", borderColor: "#222" },
+          avatar: { id: "portrait-01" },
         },
       ],
     });
@@ -109,7 +109,7 @@ describe("remoteGameStore fixes", () => {
     });
 
     const player = useRemoteGameStore.getState().playersInRoom[0];
-    expect(player.avatar?.emoji).toBe("😎");
+    expect(player.avatar?.id).toBe("portrait-01");
   });
 
   it("shows no_decision message when kicked for missing round choice", () => {

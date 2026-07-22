@@ -65,7 +65,7 @@ export default function FriendsStatsPage() {
           </Link>
           {isLoggedIn() && user ? (
             <span className="font-ui text-sm text-gray-300">
-              {user.avatarEmoji} {user.username}
+              {user.username}
             </span>
           ) : (
             <HudButton variant="kouppi" size="sm" onClick={() => setShowAuthModal(true)}>

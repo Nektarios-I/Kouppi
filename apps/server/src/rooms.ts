@@ -5,9 +5,15 @@ import { hashRoomPassword } from "./security/password.js";
 import { generateJoinSessionToken, isValidJoinSessionToken } from "./security/joinToken.js";
 import { getRoomStore } from "./stores/initRoomStore.js";
 import { InMemoryRoomStore } from "./stores/roomStore.js";
+import { resolveAvatarId } from "@kouppi/protocol";
 
 function store() {
   return getRoomStore();
+}
+
+function normalizeAvatar(avatar: unknown): AvatarConfig | undefined {
+  if (!avatar) return undefined;
+  return { id: resolveAvatarId(avatar) };
 }
 
 /** Generate a unique 6-character room code (no ambiguous 0/O/1/I). */
@@ -212,7 +218,13 @@ export function createRoomWithCreator(
   const base = createRoom(id, merged, seed, (config as any)?.maxPlayers ?? merged.maxPlayers ?? 8, publicCode);
   base.hostId = creator.id;
   const creatorToken = generateJoinSessionToken();
-  base.players.push({ ...creator, afkCount: 0, ready: true, joinSessionToken: creatorToken });
+  base.players.push({
+    ...creator,
+    avatar: normalizeAvatar(creator.avatar),
+    afkCount: 0,
+    ready: true,
+    joinSessionToken: creatorToken,
+  });
   base.started = false;
   const hasPassword = !!(password && password.trim().length > 0);
   base.listedInLobby = options?.listedInLobby ?? !hasPassword;
@@ -271,7 +283,13 @@ export function joinRoom(
   if (room.players.length >= room.maxPlayers && !exists) throw new Error("room_full");
   if (!exists) {
     const token = generateJoinSessionToken();
-    room.players.push({ ...player, afkCount: 0, ready: false, joinSessionToken: token });
+    room.players.push({
+      ...player,
+      avatar: normalizeAvatar(player.avatar),
+      afkCount: 0,
+      ready: false,
+      joinSessionToken: token,
+    });
   } else {
     const hasActiveSocket =
       !!exists.socketId && exists.socketId !== player.socketId && !exists.disconnectedAt;
@@ -299,7 +317,7 @@ export function joinRoom(
     cancelDisconnectGrace(exists);
     exists.socketId = player.socketId;
     if (player.name) exists.name = player.name;
-    if (player.avatar) exists.avatar = player.avatar;
+    if (player.avatar) exists.avatar = normalizeAvatar(player.avatar);
   }
   bumpRoomRevision(room);
   return room;
@@ -332,11 +350,12 @@ export function joinSpectator(
     cancelSpectatorDisconnectGrace(exists);
     exists.socketId = spectator.socketId;
     if (spectator.name) exists.name = spectator.name;
-    if (spectator.avatar) exists.avatar = spectator.avatar;
+    if (spectator.avatar) exists.avatar = normalizeAvatar(spectator.avatar);
   } else {
     if (!room.spectators) room.spectators = [];
     room.spectators.push({
       ...spectator,
+      avatar: normalizeAvatar(spectator.avatar),
       joinSessionToken: generateJoinSessionToken(),
     });
   }

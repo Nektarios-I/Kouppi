@@ -30,6 +30,7 @@ const router = Router();
 // Update profile schema
 const UpdateProfileSchema = z.object({
   avatar: z.object({
+    id: z.string().optional(),
     emoji: z.string().optional(),
     color: z.string().optional(),
     border: z.string().optional(),

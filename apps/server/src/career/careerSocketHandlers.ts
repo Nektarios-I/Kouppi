@@ -33,12 +33,15 @@ import {
   leaveCareerRoom,
   getRoomBySocket,
   getCareerRoom,
+  getCareerRoomByUserId,
+  rebindCareerPlayerSocket,
   getRoomsByAnte,
   getAllCareerRooms,
   handleDisconnect,
+  buildCareerRoomUpdatePayload,
   markRoomInGame,
   markRoomFinished,
-  buildCareerRoomUpdatePayload,
+  setCareerPlayerReady,
   type CareerPlayer,
 } from "./careerRoomManager.js";
 import { getUserById } from "@kouppi/database";
@@ -95,6 +98,18 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
       cb ? cb(err) : socket.emit("career:error", err);
       return;
     }
+
+    // Multiplayer-aligned: reclaim waiting/starting seat after reconnect
+    let activeRoomId: string | null = null;
+    let roomPayload: ReturnType<typeof buildCareerRoomUpdatePayload> | null = null;
+    const existingRoom = getCareerRoomByUserId(user.id);
+    if (existingRoom && (existingRoom.status === "waiting" || existingRoom.status === "starting")) {
+      const rebound = rebindCareerPlayerSocket(existingRoom.id, user.id, socket.id, io, { socket });
+      activeRoomId = existingRoom.id;
+      if (rebound.room) {
+        roomPayload = buildCareerRoomUpdatePayload(rebound.room);
+      }
+    }
     
     const response = {
       userId: user.id,
@@ -102,9 +117,9 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
       rating: user.rating,
       trophies: user.trophies,
       bankroll: user.bankroll,
-      avatarEmoji: user.avatarEmoji,
-      avatarColor: user.avatarColor,
-      avatarBorder: user.avatarBorder,
+      avatarId: user.avatarId,
+      roomId: activeRoomId,
+      room: roomPayload,
     };
     
     cb ? cb(null, response) : socket.emit("career:authenticated", response);
@@ -460,13 +475,33 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
           cb ? cb(err) : socket.emit("career:error", err);
           return;
         }
+        if (isInQueue(user.id)) {
+          leaveQueue(user.id);
+        }
+
+        // Idempotent create: already seated in a waiting/starting Career table
+        const existing =
+          getRoomBySocket(socket.id) ??
+          getCareerRoomByUserId(user.id);
+        if (existing && (existing.status === "waiting" || existing.status === "starting")) {
+          const rebound = rebindCareerPlayerSocket(existing.id, user.id, socket.id, io, {
+            socket,
+          });
+          if (rebound.success && rebound.room) {
+            cb?.(null, {
+              success: true,
+              roomId: rebound.room.id,
+              room: buildCareerRoomUpdatePayload(rebound.room),
+              idempotent: true,
+            });
+            return;
+          }
+        }
+
         if (getRoomBySocket(socket.id)) {
           const err = { code: "already_in_room", message: "Already in a room" };
           cb ? cb(err) : socket.emit("career:error", err);
           return;
-        }
-        if (isInQueue(user.id)) {
-          leaveQueue(user.id);
         }
 
         const room = createCareerRoom(payload.anteId);
@@ -487,10 +522,9 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
           rating: user.rating,
           bankroll: user.bankroll,
           socketId: socket.id,
-          avatarEmoji: user.avatarEmoji,
-          avatarColor: user.avatarColor,
-          avatarBorder: user.avatarBorder,
+          avatarId: user.avatarId,
           joinedAt: Date.now(),
+          ready: false,
         };
         const joined = joinCareerRoom(room.id, player, io, { socket });
         if (!joined.success || !joined.room) {
@@ -540,8 +574,11 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
         }
         if (target.status !== "waiting") {
           const err = {
-            code: "game_in_progress",
-            message: "Cannot join a Career game that has already started",
+            code: target.status === "starting" ? "countdown_in_progress" : "game_in_progress",
+            message:
+              target.status === "starting"
+                ? "Cannot join while the pre-game countdown is running"
+                : "Cannot join a Career game that has already started",
           };
           cb ? cb(err) : socket.emit("career:error", err);
           return;
@@ -577,10 +614,9 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
           rating: user.rating,
           bankroll: user.bankroll,
           socketId: socket.id,
-          avatarEmoji: user.avatarEmoji,
-          avatarColor: user.avatarColor,
-          avatarBorder: user.avatarBorder,
+          avatarId: user.avatarId,
           joinedAt: Date.now(),
+          ready: false,
         };
         const joined = joinCareerRoom(payload.roomId, player, io, { socket });
         if (!joined.success || !joined.room) {
@@ -604,6 +640,41 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
   );
 
   /**
+   * Explicit Ready toggle for Career waiting rooms.
+   * Countdown starts only when the table is full and every player is Ready.
+   */
+  socket.on(
+    "career:setReady",
+    (
+      payload: { token: string; ready: boolean },
+      cb?: (err: unknown, data?: unknown) => void
+    ) => {
+      try {
+        const auth = authenticateSocket(socket, payload.token);
+        if (!auth) {
+          const err = { code: "auth_failed", message: "Authentication required" };
+          cb ? cb(err) : socket.emit("career:error", err);
+          return;
+        }
+        const result = setCareerPlayerReady(socket.id, !!payload.ready, io);
+        if (!result.success || !result.room) {
+          const err = { code: "ready_failed", message: result.error ?? "Could not update ready" };
+          cb ? cb(err) : socket.emit("career:error", err);
+          return;
+        }
+        cb?.(null, {
+          success: true,
+          ready: !!payload.ready,
+          room: buildCareerRoomUpdatePayload(result.room),
+        });
+      } catch (e: unknown) {
+        const err = { code: "error", message: e instanceof Error ? e.message : "error" };
+        cb ? cb(err) : socket.emit("career:error", err);
+      }
+    }
+  );
+
+  /**
    * Leave current waiting room
    */
   socket.on("career:leaveRoom", (payload: { token: string }, cb?: (err: any, data?: any) => void) => {
@@ -615,8 +686,8 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
         return;
       }
       
-      // Can only leave if room hasn't started
-      if (currentRoom.status !== "waiting") {
+      // Can only leave if room hasn't started playing
+      if (currentRoom.status === "in-game" || currentRoom.status === "finished") {
         const err = { code: "game_in_progress", message: "Cannot leave after game started" };
         cb ? cb(err) : socket.emit("career:error", err);
         return;
@@ -655,9 +726,8 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
           userId: p.userId,
           username: p.username,
           rating: p.rating,
-          avatarEmoji: p.avatarEmoji,
-          avatarColor: p.avatarColor,
-          avatarBorder: p.avatarBorder,
+          avatarId: p.avatarId,
+          ready: !!p.ready,
         })),
         playerCount: currentRoom.players.length,
         maxPlayers: currentRoom.maxPlayers,
@@ -677,8 +747,8 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
 
   /**
    * Handle game starting event - DEPRECATED/REMOVED
-   * Game creation is now handled automatically in triggerGameStart()
-   * via careerRoomManager when the 30-second timer expires.
+   * Game creation is handled automatically in triggerGameStart()
+   * via careerRoomManager when the Ready countdown expires.
    */
 
   /**

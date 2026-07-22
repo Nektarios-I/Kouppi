@@ -1,12 +1,13 @@
 import { z } from "zod";
+import { resolveAvatarId } from "./avatars.js";
 
-// Avatar configuration
-export const AvatarConfig = z.object({
-  emoji: z.string().min(1),
-  color: z.string().min(1),
-  borderColor: z.string().min(1),
-});
-export type AvatarConfig = z.infer<typeof AvatarConfig>;
+// Avatar configuration — catalog id only (fixed premium ring in UI)
+export const AvatarConfig = z
+  .object({
+    id: z.string().min(1).max(64),
+  })
+  .transform((v) => ({ id: resolveAvatarId(v.id) }));
+export type AvatarConfig = { id: string };
 
 // Player identity
 export const PlayerIdentity = z.object({
@@ -193,9 +194,7 @@ export type RoomsListItem = z.infer<typeof RoomsListItem>;
 export const FriendProfile = z.object({
   id: z.string(),
   username: z.string(),
-  avatarEmoji: z.string(),
-  avatarColor: z.string(),
-  avatarBorder: z.string(),
+  avatarId: z.string(),
   friendsSince: z.number(),
 });
 export type FriendProfile = z.infer<typeof FriendProfile>;

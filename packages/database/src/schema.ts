@@ -26,9 +26,9 @@ CREATE TABLE IF NOT EXISTS users (
   total_earnings INTEGER NOT NULL DEFAULT 0,
   
   -- Customization (JSON stored as TEXT)
-  avatar_emoji TEXT NOT NULL DEFAULT '🎭',
-  avatar_color TEXT NOT NULL DEFAULT '#6366f1',
-  avatar_border TEXT NOT NULL DEFAULT '#4f46e5'
+  avatar_emoji TEXT NOT NULL DEFAULT 'portrait-01',
+  avatar_color TEXT NOT NULL DEFAULT '#0c101c',
+  avatar_border TEXT NOT NULL DEFAULT '#d4af37'
 );
 
 -- Matches table: stores career match history

@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useRemoteGameStore } from "@/store/remoteGameStore";
+import type { AvatarConfig } from "@/store/remoteGameStore";
 import type { GameState } from "@kouppi/game-core";
 import { canShistri, shistriBet } from "@kouppi/game-core";
 import { PokerTable } from "./PokerTable";
@@ -73,7 +74,7 @@ export default function MultiplayerTableGraphics() {
   const gameState = state as GameState | null;
 
   const avatarMap = useMemo(() => {
-    const map: Record<string, { emoji: string; color: string; borderColor: string }> = {};
+    const map: Record<string, AvatarConfig> = {};
     for (const p of playersInRoom) {
       if (p.avatar) map[p.id] = p.avatar;
     }

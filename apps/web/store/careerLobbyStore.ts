@@ -48,9 +48,9 @@ export interface RoomPlayer {
   userId: string;
   username: string;
   rating: number;
-  avatarEmoji: string;
-  avatarColor: string;
-  avatarBorder: string;
+  avatarId: string;
+  ready?: boolean;
+  connected?: boolean;
 }
 
 export interface CareerRoomState {
@@ -84,9 +84,7 @@ export interface MatchFoundData {
   opponent: {
     username: string;
     rating: number;
-    avatarEmoji: string;
-    avatarColor: string;
-    avatarBorder: string;
+    avatarId: string;
   };
 }
 
@@ -139,6 +137,7 @@ interface CareerLobbyState {
   startQueuePolling: (token: string) => void;
   stopQueuePolling: () => void;
   leaveRoom: (token: string) => void;
+  setReady: (token: string, ready: boolean) => Promise<boolean>;
   listWaitingRooms: (token: string, anteId?: string) => Promise<void>;
   browseAllWaitingRooms: (token: string) => Promise<void>;
   createWaitingRoom: (token: string, anteId: string) => Promise<boolean>;
@@ -226,17 +225,34 @@ export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
     const { socket } = get();
     if (socket?.connected) return;
 
+    // Reuse the existing Socket.IO client (multiplayer pattern) — do not spawn duplicates.
+    if (socket) {
+      set({ isConnecting: true, error: null, authToken: token });
+      socket.connect();
+      return;
+    }
+
     set({ isConnecting: true, error: null, authToken: token });
 
     const newSocket = io(getApiUrl(), {
       transports: ["websocket", "polling"],
       autoConnect: true,
+      reconnection: true,
+      reconnectionAttempts: 20,
+      reconnectionDelay: 500,
+      reconnectionDelayMax: 5000,
     });
 
     newSocket.on("connect", () => {
+      const authToken = get().authToken || token;
       set({ isConnected: true, isConnecting: false });
-      newSocket.emit("career:auth", { token }, (err: unknown, data?: unknown) => {
-        const parsed = parseSocketAck<{ rating: number; bankroll: number }>(err, data);
+      newSocket.emit("career:auth", { token: authToken }, (err: unknown, data?: unknown) => {
+        const parsed = parseSocketAck<{
+          rating: number;
+          bankroll: number;
+          roomId?: string | null;
+          room?: CareerRoomState | null;
+        }>(err, data);
         if (!parsed.ok) {
           clearAuthIfNeeded(parsed.code, parsed.error);
           set({
@@ -251,12 +267,19 @@ export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
           isAuthenticated: true,
           playerRating: parsed.data.rating,
           playerBankroll: parsed.data.bankroll,
+          error: null,
+          ...(parsed.data.room
+            ? { currentRoom: parsed.data.room, matchFound: null }
+            : !parsed.data.roomId && get().currentRoom
+              ? { currentRoom: null }
+              : {}),
         });
-        void get().fetchTiers(token);
+        void get().fetchTiers(authToken);
       });
     });
 
     newSocket.on("disconnect", () => {
+      // Keep currentRoom like multiplayer — server holds the seat through reconnect grace.
       set({ isConnected: false, isAuthenticated: false });
       get().stopQueuePolling();
     });
@@ -289,8 +312,24 @@ export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
         set({
           currentRoom: {
             ...currentRoom,
+            status: "starting",
             autoStartAt: data.startsAt,
             secondsRemaining: data.secondsRemaining,
+          },
+        });
+      }
+    });
+
+    newSocket.on("career:countdownCancelled", (data: { roomId: string; reason?: string }) => {
+      const { currentRoom } = get();
+      if (currentRoom?.roomId === data.roomId) {
+        set({
+          currentRoom: {
+            ...currentRoom,
+            status: "waiting",
+            autoStartAt: null,
+            secondsRemaining: null,
+            players: currentRoom.players.map((p) => ({ ...p, ready: false })),
           },
         });
       }
@@ -537,6 +576,39 @@ export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
     });
   },
 
+  setReady: async (token: string, ready: boolean): Promise<boolean> => {
+    const { socket, currentRoom } = get();
+    if (!socket?.connected || !currentRoom) {
+      set({ error: "Not in a Career waiting table" });
+      return false;
+    }
+    return withAckTimeout<boolean>(
+      (finish) => {
+        socket.emit(
+          "career:setReady",
+          { token, ready },
+          (err: unknown, data?: unknown) => {
+            const parsed = parseSocketAck<{ success?: boolean; room?: CareerRoomState }>(err, data);
+            if (!parsed.ok) {
+              clearAuthIfNeeded(parsed.code, parsed.error);
+              set({ error: parsed.error ?? "Could not update ready" });
+              finish(false);
+              return;
+            }
+            if (parsed.data.room) {
+              set({ currentRoom: parsed.data.room, matchFound: null });
+            }
+            finish(true);
+          }
+        );
+      },
+      () => {
+        set({ error: "Ready request timed out — check your connection and try again" });
+        return false;
+      }
+    );
+  },
+
   listWaitingRooms: async (token: string, anteId?: string): Promise<void> => {
     const { socket } = get();
     if (!socket?.connected) {
@@ -610,7 +682,7 @@ export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
                   status: "waiting",
                   players: [],
                   playerCount: 1,
-                  maxPlayers: 8,
+                  maxPlayers: 2,
                   autoStartAt: null,
                   secondsRemaining: null,
                 },

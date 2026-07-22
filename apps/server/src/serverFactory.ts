@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import { createServer } from "http";
 import { Server } from "socket.io";
-import { CreateRoomPayload, JoinRoomPayload, ClientIntent, StartRoomPayload, JoinAsSpectatorPayload } from "@kouppi/protocol";
+import { CreateRoomPayload, JoinRoomPayload, ClientIntent, StartRoomPayload, JoinAsSpectatorPayload, resolveAvatarId, isAvatarId } from "@kouppi/protocol";
 import { 
   createRoomWithCreator, joinRoom, joinSpectator, leaveRoom, closeRoom, handleClientIntent, applySystemIntent, snapshot, getRoom, roomsInfo, startRoom,
   startTurnTimer, clearTurnTimer, getTurnTimerInfo, resetAfkCount, incrementAfkCount, shouldKickForAfk,
@@ -31,7 +31,7 @@ import friendsRoutes from "./friends/friendsRoutes.js";
 import { persistCasualFriendsSessionFromRoom } from "./casual/persistCasualSession.js";
 import { registerCareerHandlers } from "./career/careerSocketHandlers.js";
 import { registerFriendHandlers, updateAndBroadcastPresence } from "./friends/friendSocketHandlers.js";
-import { isCareerGame, handleCareerGameEnd, getCareerRoomByGameId, handleMatchFound } from "./career/careerRoomManager.js";
+import { isCareerGame, handleCareerGameEnd, getCareerRoomByGameId, handleMatchFound, startCareerStaleRoomCleanup, stopCareerStaleRoomCleanup } from "./career/careerRoomManager.js";
 import {
   setOnMatchFound,
   clearOnMatchFound,
@@ -77,7 +77,7 @@ function resolveJoinIdentity(
       identity: {
         id: user.id,
         name: identity.name || user.username,
-        avatar: identity.avatar,
+        avatar: identity.avatar ?? { id: user.avatarId },
       },
     };
   }
@@ -210,6 +210,7 @@ export function createKouppiServer(opts?: {
     matchmakingInterval = setInterval(() => {
       runMatchmaking();
     }, MATCHMAKING_INTERVAL_MS);
+    startCareerStaleRoomCleanup(60_000);
   }
 
   io.on("connection", (socket) => {
@@ -1818,19 +1819,30 @@ export function createKouppiServer(opts?: {
           return;
         }
         
-        // Validate avatar
-        if (!avatar || typeof avatar.emoji !== "string" || typeof avatar.color !== "string" || typeof avatar.borderColor !== "string") {
+        // Validate avatar (catalog id; normalize legacy payloads)
+        const rawId =
+          avatar && typeof avatar === "object"
+            ? typeof (avatar as { id?: string }).id === "string"
+              ? (avatar as { id: string }).id
+              : typeof (avatar as { emoji?: string }).emoji === "string"
+                ? (avatar as { emoji: string }).emoji
+                : null
+            : null;
+        if (!rawId) {
           const err = { code: "invalid_avatar", message: "Invalid avatar configuration" };
           cb ? cb(err) : socket.emit("error", err);
           return;
         }
-        
+
+        const id = resolveAvatarId(rawId);
+        if (!isAvatarId(id)) {
+          const err = { code: "invalid_avatar", message: "Unknown avatar id" };
+          cb ? cb(err) : socket.emit("error", err);
+          return;
+        }
+
         // Update player's avatar
-        player.avatar = {
-          emoji: avatar.emoji.slice(0, 8), // Limit emoji length
-          color: avatar.color.slice(0, 20),
-          borderColor: avatar.borderColor.slice(0, 20),
-        };
+        player.avatar = { id };
         
         bumpRoomRevision(room);
         io.to(resolvedId).emit("roomUpdate", buildRoomUpdatePayload(room));
@@ -1865,6 +1877,7 @@ export function createKouppiServer(opts?: {
       clearInterval(cleanupInterval);
       if (matchmakingInterval) clearInterval(matchmakingInterval);
       clearOnMatchFound();
+      stopCareerStaleRoomCleanup();
     },
     /** True when createKouppiServer registered the Career matchmaking callback. */
     careerMatchmakingWired: careerDbInitialized,

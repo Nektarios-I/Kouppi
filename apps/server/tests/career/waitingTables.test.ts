@@ -13,6 +13,8 @@ import { issueTestAuthToken } from "../helpers/authToken.js";
 import {
   createCareerRoom,
   joinCareerRoom,
+  clearAllCareerRoomsForTests,
+  getCareerRoom,
   type CareerPlayer,
 } from "../../src/career/careerRoomManager.js";
 import { clearQueue, clearOnMatchFound } from "../../src/career/queue.js";
@@ -52,6 +54,7 @@ describe("Career waiting tables (Phase 5)", () => {
   beforeEach(() => {
     clearQueue();
     clearOnMatchFound();
+    clearAllCareerRoomsForTests();
   });
 
   it("joinAnte ACK returns queueJoined payload (cb + event contract)", async () => {
@@ -112,10 +115,9 @@ describe("Career waiting tables (Phase 5)", () => {
       rating: host.rating,
       bankroll: host.bankroll,
       socketId: "fake-host-socket",
-      avatarEmoji: host.avatarEmoji,
-      avatarColor: host.avatarColor,
-      avatarBorder: host.avatarBorder,
+      avatarId: "portrait-01",
       joinedAt: Date.now(),
+      ready: false,
     };
     joinCareerRoom(room.id, hostPlayer, server.io);
     room.status = "in-game";
@@ -179,6 +181,64 @@ describe("Career waiting tables (Phase 5)", () => {
     });
   });
 
+  it("createWaitingRoom survives disconnect within reconnect grace (multiplayer-aligned)", async () => {
+    const host = await createUser(`cwg_${Date.now().toString().slice(-8)}`, "password123");
+    const token = issueTestAuthToken(host.id, host.username);
+    const server = createKouppiServer({ corsOrigin: "*", websocketOnly: true });
+    await new Promise<void>((resolve) => server.httpServer.listen(0, resolve));
+    const address = server.httpServer.address() as AddressInfo;
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const socket = ioc(baseUrl, { transports: ["websocket"], forceNew: true });
+    await new Promise<void>((resolve, reject) => {
+      socket.on("connect", () => resolve());
+      socket.on("connect_error", reject);
+    });
+
+    const created = await emitAck<{
+      success: boolean;
+      roomId: string;
+      room: { roomId: string; playerCount: number };
+    }>(socket, "career:createWaitingRoom", { token, anteId: "bronze-1" });
+    expect(created.err).toBeNull();
+    const roomId = created.data?.roomId;
+    expect(roomId).toBeTruthy();
+
+    socket.disconnect();
+    await new Promise((r) => setTimeout(r, 150));
+
+    // Room must still exist during grace (multiplayer keeps seats ~45s)
+    const stillThere = getCareerRoom(roomId!);
+    expect(stillThere).toBeTruthy();
+    expect(stillThere?.players.length).toBe(1);
+    expect(stillThere?.players[0]?.disconnectedAt).toBeTruthy();
+
+    const socket2 = ioc(baseUrl, { transports: ["websocket"], forceNew: true });
+    await new Promise<void>((resolve, reject) => {
+      socket2.on("connect", () => resolve());
+      socket2.on("connect_error", reject);
+    });
+
+    const auth = await emitAck<{
+      roomId: string | null;
+      room: { roomId: string; playerCount: number; players: Array<{ connected?: boolean }> };
+    }>(socket2, "career:auth", { token });
+    expect(auth.err).toBeNull();
+    expect(auth.data?.roomId).toBe(roomId);
+    expect(auth.data?.room?.playerCount).toBe(1);
+    expect(auth.data?.room?.players[0]?.connected).toBe(true);
+
+    const rebound = getCareerRoom(roomId!);
+    expect(rebound?.players[0]?.disconnectedAt).toBeUndefined();
+    expect(rebound?.players[0]?.socketId).toBe(socket2.id);
+
+    socket2.disconnect();
+    server.stopCleanup();
+    await new Promise<void>((resolve, reject) => {
+      server.httpServer.close((e) => (e ? reject(e) : resolve()));
+    });
+  });
+
   it("lists all waiting rooms when anteId is omitted", async () => {
     const host = await createUser(`wa_${Date.now().toString().slice(-8)}`, "password123");
     const token = issueTestAuthToken(host.id, host.username);
@@ -202,10 +262,9 @@ describe("Career waiting tables (Phase 5)", () => {
       rating: host.rating,
       bankroll: host.bankroll,
       socketId: "fake-host-all",
-      avatarEmoji: host.avatarEmoji,
-      avatarColor: host.avatarColor,
-      avatarBorder: host.avatarBorder,
+      avatarId: "portrait-01",
       joinedAt: Date.now(),
+      ready: false,
     };
     joinCareerRoom(room.id, hostPlayer, server.io);
 

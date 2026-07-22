@@ -45,10 +45,9 @@ function makePlayer(
     rating: user.rating,
     bankroll: user.bankroll,
     socketId,
-    avatarEmoji: "🎭",
-    avatarColor: "#6366f1",
-    avatarBorder: "#4f46e5",
+    avatarId: "portrait-01",
     joinedAt: Date.now(),
+      ready: false,
   };
 }
 

@@ -53,9 +53,7 @@ export type PlayerInfo = {
 
 // Avatar configuration
 export type AvatarConfig = {
-  emoji: string;
-  color: string;
-  borderColor: string;
+  id: string;
 };
 
 const SESSION_ROOM_KEY = "kouppi_active_room_code";

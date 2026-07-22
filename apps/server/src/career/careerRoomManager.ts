@@ -1,9 +1,10 @@
 /**
  * Career Room Manager
- * 
+ *
  * Manages Career Mode rooms with:
- * - Auto-fill: Players join existing non-started rooms first
- * - Auto-start: 30-second timer when 2+ players join
+ * - Explicit Ready gate: countdown starts only when required players are present and ready
+ * - Auto-start: 60-second timer after both Ready
+ * - Join lock while countdown/starting
  * - Cleanup: Proper resource release after games end
  * - Naming: Unique room IDs with "career-" prefix to avoid conflicts
  */
@@ -21,13 +22,33 @@ import {
   getRoom,
   closeRoom,
   snapshot,
+  setPlayerReady,
+  RECONNECT_GRACE_MS,
 } from "../rooms.js";
 import type { TableConfig } from "@kouppi/game-core";
 import { SHISTRI_DEFAULT_MIN_CHIP, SHISTRI_DEFAULT_PERCENT } from "@kouppi/game-core";
 
-const MAX_PLAYERS_PER_ROOM = 8;
-const AUTO_START_DELAY_MS = 30000; // 30 seconds
+/** Career ranked waiting / Quick Match tables are 1v1. */
+const MAX_PLAYERS_PER_ROOM = 2;
+/** Production default: 60s after both players Ready. */
+let AUTO_START_DELAY_MS = 60_000;
+const DEFAULT_AUTO_START_DELAY_MS = 60_000;
 const CAREER_ROOM_PREFIX = "career-";
+
+/** Read current auto-start delay (tests / diagnostics). */
+export function getAutoStartDelayMs(): number {
+  return AUTO_START_DELAY_MS;
+}
+
+/** Test-only: override auto-start delay without changing production default callers. */
+export function setAutoStartDelayMsForTests(ms: number): void {
+  AUTO_START_DELAY_MS = ms;
+}
+
+/** Test-only: restore production default delay. */
+export function resetAutoStartDelayMsForTests(): void {
+  AUTO_START_DELAY_MS = DEFAULT_AUTO_START_DELAY_MS;
+}
 
 export interface CareerPlayer {
   odlayerId: string;
@@ -40,10 +61,12 @@ export interface CareerPlayer {
   rating: number;
   bankroll: number;
   socketId: string;
-  avatarEmoji: string;
-  avatarColor: string;
-  avatarBorder: string;
+  avatarId: string;
   joinedAt: number;
+  ready: boolean;
+  /** Multiplayer-style reconnect grace (waiting/starting tables). */
+  disconnectedAt?: number;
+  pendingRemovalTimer?: ReturnType<typeof setTimeout>;
 }
 
 export interface CareerRoom {
@@ -72,6 +95,36 @@ const socketToRoom = new Map<string, string>();
 const userToRoom = new Map<string, string>();
 // Map game room IDs to career room IDs (for tracking game completion)
 const careerGameMapping = new Map<string, string>();
+
+/**
+ * Test-only: clear all Career waiting/in-game room state and timers.
+ * Does not clear the module-level stale-room interval.
+ */
+export function clearAllCareerRoomsForTests(): void {
+  for (const room of careerRooms.values()) {
+    if (room.autoStartTimer) {
+      clearTimeout(room.autoStartTimer);
+      room.autoStartTimer = null;
+    }
+    for (const player of room.players) {
+      cancelCareerDisconnectGrace(player);
+    }
+  }
+  careerRooms.clear();
+  socketToRoom.clear();
+  userToRoom.clear();
+  careerGameMapping.clear();
+}
+
+/** Cancel pending reconnect-grace removal for a Career seat. */
+export function cancelCareerDisconnectGrace(player: CareerPlayer | undefined): void {
+  if (!player) return;
+  player.disconnectedAt = undefined;
+  if (player.pendingRemovalTimer) {
+    clearTimeout(player.pendingRemovalTimer);
+    player.pendingRemovalTimer = undefined;
+  }
+}
 
 /**
  * Generate a unique career room ID
@@ -160,8 +213,8 @@ export function joinCareerRoom(
     return { success: false, error: "Insufficient bankroll" };
   }
 
-  // Add player
-  room.players.push(player);
+  // Add player (not ready until they explicitly Ready)
+  room.players.push({ ...player, ready: player.ready ?? false });
   socketToRoom.set(player.socketId, roomId);
   userToRoom.set(player.userId, roomId);
 
@@ -174,13 +227,9 @@ export function joinCareerRoom(
     void opts.socket.join(roomId);
   }
 
-  // Broadcast updated room state
+  // Broadcast updated room state — countdown starts only after all present players Ready
   broadcastRoomState(room, io);
-
-  // Start auto-start timer if 2+ players
-  if (room.players.length >= 2 && !room.autoStartTimer) {
-    startAutoStartTimer(room, io);
-  }
+  maybeStartCountdown(room, io);
 
   return { success: true, room };
 }
@@ -218,7 +267,7 @@ export function findOrCreateRoom(
 }
 
 /**
- * Remove a player from their career room
+ * Remove a player from their career room (explicit leave — immediate, no grace).
  */
 export function leaveCareerRoom(
   socketId: string,
@@ -243,24 +292,58 @@ export function leaveCareerRoom(
   }
 
   const player = room.players[playerIndex];
+  cancelCareerDisconnectGrace(player);
+  return finalizeCareerPlayerRemoval(room, playerIndex, io);
+}
+
+/**
+ * Remove a seated Career player by userId (grace expiry / forced removal).
+ */
+export function removeCareerPlayerByUserId(
+  roomId: string,
+  userId: string,
+  io: Server
+): { success: boolean; room?: CareerRoom } {
+  const room = careerRooms.get(roomId);
+  if (!room) return { success: false };
+  const playerIndex = room.players.findIndex((p) => p.userId === userId);
+  if (playerIndex === -1) return { success: false };
+  const player = room.players[playerIndex];
+  cancelCareerDisconnectGrace(player);
+  return finalizeCareerPlayerRemoval(room, playerIndex, io);
+}
+
+function finalizeCareerPlayerRemoval(
+  room: CareerRoom,
+  playerIndex: number,
+  io: Server
+): { success: boolean; room?: CareerRoom } {
+  const player = room.players[playerIndex];
   room.players.splice(playerIndex, 1);
-  socketToRoom.delete(socketId);
+  if (player.socketId) {
+    socketToRoom.delete(player.socketId);
+  }
   userToRoom.delete(player.userId);
 
   console.log(
-    `[Career] Player ${player.username} left room ${roomId} (${room.players.length}/${room.maxPlayers})`
+    `[Career] Player ${player.username} left room ${room.id} (${room.players.length}/${room.maxPlayers})`
   );
 
-  // Cancel auto-start if less than 2 players
-  if (room.players.length < 2 && room.autoStartTimer) {
-    cancelAutoStartTimer(room);
+  // Leaving before game start cancels countdown and returns remaining player(s) to waiting
+  if (room.status === "starting" || room.autoStartTimer) {
+    cancelAutoStartTimer(room, io, "player_left");
+  }
+  for (const remaining of room.players) {
+    remaining.ready = false;
+  }
+  if (room.status === "starting") {
+    room.status = "waiting";
   }
 
-  // Broadcast updated room state
   broadcastRoomState(room, io);
 
-  // Cleanup empty rooms
-  if (room.players.length === 0 && room.status === "waiting") {
+  // Cleanup empty rooms (waiting only — do not wipe in-game)
+  if (room.players.length === 0 && (room.status === "waiting" || room.status === "starting")) {
     cleanupRoom(room.id);
   }
 
@@ -268,7 +351,119 @@ export function leaveCareerRoom(
 }
 
 /**
- * Start the 30-second auto-start timer
+ * Multiplayer-aligned reconnect grace: keep the seat briefly on disconnect so
+ * Create Waiting Table / Quick Match lobbies survive socket blips and client reconnects.
+ */
+export function beginCareerDisconnectGrace(
+  socketId: string,
+  io: Server,
+  graceMs: number = RECONNECT_GRACE_MS
+): void {
+  const roomId = socketToRoom.get(socketId);
+  if (!roomId) return;
+
+  const room = careerRooms.get(roomId);
+  if (!room) {
+    socketToRoom.delete(socketId);
+    return;
+  }
+
+  const player = room.players.find((p) => p.socketId === socketId);
+  if (!player) {
+    socketToRoom.delete(socketId);
+    return;
+  }
+
+  // In-game / finished Career metadata rooms: drop socket mapping only (game room has its own grace)
+  if (room.status === "in-game" || room.status === "finished") {
+    socketToRoom.delete(socketId);
+    player.socketId = "";
+    player.odocketId = "";
+    return;
+  }
+
+  cancelCareerDisconnectGrace(player);
+  player.disconnectedAt = Date.now();
+  socketToRoom.delete(socketId);
+  player.socketId = "";
+  player.odocketId = "";
+
+  if (room.status === "starting" || room.autoStartTimer) {
+    cancelAutoStartTimer(room, io, "player_disconnected");
+    for (const remaining of room.players) {
+      remaining.ready = false;
+    }
+    room.status = "waiting";
+  }
+
+  console.log(
+    `[Career] Player ${player.username} disconnected from ${room.id} (reconnect grace ${graceMs}ms)`
+  );
+  broadcastRoomState(room, io);
+
+  const userId = player.userId;
+  player.pendingRemovalTimer = setTimeout(() => {
+    console.log(`[Career] Reconnect grace expired for ${userId} in ${roomId}`);
+    removeCareerPlayerByUserId(roomId, userId, io);
+  }, graceMs);
+}
+
+/**
+ * Set Career waiting-room Ready flag. Countdown starts only when
+ * the room is full (maxPlayers) and every seated player is ready.
+ */
+export function setCareerPlayerReady(
+  socketId: string,
+  ready: boolean,
+  io: Server
+): { success: boolean; room?: CareerRoom; error?: string } {
+  const roomId = socketToRoom.get(socketId);
+  if (!roomId) {
+    return { success: false, error: "Not in a career room" };
+  }
+  const room = careerRooms.get(roomId);
+  if (!room) {
+    return { success: false, error: "Room not found" };
+  }
+  if (room.status !== "waiting" && room.status !== "starting") {
+    return { success: false, error: "Game already in progress" };
+  }
+
+  const player = room.players.find((p) => p.socketId === socketId);
+  if (!player) {
+    return { success: false, error: "Player not in room" };
+  }
+
+  player.ready = !!ready;
+
+  // Un-ready during countdown cancels and returns to waiting
+  if (!player.ready && (room.status === "starting" || room.autoStartTimer)) {
+    cancelAutoStartTimer(room, io, "ready_cleared");
+    room.status = "waiting";
+  }
+
+  broadcastRoomState(room, io);
+  maybeStartCountdown(room, io);
+  return { success: true, room };
+}
+
+function allSeatedPlayersReady(room: CareerRoom): boolean {
+  return (
+    room.players.length >= 2 &&
+    room.players.length >= room.maxPlayers &&
+    room.players.every((p) => p.ready && !!p.socketId && !p.disconnectedAt)
+  );
+}
+
+function maybeStartCountdown(room: CareerRoom, io: Server): void {
+  if (room.status !== "waiting") return;
+  if (room.autoStartTimer) return;
+  if (!allSeatedPlayersReady(room)) return;
+  startAutoStartTimer(room, io);
+}
+
+/**
+ * Start the auto-start countdown (after both Ready).
  */
 function startAutoStartTimer(room: CareerRoom, io: Server) {
   if (room.autoStartTimer) {
@@ -276,11 +471,10 @@ function startAutoStartTimer(room: CareerRoom, io: Server) {
   }
 
   room.autoStartAt = Date.now() + AUTO_START_DELAY_MS;
-  room.status = "waiting"; // Still waiting, just with timer
+  room.status = "starting"; // Locks further joins
 
-  console.log(`[Career] Auto-start timer started for room ${room.id}`);
+  console.log(`[Career] Auto-start timer started for room ${room.id} (${AUTO_START_DELAY_MS}ms)`);
 
-  // Notify players
   io.to(room.id).emit("career:autoStartTimer", {
     roomId: room.id,
     startsAt: room.autoStartAt,
@@ -295,12 +489,22 @@ function startAutoStartTimer(room: CareerRoom, io: Server) {
 /**
  * Cancel the auto-start timer
  */
-function cancelAutoStartTimer(room: CareerRoom) {
+function cancelAutoStartTimer(
+  room: CareerRoom,
+  io?: Server,
+  reason: string = "cancelled"
+) {
   if (room.autoStartTimer) {
     clearTimeout(room.autoStartTimer);
     room.autoStartTimer = null;
-    room.autoStartAt = null;
-    console.log(`[Career] Auto-start timer cancelled for room ${room.id}`);
+  }
+  room.autoStartAt = null;
+  console.log(`[Career] Auto-start timer cancelled for room ${room.id} (${reason})`);
+  if (io) {
+    io.to(room.id).emit("career:countdownCancelled", {
+      roomId: room.id,
+      reason,
+    });
   }
 }
 
@@ -308,9 +512,12 @@ function cancelAutoStartTimer(room: CareerRoom) {
  * Trigger the game start when timer expires
  */
 function triggerGameStart(room: CareerRoom, io: Server) {
-  if (room.players.length < 2) {
-    console.log(`[Career] Cannot start room ${room.id} - not enough players`);
-    cancelAutoStartTimer(room);
+  if (room.players.length < 2 || !allSeatedPlayersReady(room)) {
+    console.log(`[Career] Cannot start room ${room.id} - not enough ready players`);
+    cancelAutoStartTimer(room, io, "not_ready");
+    room.status = "waiting";
+    for (const p of room.players) p.ready = false;
+    broadcastRoomState(room, io);
     return;
   }
 
@@ -319,11 +526,14 @@ function triggerGameStart(room: CareerRoom, io: Server) {
     const socket = io.sockets.sockets.get(player.socketId);
     if (!socket) {
       console.error(`[Career] Player ${player.username} socket ${player.socketId} not connected`);
+      cancelAutoStartTimer(room, io, "player_disconnected");
+      room.status = "waiting";
+      for (const p of room.players) p.ready = false;
       io.to(room.id).emit("career:error", {
         code: "player_disconnected",
         message: `${player.username} disconnected before game could start`,
       });
-      room.status = "waiting";
+      broadcastRoomState(room, io);
       return;
     }
   }
@@ -361,9 +571,7 @@ function triggerGameStart(room: CareerRoom, io: Server) {
         name: firstPlayer.username,
         socketId: firstPlayer.socketId,
         avatar: {
-          emoji: firstPlayer.avatarEmoji,
-          color: firstPlayer.avatarColor,
-          borderColor: firstPlayer.avatarBorder,
+          id: firstPlayer.avatarId,
         },
       },
       gameConfig,
@@ -390,11 +598,15 @@ function triggerGameStart(room: CareerRoom, io: Server) {
         name: player.username,
         socketId: player.socketId,
         avatar: {
-          emoji: player.avatarEmoji,
-          color: player.avatarColor,
-          borderColor: player.avatarBorder,
+          id: player.avatarId,
         },
       });
+    }
+
+    // Career auto-start is server-authoritative: mark everyone ready so startRoom can proceed.
+    // (Casual MP requires explicit Ready; Career countdown already served that purpose.)
+    for (const player of room.players) {
+      setPlayerReady(gameRoomId, player.userId, true);
     }
 
     // Start the game
@@ -499,6 +711,7 @@ export function cleanupRoom(roomId: string): boolean {
 
   // Clear all mappings
   for (const player of room.players) {
+    cancelCareerDisconnectGrace(player);
     socketToRoom.delete(player.socketId);
     userToRoom.delete(player.userId);
   }
@@ -527,9 +740,9 @@ export function buildCareerRoomUpdatePayload(room: CareerRoom) {
       userId: p.userId,
       username: p.username,
       rating: p.rating,
-      avatarEmoji: p.avatarEmoji,
-      avatarColor: p.avatarColor,
-      avatarBorder: p.avatarBorder,
+      avatarId: p.avatarId,
+      ready: !!p.ready,
+      connected: !!p.socketId && !p.disconnectedAt,
     })),
     playerCount: room.players.length,
     maxPlayers: room.maxPlayers,
@@ -577,10 +790,10 @@ export function getRoomsByAnte(anteId: string): CareerRoom[] {
 }
 
 /**
- * Handle player disconnect
+ * Handle player disconnect — multiplayer-style grace, not immediate seat removal.
  */
 export function handleDisconnect(socketId: string, io: Server) {
-  leaveCareerRoom(socketId, io);
+  beginCareerDisconnectGrace(socketId, io);
 }
 
 /**
@@ -849,7 +1062,7 @@ export function handleMatchFound(match: MatchFound, io: Server): void {
     gameRoomId: null,
   };
   
-  // Add both players to room
+  // Add both players to room (not Ready — countdown waits for explicit Ready)
   const player1: CareerPlayer = {
     odlayerId: match.player1.playerId,
     odlayerName: match.player1.playerName,
@@ -861,10 +1074,9 @@ export function handleMatchFound(match: MatchFound, io: Server): void {
     rating: match.player1.rating,
     bankroll: user1.bankroll,
     socketId: match.player1.socketId,
-    avatarEmoji: user1.avatarEmoji,
-    avatarColor: user1.avatarColor,
-    avatarBorder: user1.avatarBorder,
+    avatarId: user1.avatarId,
     joinedAt: Date.now(),
+    ready: false,
   };
   
   const player2: CareerPlayer = {
@@ -878,10 +1090,9 @@ export function handleMatchFound(match: MatchFound, io: Server): void {
     rating: match.player2.rating,
     bankroll: user2.bankroll,
     socketId: match.player2.socketId,
-    avatarEmoji: user2.avatarEmoji,
-    avatarColor: user2.avatarColor,
-    avatarBorder: user2.avatarBorder,
+    avatarId: user2.avatarId,
     joinedAt: Date.now(),
+    ready: false,
   };
   
   room.players.push(player1, player2);
@@ -905,9 +1116,7 @@ export function handleMatchFound(match: MatchFound, io: Server): void {
     opponent: {
       username: player2.username,
       rating: player2.rating,
-      avatarEmoji: player2.avatarEmoji,
-      avatarColor: player2.avatarColor,
-      avatarBorder: player2.avatarBorder,
+      avatarId: player2.avatarId,
     },
   });
   
@@ -916,17 +1125,12 @@ export function handleMatchFound(match: MatchFound, io: Server): void {
     opponent: {
       username: player1.username,
       rating: player1.rating,
-      avatarEmoji: player1.avatarEmoji,
-      avatarColor: player1.avatarColor,
-      avatarBorder: player1.avatarBorder,
+      avatarId: player1.avatarId,
     },
   });
   
-  // Broadcast room state to both players
+  // Waiting / Ready state — do not start countdown until both Ready
   broadcastRoomState(room, io);
-  
-  // Start auto-start timer immediately (30 seconds)
-  startAutoStartTimer(room, io);
 }
 
 /**
@@ -955,5 +1159,65 @@ export function cleanupStaleRooms() {
   }
 }
 
-// Start periodic cleanup
-setInterval(cleanupStaleRooms, 60000); // Every minute
+let staleRoomCleanupInterval: ReturnType<typeof setInterval> | null = null;
+
+/** Start periodic Career room sweep (once per process / server boot). */
+export function startCareerStaleRoomCleanup(intervalMs = 60_000): void {
+  if (staleRoomCleanupInterval) return;
+  staleRoomCleanupInterval = setInterval(cleanupStaleRooms, intervalMs);
+}
+
+/** Stop periodic Career room sweep (server shutdown / tests). */
+export function stopCareerStaleRoomCleanup(): void {
+  if (staleRoomCleanupInterval) {
+    clearInterval(staleRoomCleanupInterval);
+    staleRoomCleanupInterval = null;
+  }
+}
+
+export function isCareerStaleRoomCleanupRunning(): boolean {
+  return staleRoomCleanupInterval !== null;
+}
+
+/** Lookup Career room by authenticated user id. */
+export function getCareerRoomByUserId(userId: string): CareerRoom | undefined {
+  const roomId = userToRoom.get(userId);
+  if (!roomId) return undefined;
+  return careerRooms.get(roomId);
+}
+
+/**
+ * Rebind a player's socket id inside an existing Career waiting/starting room
+ * (idempotent create / reconnect within same session).
+ */
+export function rebindCareerPlayerSocket(
+  roomId: string,
+  userId: string,
+  newSocketId: string,
+  io: Server,
+  opts?: { socket?: Socket }
+): { success: boolean; room?: CareerRoom; error?: string } {
+  const room = careerRooms.get(roomId);
+  if (!room) return { success: false, error: "Room not found" };
+  if (room.status !== "waiting" && room.status !== "starting") {
+    return { success: false, error: "Room has already started" };
+  }
+  const player = room.players.find((p) => p.userId === userId);
+  if (!player) return { success: false, error: "Player not in room" };
+
+  cancelCareerDisconnectGrace(player);
+
+  if (player.socketId !== newSocketId) {
+    if (player.socketId) {
+      socketToRoom.delete(player.socketId);
+    }
+    player.socketId = newSocketId;
+    player.odocketId = newSocketId;
+    socketToRoom.set(newSocketId, roomId);
+  }
+  if (opts?.socket) {
+    void opts.socket.join(roomId);
+  }
+  broadcastRoomState(room, io);
+  return { success: true, room };
+}

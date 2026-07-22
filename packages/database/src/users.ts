@@ -4,12 +4,17 @@
 
 import { v4 as uuidv4 } from "uuid";
 import bcrypt from "bcrypt";
+import { DEFAULT_AVATAR_ID, resolveAvatarId } from "@kouppi/protocol";
 import { getRawDb } from "./client.js";
 import { getArenaForTrophies, getTrophyFloor, ARENAS } from "./schema.js";
 
 const SALT_ROUNDS = 10;
 const DEFAULT_BANKROLL = 1000;
 const DEFAULT_RATING = 1200;
+
+/** Fixed legacy column fillers — ring is rendered in UI, not stored per-user */
+const AVATAR_COLOR_FILLER = "#0c101c";
+const AVATAR_BORDER_FILLER = "#d4af37";
 
 /**
  * User type as stored in database
@@ -33,10 +38,8 @@ export interface User {
   gamesWon: number;
   totalEarnings: number;
   
-  // Avatar
-  avatarEmoji: string;
-  avatarColor: string;
-  avatarBorder: string;
+  // Avatar (avatar_emoji column stores catalog id)
+  avatarId: string;
 }
 
 /**
@@ -57,9 +60,7 @@ export interface UserProfile {
   gamesWon: number;
   totalEarnings: number;
   winRate: number;
-  avatarEmoji: string;
-  avatarColor: string;
-  avatarBorder: string;
+  avatarId: string;
 }
 
 /**
@@ -80,9 +81,7 @@ function rowToUser(row: any): User {
     gamesPlayed: row.games_played,
     gamesWon: row.games_won,
     totalEarnings: row.total_earnings,
-    avatarEmoji: row.avatar_emoji,
-    avatarColor: row.avatar_color,
-    avatarBorder: row.avatar_border,
+    avatarId: resolveAvatarId(row.avatar_emoji),
   };
 }
 
@@ -106,9 +105,7 @@ function userToProfile(user: User): UserProfile {
     gamesWon: user.gamesWon,
     totalEarnings: user.totalEarnings,
     winRate: user.gamesPlayed > 0 ? Math.round((user.gamesWon / user.gamesPlayed) * 100) : 0,
-    avatarEmoji: user.avatarEmoji,
-    avatarColor: user.avatarColor,
-    avatarBorder: user.avatarBorder,
+    avatarId: user.avatarId,
   };
 }
 
@@ -118,7 +115,7 @@ function userToProfile(user: User): UserProfile {
 export async function createUser(
   username: string,
   password: string,
-  avatar?: { emoji?: string; color?: string; border?: string }
+  avatar?: { id?: string; emoji?: string; color?: string; border?: string }
 ): Promise<UserProfile> {
   const db = getRawDb();
   
@@ -147,6 +144,7 @@ export async function createUser(
   // Create user
   const id = uuidv4();
   const now = Date.now();
+  const avatarId = resolveAvatarId(avatar?.id ?? avatar?.emoji ?? DEFAULT_AVATAR_ID);
   
   const stmt = db.prepare(`
     INSERT INTO users (
@@ -171,9 +169,9 @@ export async function createUser(
     0,
     0,
     0,
-    avatar?.emoji ?? "🎭",
-    avatar?.color ?? "#6366f1",
-    avatar?.border ?? "#4f46e5"
+    avatarId,
+    avatar?.color ?? AVATAR_COLOR_FILLER,
+    avatar?.border ?? AVATAR_BORDER_FILLER
   );
   
   const user = getUserById(id);
@@ -321,20 +319,21 @@ export function updateMatchStats(userId: string, won: boolean, earnings: number)
 }
 
 /**
- * Update user avatar
+ * Update user avatar (catalog id stored in avatar_emoji column)
  */
 export function updateAvatar(
   userId: string,
-  avatar: { emoji?: string; color?: string; border?: string }
+  avatar: { id?: string; emoji?: string; color?: string; border?: string }
 ): void {
   const db = getRawDb();
   
   const updates: string[] = [];
   const values: any[] = [];
-  
-  if (avatar.emoji) {
+
+  const nextId = avatar.id ?? avatar.emoji;
+  if (nextId) {
     updates.push("avatar_emoji = ?");
-    values.push(avatar.emoji);
+    values.push(resolveAvatarId(nextId));
   }
   if (avatar.color) {
     updates.push("avatar_color = ?");

@@ -28,6 +28,7 @@ const RegisterSchema = z.object({
   username: z.string().min(3).max(20).regex(/^[a-zA-Z0-9_]+$/),
   password: z.string().min(6).max(100),
   avatar: z.object({
+    id: z.string().optional(),
     emoji: z.string().optional(),
     color: z.string().optional(),
     border: z.string().optional(),
