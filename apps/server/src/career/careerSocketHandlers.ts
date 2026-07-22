@@ -38,6 +38,7 @@ import {
   handleDisconnect,
   markRoomInGame,
   markRoomFinished,
+  buildCareerRoomUpdatePayload,
   type CareerPlayer,
 } from "./careerRoomManager.js";
 import { getUserById } from "@kouppi/database";
@@ -225,12 +226,23 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
           queuedAt: Date.now(),
         };
         const result = joinQueue(refreshEntry);
+        if (!isInQueue(user.id)) {
+          cb?.(null, {
+            inQueue: false,
+            matched: true,
+            anteId: payload.anteId,
+            tierId: anteOption.tier.id,
+            message: "Match found",
+          });
+          return;
+        }
         const response = {
           inQueue: true,
           position: result.position,
           anteId: payload.anteId,
           tierId: anteOption.tier.id,
           message: "Searching for opponent...",
+          ...getQueueStatus(user.id),
         };
         cb?.(null, response);
         socket.emit("career:queueJoined", response);
@@ -248,8 +260,21 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
         queuedAt: Date.now(),
       };
       
-      // Join the queue
+      // Join the queue (may match immediately and remove this player)
       const result = joinQueue(queueEntry);
+
+      // Immediate match: do NOT claim still-in-queue (ACK would wipe client matchFound)
+      if (!isInQueue(user.id)) {
+        const matchedResponse = {
+          inQueue: false,
+          matched: true,
+          anteId: payload.anteId,
+          tierId: anteOption.tier.id,
+          message: "Match found",
+        };
+        cb?.(null, matchedResponse);
+        return;
+      }
       
       console.log(`[Career] ${user.username} joined queue (position ${result.position})`);
       
@@ -259,6 +284,7 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
         anteId: payload.anteId,
         tierId: anteOption.tier.id,
         message: "Searching for opponent...",
+        ...getQueueStatus(user.id),
       };
       
       cb?.(null, response);
@@ -466,14 +492,17 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
           avatarBorder: user.avatarBorder,
           joinedAt: Date.now(),
         };
-        const joined = joinCareerRoom(room.id, player, io);
+        const joined = joinCareerRoom(room.id, player, io, { socket });
         if (!joined.success || !joined.room) {
           const err = { code: "join_failed", message: joined.error ?? "Could not join waiting table" };
           cb ? cb(err) : socket.emit("career:error", err);
           return;
         }
-        socket.join(joined.room.id);
-        cb?.(null, { success: true, roomId: joined.room.id });
+        cb?.(null, {
+          success: true,
+          roomId: joined.room.id,
+          room: buildCareerRoomUpdatePayload(joined.room),
+        });
       } catch (e: unknown) {
         const err = { code: "error", message: e instanceof Error ? e.message : "error" };
         cb ? cb(err) : socket.emit("career:error", err);
@@ -553,7 +582,7 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
           avatarBorder: user.avatarBorder,
           joinedAt: Date.now(),
         };
-        const joined = joinCareerRoom(payload.roomId, player, io);
+        const joined = joinCareerRoom(payload.roomId, player, io, { socket });
         if (!joined.success || !joined.room) {
           const err = {
             code: "join_failed",
@@ -562,8 +591,11 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
           cb ? cb(err) : socket.emit("career:error", err);
           return;
         }
-        socket.join(joined.room.id);
-        cb?.(null, { success: true, roomId: joined.room.id });
+        cb?.(null, {
+          success: true,
+          roomId: joined.room.id,
+          room: buildCareerRoomUpdatePayload(joined.room),
+        });
       } catch (e: unknown) {
         const err = { code: "error", message: e instanceof Error ? e.message : "error" };
         cb ? cb(err) : socket.emit("career:error", err);

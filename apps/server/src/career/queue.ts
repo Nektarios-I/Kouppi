@@ -81,6 +81,8 @@ export function joinQueue(entry: QueueEntry): { success: boolean; position: numb
     // Update socket ID and ante if reconnecting / refreshing
     existing.socketId = entry.socketId;
     existing.anteId = entry.anteId;
+    // Re-attempt match after reconnect / ante refresh
+    tryFindMatch(entry.playerId);
     return { success: true, position: getQueuePosition(entry.playerId) };
   }
   
@@ -160,7 +162,9 @@ export function tryFindMatch(playerId: string): MatchFound | null {
   
   for (const [otherId, other] of queue) {
     if (otherId === playerId) continue;
-    
+    // Quick Match is stake-specific: only pair players who queued for the same ante
+    if (other.anteId !== player.anteId) continue;
+
     const otherWaitTime = getWaitTime(otherId);
     
     // Check if compatible based on wait time and rating

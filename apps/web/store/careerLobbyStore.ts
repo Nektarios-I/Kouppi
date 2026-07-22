@@ -150,8 +150,14 @@ interface CareerLobbyState {
 function applyQueueJoined(
   set: (partial: Partial<CareerLobbyState>) => void,
   get: () => CareerLobbyState,
-  data: Partial<QueueState> & { anteId?: string; tierId?: string; position?: number }
+  data: Partial<QueueState> & { anteId?: string; tierId?: string; position?: number; matched?: boolean }
 ) {
+  // Never clobber an in-flight match / seated room with a late queue ACK
+  if (get().matchFound || get().currentRoom) return;
+  if (data.matched || data.inQueue === false) {
+    set({ isJoiningQueue: false, queueState: null });
+    return;
+  }
   set({
     queueState: {
       inQueue: true,
@@ -164,11 +170,33 @@ function applyQueueJoined(
       fallbackMode: data.fallbackMode,
     },
     isJoiningQueue: false,
-    queueJoinedAt: Date.now(),
+    queueJoinedAt: get().queueJoinedAt ?? Date.now(),
     error: null,
   });
   const { authToken } = get();
   if (authToken) get().startQueuePolling(authToken);
+}
+
+const ACK_TIMEOUT_MS = 15000;
+
+function withAckTimeout<T>(
+  run: (finish: (result: T) => void) => void,
+  onTimeout: () => T
+): Promise<T> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve(onTimeout());
+    }, ACK_TIMEOUT_MS);
+    run((result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    });
+  });
 }
 
 export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
@@ -246,7 +274,7 @@ export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
     });
 
     newSocket.on("career:queueStatus", (data: QueueState) => {
-      if (get().matchFound) return;
+      if (get().matchFound || get().currentRoom) return;
       set({ queueState: data.inQueue ? data : null, queueJoinedAt: data.inQueue ? get().queueJoinedAt : null });
     });
 
@@ -411,30 +439,41 @@ export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
         tierId: selectedTierId ?? undefined,
       },
     });
-    return new Promise((resolve) => {
-      socket.emit(
-        "career:joinAnte",
-        { token, anteId },
-        (err: { message?: string } | null, data?: QueueState & { anteId?: string; tierId?: string }) => {
-          if (err) {
-            set({
-              isJoiningQueue: false,
-              queueState: null,
-              queueJoinedAt: null,
-              error: err.message ?? "Could not join queue",
-            });
-            resolve(false);
-            return;
+    return withAckTimeout<boolean>(
+      (finish) => {
+        socket.emit(
+          "career:joinAnte",
+          { token, anteId },
+          (err: unknown, data?: unknown) => {
+            const parsed = parseSocketAck<
+              QueueState & { anteId?: string; tierId?: string; matched?: boolean }
+            >(err, data);
+            if (!parsed.ok) {
+              clearAuthIfNeeded(parsed.code, parsed.error);
+              set({
+                isJoiningQueue: false,
+                queueState: null,
+                queueJoinedAt: null,
+                error: parsed.error ?? "Could not join queue",
+              });
+              finish(false);
+              return;
+            }
+            applyQueueJoined(set, get, { ...parsed.data, anteId: parsed.data.anteId ?? anteId });
+            finish(true);
           }
-          if (data) {
-            applyQueueJoined(set, get, { ...data, anteId: data.anteId ?? anteId });
-          } else {
-            set({ isJoiningQueue: false });
-          }
-          resolve(true);
-        }
-      );
-    });
+        );
+      },
+      () => {
+        set({
+          isJoiningQueue: false,
+          queueState: null,
+          queueJoinedAt: null,
+          error: "Queue request timed out — check your connection and try again",
+        });
+        return false;
+      }
+    );
   },
 
   leaveQueue: (token: string) => {
@@ -538,21 +577,59 @@ export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
     }
     if (isJoiningRoom) return false;
     set({ isJoiningRoom: true, error: null, authToken: token });
-    return new Promise((resolve) => {
-      socket.emit(
-        "career:createWaitingRoom",
-        { token, anteId },
-        (err: { message?: string } | null) => {
-          set({ isJoiningRoom: false });
-          if (err) {
-            set({ error: err.message ?? "Could not create waiting table" });
-            resolve(false);
-            return;
+    return withAckTimeout<boolean>(
+      (finish) => {
+        socket.emit(
+          "career:createWaitingRoom",
+          { token, anteId },
+          (err: unknown, data?: unknown) => {
+            const parsed = parseSocketAck<{
+              success?: boolean;
+              roomId?: string;
+              room?: CareerRoomState;
+            }>(err, data);
+            set({ isJoiningRoom: false });
+            if (!parsed.ok) {
+              clearAuthIfNeeded(parsed.code, parsed.error);
+              set({ error: parsed.error ?? "Could not create waiting table" });
+              finish(false);
+              return;
+            }
+            if (parsed.data.room) {
+              set({ currentRoom: parsed.data.room, matchFound: null, queueState: null });
+            } else if (parsed.data.roomId) {
+              // Room update event may still arrive; keep a minimal seat so UI advances
+              set({
+                currentRoom: {
+                  roomId: parsed.data.roomId,
+                  tierId: get().selectedTierId ?? "",
+                  anteId,
+                  ante: 0,
+                  minBet: 0,
+                  maxBet: 0,
+                  status: "waiting",
+                  players: [],
+                  playerCount: 1,
+                  maxPlayers: 8,
+                  autoStartAt: null,
+                  secondsRemaining: null,
+                },
+                matchFound: null,
+                queueState: null,
+              });
+            }
+            finish(true);
           }
-          resolve(true);
-        }
-      );
-    });
+        );
+      },
+      () => {
+        set({
+          isJoiningRoom: false,
+          error: "Create table timed out — check your connection and try again",
+        });
+        return false;
+      }
+    );
   },
 
   joinWaitingRoom: async (token: string, roomId: string): Promise<boolean> => {
@@ -563,21 +640,39 @@ export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
     }
     if (isJoiningRoom) return false;
     set({ isJoiningRoom: true, error: null, authToken: token });
-    return new Promise((resolve) => {
-      socket.emit(
-        "career:joinWaitingRoom",
-        { token, roomId },
-        (err: { message?: string } | null) => {
-          set({ isJoiningRoom: false });
-          if (err) {
-            set({ error: err.message ?? "Could not join waiting table" });
-            resolve(false);
-            return;
+    return withAckTimeout<boolean>(
+      (finish) => {
+        socket.emit(
+          "career:joinWaitingRoom",
+          { token, roomId },
+          (err: unknown, data?: unknown) => {
+            const parsed = parseSocketAck<{
+              success?: boolean;
+              roomId?: string;
+              room?: CareerRoomState;
+            }>(err, data);
+            set({ isJoiningRoom: false });
+            if (!parsed.ok) {
+              clearAuthIfNeeded(parsed.code, parsed.error);
+              set({ error: parsed.error ?? "Could not join waiting table" });
+              finish(false);
+              return;
+            }
+            if (parsed.data.room) {
+              set({ currentRoom: parsed.data.room, matchFound: null, queueState: null });
+            }
+            finish(true);
           }
-          resolve(true);
-        }
-      );
-    });
+        );
+      },
+      () => {
+        set({
+          isJoiningRoom: false,
+          error: "Join table timed out — check your connection and try again",
+        });
+        return false;
+      }
+    );
   },
 
   clearError: () => set({ error: null }),

@@ -133,7 +133,8 @@ export function createCareerRoom(anteId: string): CareerRoom | null {
 export function joinCareerRoom(
   roomId: string,
   player: CareerPlayer,
-  io: Server
+  io: Server,
+  opts?: { socket?: Socket }
 ): { success: boolean; room?: CareerRoom; error?: string } {
   const room = careerRooms.get(roomId);
   if (!room) {
@@ -167,6 +168,11 @@ export function joinCareerRoom(
   console.log(
     `[Career] Player ${player.username} joined room ${roomId} (${room.players.length}/${room.maxPlayers})`
   );
+
+  // Join the Socket.IO room BEFORE broadcasting so the joiner receives career:roomUpdate
+  if (opts?.socket) {
+    void opts.socket.join(roomId);
+  }
 
   // Broadcast updated room state
   broadcastRoomState(room, io);
@@ -505,8 +511,8 @@ export function cleanupRoom(roomId: string): boolean {
 /**
  * Broadcast room state to all players in the room
  */
-function broadcastRoomState(room: CareerRoom, io: Server) {
-  io.to(room.id).emit("career:roomUpdate", {
+export function buildCareerRoomUpdatePayload(room: CareerRoom) {
+  return {
     roomId: room.id,
     tierId: room.tierId,
     anteId: room.anteId,
@@ -528,10 +534,14 @@ function broadcastRoomState(room: CareerRoom, io: Server) {
     playerCount: room.players.length,
     maxPlayers: room.maxPlayers,
     autoStartAt: room.autoStartAt,
-    secondsRemaining: room.autoStartAt 
+    secondsRemaining: room.autoStartAt
       ? Math.max(0, Math.ceil((room.autoStartAt - Date.now()) / 1000))
       : null,
-  });
+  };
+}
+
+function broadcastRoomState(room: CareerRoom, io: Server) {
+  io.to(room.id).emit("career:roomUpdate", buildCareerRoomUpdatePayload(room));
 }
 
 /**

@@ -14,6 +14,7 @@ export default function CareerPage() {
   const { user, isLoggedIn, logout, refreshUser } = useAuthStore();
   const { leaderboard, fetchLeaderboard, isLoadingLeaderboard } = useCareerStore();
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [joinedLabel, setJoinedLabel] = useState<string | null>(null);
 
   useEffect(() => {
     fetchLeaderboard();
@@ -22,6 +23,15 @@ export default function CareerPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!user?.createdAt) {
+      setJoinedLabel(null);
+      return;
+    }
+    // Format only on client after mount to avoid SSR/locale hydration mismatch (React #418/#425)
+    setJoinedLabel(new Date(user.createdAt).toLocaleDateString());
+  }, [user?.createdAt]);
 
   return (
     <LobbyShell>
@@ -80,7 +90,7 @@ export default function CareerPage() {
                 <div>
                   <div className="font-display text-xl font-bold text-gold-light">{user.username}</div>
                   <div className="text-gray-400 text-sm font-ui">
-                    Joined {new Date(user.createdAt).toLocaleDateString()}
+                    {joinedLabel ? `Joined ${joinedLabel}` : "Career player"}
                   </div>
                 </div>
               </div>

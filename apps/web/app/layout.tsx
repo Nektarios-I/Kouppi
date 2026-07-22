@@ -35,6 +35,9 @@ export const metadata: Metadata = {
     title: "KOUPPI",
     statusBarStyle: "black-translucent",
   },
+  other: {
+    "mobile-web-app-capable": "yes",
+  },
   manifest: "/manifest.webmanifest",
   openGraph: {
     title: "KOUPPI",

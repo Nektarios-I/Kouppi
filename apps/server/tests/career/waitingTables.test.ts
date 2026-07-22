@@ -138,6 +138,47 @@ describe("Career waiting tables (Phase 5)", () => {
     });
   });
 
+  it("createWaitingRoom seats creator and returns room in ACK", async () => {
+    const host = await createUser(`cw_${Date.now().toString().slice(-8)}`, "password123");
+    const token = issueTestAuthToken(host.id, host.username);
+    const server = createKouppiServer({ corsOrigin: "*", websocketOnly: true });
+    await new Promise<void>((resolve) => server.httpServer.listen(0, resolve));
+    const address = server.httpServer.address() as AddressInfo;
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+
+    const socket = ioc(baseUrl, { transports: ["websocket"], forceNew: true });
+    await new Promise<void>((resolve, reject) => {
+      socket.on("connect", () => resolve());
+      socket.on("connect_error", reject);
+    });
+
+    const roomUpdate = new Promise<any>((resolve) => {
+      socket.once("career:roomUpdate", resolve);
+    });
+
+    const { err, data } = await emitAck<{
+      success: boolean;
+      roomId: string;
+      room: { roomId: string; playerCount: number; status: string };
+    }>(socket, "career:createWaitingRoom", { token, anteId: "bronze-1" });
+
+    expect(err).toBeNull();
+    expect(data?.success).toBe(true);
+    expect(data?.roomId).toBeTruthy();
+    expect(data?.room?.playerCount).toBe(1);
+    expect(data?.room?.status).toBe("waiting");
+
+    const update = await roomUpdate;
+    expect(update.roomId).toBe(data?.roomId);
+    expect(update.playerCount).toBe(1);
+
+    socket.disconnect();
+    server.stopCleanup();
+    await new Promise<void>((resolve, reject) => {
+      server.httpServer.close((e) => (e ? reject(e) : resolve()));
+    });
+  });
+
   it("lists all waiting rooms when anteId is omitted", async () => {
     const host = await createUser(`wa_${Date.now().toString().slice(-8)}`, "password123");
     const token = issueTestAuthToken(host.id, host.username);

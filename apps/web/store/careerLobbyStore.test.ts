@@ -124,6 +124,85 @@ describe("careerLobbyStore queue lifecycle", () => {
     expect(state.queueJoinedAt).toBeTruthy();
   });
 
+  it("joinQueue ACK does not wipe an already-found match", async () => {
+    const emit = vi.fn(
+      (
+        _event: string,
+        _payload: unknown,
+        cb?: (err: null, data: { inQueue: boolean; matched?: boolean }) => void
+      ) => {
+        // Simulate late ACK after matchFound event already applied
+        useCareerLobbyStore.setState({
+          matchFound: {
+            roomId: "career-xyz",
+            opponent: {
+              username: "Opp",
+              rating: 1200,
+              avatarEmoji: "♠",
+              avatarColor: "#000",
+              avatarBorder: "#fff",
+            },
+          },
+          queueState: null,
+        });
+        cb?.(null, { inQueue: true, matched: false });
+      }
+    );
+    useCareerLobbyStore.setState({
+      socket: { connected: true, emit, disconnect: vi.fn() } as never,
+      queueState: null,
+      isJoiningQueue: false,
+      matchFound: null,
+    });
+
+    await useCareerLobbyStore.getState().joinQueue("tok", "bronze-1");
+    const state = useCareerLobbyStore.getState();
+    expect(state.matchFound?.roomId).toBe("career-xyz");
+    expect(state.queueState).toBeNull();
+  });
+
+  it("createWaitingRoom applies room payload from ACK", async () => {
+    const room = {
+      roomId: "career-wait1",
+      tierId: "bronze",
+      anteId: "bronze-1",
+      ante: 5,
+      minBet: 5,
+      maxBet: 25,
+      status: "waiting" as const,
+      players: [
+        {
+          userId: "u1",
+          username: "Host",
+          rating: 1200,
+          avatarEmoji: "♠",
+          avatarColor: "#111",
+          avatarBorder: "#222",
+        },
+      ],
+      playerCount: 1,
+      maxPlayers: 8,
+      autoStartAt: null,
+      secondsRemaining: null,
+    };
+    const emit = vi.fn(
+      (_event: string, _payload: unknown, cb?: (err: null, data: unknown) => void) => {
+        cb?.(null, { success: true, roomId: room.roomId, room });
+      }
+    );
+    useCareerLobbyStore.setState({
+      socket: { connected: true, emit, disconnect: vi.fn() } as never,
+      isJoiningRoom: false,
+      currentRoom: null,
+      selectedTierId: "bronze",
+    });
+
+    const ok = await useCareerLobbyStore.getState().createWaitingRoom("tok", "bronze-1");
+    expect(ok).toBe(true);
+    expect(useCareerLobbyStore.getState().currentRoom?.roomId).toBe("career-wait1");
+    expect(useCareerLobbyStore.getState().isJoiningRoom).toBe(false);
+  });
+
   it("joinQueue rejects duplicate while already searching", async () => {
     const emit = vi.fn();
     useCareerLobbyStore.setState({

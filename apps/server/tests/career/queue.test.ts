@@ -49,6 +49,14 @@ describe("Career matchmaking queue", () => {
     resetQueueClock();
   });
 
+  it("does not match players queued for different ante stakes", () => {
+    joinQueue(entry("a", 1200, "bronze-1"));
+    joinQueue(entry("b", 1200, "bronze-2"));
+    expect(getQueueSize()).toBe(2);
+    expect(isInQueue("a")).toBe(true);
+    expect(isInQueue("b")).toBe(true);
+  });
+
   it("matches two compatible players in initial ±100 range", () => {
     joinQueue(entry("a", 1200));
     joinQueue(entry("b", 1270));
