@@ -13,6 +13,9 @@ test.describe("KOUPPI smoke E2E", () => {
   });
 
   test("Career page opens auth UI (E2E3 smoke — no live server required for modal)", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("kouppi_conduct_accepted_v1", "1");
+    });
     await page.goto("/career");
     const signIn = page.getByRole("button", { name: /sign in/i }).first();
     await expect(signIn).toBeVisible({ timeout: 15_000 });

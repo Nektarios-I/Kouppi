@@ -12,8 +12,8 @@
 
 | Flow | Socket/server path | Client UX path | vs product requirements |
 |------|--------------------|----------------|-------------------------|
-| Quick Join (two players, same ante) | **Works** when Career DB initializes and factory wires matchmaking | Searching UI + matchFound + in-lobby waiting + Ready | **Partial** — Ready+60s done (Batch 2); route still in-lobby |
-| Create Waiting Table | **Works** (create + seat + ACK room payload) | Loading gate + `currentRoom` on `/career` + Ready | **Partial** — no dedicated table route |
+| Quick Join (two players, same ante) | **Works** when Career DB initializes and factory wires matchmaking | Searching UI → shared `/career/table/[id]` + Ready | **Verified** by two-browser Playwright |
+| Create Waiting Table | **Works** (create + seat + ACK room payload) | Loading gate → `/career/table/[id]` + Ready | **Verified** including table config and refresh recovery |
 | Join Waiting Table | **Works** for waiting rooms; rejects in-progress **and countdown** | Join from live list | **OK** for join lock (Batch 2); max 2 |
 | 60s Ready → countdown → start | Both Ready → 60s → start | Implemented Batch 2 | **OK** (provisional product defaults) |
 
@@ -123,7 +123,7 @@ Historical **CAREER-FLOW-TEST-001** “placeholder `expect(true)`” is **stale*
 
 - **CAREER-CD-003** — stale-room interval started/stopped via factory `stopCleanup`
 - **CAREER-CT-002** — duplicate Create returns existing room (`idempotent: true`)
-- **CAREER-NAV-001 / CT-001** — in-lobby waiting accepted; dual-socket path proven by `CAREER-IT-NAV-001`
+- **CAREER-NAV-001 / CT-001** — dedicated `/career/table/[id]` waiting route; dual-socket game path proven by `CAREER-IT-NAV-001`
 - E2E plan written: `docs/CAREER_E2E_TWO_BROWSER_PLAN.md`
 
 See `docs/CAREER_MATCHMAKING_IMPLEMENTATION_REPORT.md`.
@@ -332,6 +332,6 @@ See `docs/CAREER_MATCHMAKING_IMPLEMENTATION_REPORT.md`.
 ## 11. Phase / batch status
 
 - Audit + Batch 1 + Batch 2 + Batch 3 complete.
-- **Product decision (Batch 3):** Pre-game UX stays **in-lobby on `/career`** (no dedicated `/career/table/[id]` required). Dual Career-lobby + game-room sockets are **accepted** and covered by `CAREER-IT-NAV-001`.
+- **Product decision superseded (2026-07-22):** Pre-game UX now uses `/career/table/[id]`, matching casual multiplayer's URL-driven room flow. Dual Career-lobby + game-room sockets remain covered by `CAREER-IT-NAV-001`.
 - Remaining open product only: CAREER-QJ-002 (rating gap after 45s); CAREER-TEST-002 (use Node 20 locally).
-- E2E plan: `docs/CAREER_E2E_TWO_BROWSER_PLAN.md` (not implemented in CI).
+- E2E: `apps/web/e2e/career-matchmaking.spec.ts` (implemented locally, not CI).

@@ -1,6 +1,6 @@
 # Career Mode — Two-Browser E2E Plan (Batch 3)
 
-**Status:** Planned — not implemented in CI yet.  
+**Status:** Implemented locally in `apps/web/e2e/career-matchmaking.spec.ts` — not in CI yet.
 **Depends on:** Tier-1 Career socket contracts (Batches 1–2) green on Node 20.
 
 ## Goal
@@ -55,7 +55,8 @@ Add a second Playwright project (do **not** expand CI in this batch):
 - No production URLs / accounts
 - No CI job expansion until local two-process E2E is stable
 - No spectator mode
-- In-lobby waiting on `/career` is the accepted pre-game UX (no dedicated `/career/table/[id]` required for Batch 3)
+- Successful Create Waiting Table, Join, and Quick Match navigate to `/career/table/[id]`.
+- The browser suite verifies the selected ante/bet configuration, seat count, refresh recovery, and that two Quick Match users reach the same table URL.
 
 ## Acceptance before implementing E2E code
 

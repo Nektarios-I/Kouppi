@@ -22,7 +22,7 @@ import { Avatar } from "@/components/AvatarPicker";
  * 2) Create Waiting Table
  * 3) Browse all live waiting tables and join anytime
  */
-export default function CareerLobby() {
+export default function CareerLobby({ expectedRoomId }: { expectedRoomId?: string }) {
   const router = useRouter();
   const { token, user, isLoggedIn } = useAuthStore();
   const {
@@ -92,9 +92,20 @@ export default function CareerLobby() {
 
   useEffect(() => {
     if (gameRoomId) {
-      router.push(`/room/${gameRoomId}`);
+      router.replace(`/room/${gameRoomId}`);
+      return;
     }
-  }, [gameRoomId, router]);
+
+    const waitingRoomId = currentRoom?.roomId ?? matchFound?.roomId;
+    if (!expectedRoomId && waitingRoomId) {
+      router.push(`/career/table/${encodeURIComponent(waitingRoomId)}`);
+      return;
+    }
+
+    if (expectedRoomId && currentRoom?.roomId && currentRoom.roomId !== expectedRoomId) {
+      router.replace(`/career/table/${encodeURIComponent(currentRoom.roomId)}`);
+    }
+  }, [currentRoom?.roomId, expectedRoomId, gameRoomId, matchFound?.roomId, router]);
 
   // Always refresh the global live-table browser while idle in Career lobby
   useEffect(() => {
@@ -129,6 +140,9 @@ export default function CareerLobby() {
   const handleLeaveRoom = () => {
     if (!token) return;
     leaveRoom(token);
+    if (expectedRoomId) {
+      router.push("/career");
+    }
   };
 
   const handleToggleReady = async () => {
@@ -227,6 +241,24 @@ export default function CareerLobby() {
             Preparing game room...
           </div>
         </div>
+      </LobbyCard>
+    );
+  }
+
+  if (expectedRoomId && !currentRoom) {
+    return (
+      <LobbyCard title="Preparing Career Table" icon="♣">
+        <div className="hud-status-banner text-center !py-4 font-ui text-sm" role="status">
+          Connecting you to table {expectedRoomId}…
+        </div>
+        {error && (
+          <LobbyAlert variant="error" onDismiss={clearError}>
+            {error}
+          </LobbyAlert>
+        )}
+        <HudButton variant="ghost" fullWidth onClick={() => router.push("/career")}>
+          Back to Career
+        </HudButton>
       </LobbyCard>
     );
   }

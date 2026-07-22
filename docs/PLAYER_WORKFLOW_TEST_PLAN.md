@@ -123,7 +123,7 @@ Eligible iff `abs(rank1-rank2)===2` with Ace=1…King=13:
 | CAREER-IT-NAV-001 | Implemented (Batch 3) | `transitionToGame` → `subscribeCareerRoom` dual-socket |
 | CAREER-IT-ERR-001 | Implemented | safe ACK errors |
 | CAREER-WEB-QJ/CT/WAIT | Partial (store) | `careerLobbyStore.test.ts` incl. setReady |
-| Playwright two-browser Career | **Plan only** | `docs/CAREER_E2E_TWO_BROWSER_PLAN.md` — not in CI |
+| Playwright two-browser Career | **Implemented locally** | Create route + two-user Quick Match + shared table/config/refresh assertions; not in CI |
 
 ---
 

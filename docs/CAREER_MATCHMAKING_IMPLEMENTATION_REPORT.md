@@ -13,8 +13,8 @@ Done
 ### Defects addressed
 - **CAREER-CD-003** — Stale-room `setInterval` no longer module-global forever; `startCareerStaleRoomCleanup` / `stopCareerStaleRoomCleanup` wired through `createKouppiServer` / `stopCleanup`
 - **CAREER-CT-002** — Duplicate Create Waiting Table returns the same room with `idempotent: true` (rebinds socket)
-- **CAREER-CT-001 / CAREER-NAV-001** — Accepted **in-lobby** waiting on `/career`; dual-socket game entry proven by `CAREER-IT-NAV-001` (`transitionToGame` → `subscribeCareerRoom` on new sockets)
-- E2E plan documented (not coded/CI): `docs/CAREER_E2E_TWO_BROWSER_PLAN.md`
+- **CAREER-CT-001 / CAREER-NAV-001** — Create, Join, and Quick Match now navigate to `/career/table/[id]`; dual-socket game entry remains covered by `CAREER-IT-NAV-001`
+- Two-browser E2E implemented locally (not CI): `apps/web/e2e/career-matchmaking.spec.ts`
 
 ### Files changed
 - `apps/server/src/career/careerRoomManager.ts`
@@ -49,7 +49,7 @@ Node **20.19.0**:
 ### Remaining Career issues
 - CAREER-QJ-002 (product: unlimited rating gap after 45s)
 - CAREER-TEST-002 (Node 25 vs better-sqlite3 — use Node 20)
-- Browser E2E not implemented yet (plan only)
+- Browser E2E is implemented locally; CI integration remains optional
 
 ### Next action
 Career matchmaking/table flow batches 1–3 are complete. Optional follow-up: implement `docs/CAREER_E2E_TWO_BROWSER_PLAN.md` locally when ready.
