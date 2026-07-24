@@ -15,8 +15,8 @@ export type PlayerChipStackProps = {
 };
 
 /**
- * Compact bankroll chip stack in front of a seat (toward table center).
- * Exact bankroll remains in PlayerSeat text — this is visual only.
+ * Local hero seat — keep compact so action dock stays clear.
+ * Denomination labels still render (sm size matches bot/opponent stacks).
  */
 export function PlayerChipStack({
   amount,
@@ -28,12 +28,16 @@ export function PlayerChipStack({
   if (!Number.isFinite(amount) || amount <= 0) return null;
 
   const mobile = breakpoint === "mobile";
+  // Match bot/opponent stacks: sm discs show denom labels on top (1, 5, 10, 25…).
+  // Keep dense only on mobile / local hero for dock clearance — not unlabeled xs.
   const dense = mobile || isLocal;
-  const size = mobile ? "xs" : isLocal ? "xs" : "sm";
+  const size = "sm";
 
   return (
     <div
-      className={`player-chip-stack pointer-events-none ${dense ? "player-chip-stack--dense" : ""} ${className}`}
+      className={`player-chip-stack pointer-events-none ${dense ? "player-chip-stack--dense" : ""} ${
+        isLocal ? "player-chip-stack--local" : ""
+      } ${className}`}
       data-player-chip-stack={playerId}
     >
       <ChipStack

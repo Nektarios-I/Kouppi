@@ -76,6 +76,15 @@ describe("PlayerChipStack / PotChipStack", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows denomination text on local hero chips (same as bot stacks)", () => {
+    const { container } = render(
+      <PlayerChipStack amount={5} playerId="you" breakpoint="desktop" isLocal />
+    );
+    // Ivory "1" and/or red "5" disc labels must be present (sm size, not unlabeled xs)
+    expect(container.querySelector('[data-chip-key="red"]')?.textContent).toContain("5");
+    expect(container.querySelector(".player-chip-stack--local")).toBeTruthy();
+  });
+
   it("renders pot label and exact amount even at zero", () => {
     render(<PotChipStack amount={0} />);
     expect(screen.getByRole("group", { name: /pot: 0 chips/i })).toBeInTheDocument();
@@ -186,6 +195,23 @@ describe("PokerTable chip integration", () => {
     expect(container.querySelector("[data-bankroll-anchor='you']")).toBeTruthy();
     expect(container.querySelector("[data-bankroll-anchor='bot']")).toBeTruthy();
     expect(screen.getByRole("group", { name: /pot: 125 chips/i })).toBeInTheDocument();
+    expect(screen.getByText("Dealer")).toBeInTheDocument();
+  });
+
+  it("does not render legacy red/gray ornamental tray chips", () => {
+    const { container } = render(
+      <PokerTable
+        pot={10}
+        players={[{ id: "you", name: "You", bankroll: 50 }]}
+        currentIndex={0}
+        playerId="you"
+      />
+    );
+    const redGray = Array.from(container.querySelectorAll("div")).filter((el) => {
+      const bg = (el as HTMLElement).style?.background || "";
+      return bg.includes("#c03030") || bg.includes("#f5f5f5");
+    });
+    expect(redGray).toHaveLength(0);
   });
 
   it("does not invent wager markers without currentBetByPlayerId", () => {

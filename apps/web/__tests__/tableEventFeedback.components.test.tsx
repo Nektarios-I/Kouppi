@@ -69,6 +69,20 @@ describe("TableEventLog", () => {
     render(<TableEventLog entries={entries} viewportWidth={1280} />);
     expect(screen.getByText("Nektarios won 60")).toBeInTheDocument();
     expect(screen.getByText("Bot 1 called")).toBeInTheDocument();
+    expect(screen.getByText(/table info/i)).toBeInTheDocument();
+  });
+
+  it("shows live status in the side panel (not center overlay)", () => {
+    render(
+      <TableEventLog
+        entries={[makeEvent({ id: "a", logText: "You won 20" })]}
+        liveEvent={makeEvent({ id: "live", ribbonText: "You won 20" })}
+        viewportWidth={1280}
+      />
+    );
+    const live = screen.getByTestId("table-result-ribbon");
+    expect(live).toHaveTextContent("You won 20");
+    expect(live.className).toContain("table-info-live");
   });
 
   it("provides accessible mobile FAB (44px target class)", async () => {
@@ -96,7 +110,7 @@ describe("TableFeedbackProvider integration", () => {
     vi.useRealTimers();
   });
 
-  it("shows one ribbon for a resolution and dismisses after duration", () => {
+  it("surfaces resolution copy in the info panel and dismisses live status after duration", () => {
     const resolution = {
       kind: "bet" as const,
       playerId: "you",
@@ -118,13 +132,17 @@ describe("TableFeedbackProvider integration", () => {
       </TableFeedbackProvider>
     );
 
+    // Panel-only: overlays must not mount a center ribbon host
+    expect(document.querySelector(".table-result-ribbon-host")).toBeNull();
     expect(screen.getByTestId("table-result-ribbon")).toHaveTextContent("You won 20");
     expect(screen.getAllByTestId("table-result-ribbon")).toHaveLength(1);
+    expect(screen.getByText("You won 20", { selector: ".table-event-log-line" })).toBeInTheDocument();
 
     act(() => {
       vi.advanceTimersByTime(2500);
     });
     expect(screen.queryByTestId("table-result-ribbon")).not.toBeInTheDocument();
+    expect(screen.getByTestId("table-info-live-idle")).toBeInTheDocument();
   });
 
   it("does not treat Celebration as part of feedback path (smoke)", () => {

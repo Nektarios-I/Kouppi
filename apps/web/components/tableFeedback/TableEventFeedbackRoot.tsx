@@ -30,7 +30,6 @@ import {
 } from "@/store/tableEffectsStore";
 import { GameSounds } from "@/lib/sounds";
 import TablePhysicalFeedbackLayer from "./TablePhysicalFeedbackLayer";
-import TableResultRibbon from "./TableResultRibbon";
 import TableEventLog from "./TableEventLog";
 
 type FeedbackContextValue = {
@@ -203,7 +202,11 @@ export function TableFeedbackProvider({
   );
 }
 
-/** Mount inside `.game-stage-table-region` (position:relative). */
+/**
+ * Mount inside `.game-stage-table-region` (position:relative).
+ * Physical Layer 1 only — result copy lives in the side info panel (Layer 3),
+ * not as a center-felt ribbon.
+ */
 export function TableFeedbackOverlays({
   tableSurfaceRef,
 }: {
@@ -212,23 +215,26 @@ export function TableFeedbackOverlays({
   const ctx = useTableFeedbackOptional();
   if (!ctx) return null;
   return (
-    <>
-      <TablePhysicalFeedbackLayer
-        events={ctx.physicalEvents}
-        tableSurfaceRef={tableSurfaceRef}
-        visualLevel={ctx.visualLevel}
-        onEventComplete={ctx.onPhysicalComplete}
-      />
-      <TableResultRibbon event={ctx.activeRibbon} />
-    </>
+    <TablePhysicalFeedbackLayer
+      events={ctx.physicalEvents}
+      tableSurfaceRef={tableSurfaceRef}
+      visualLevel={ctx.visualLevel}
+      onEventComplete={ctx.onPhysicalComplete}
+    />
   );
 }
 
-/** Mount in secondary chrome or as mobile FAB sibling of stage. */
+/** Mount in left stage rail (desktop) or as mobile FAB sibling of stage. */
 export function TableFeedbackLogSlot() {
   const ctx = useTableFeedbackOptional();
   if (!ctx) return null;
-  return <TableEventLog entries={ctx.logEntries} viewportWidth={ctx.viewportWidth} />;
+  return (
+    <TableEventLog
+      entries={ctx.logEntries}
+      liveEvent={ctx.activeRibbon}
+      viewportWidth={ctx.viewportWidth}
+    />
+  );
 }
 
 /** @deprecated alias */

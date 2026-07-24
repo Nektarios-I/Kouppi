@@ -5,25 +5,39 @@ import type { TableFeedbackEvent } from "@/lib/tableEventFeedback";
 
 export type TableEventLogProps = {
   entries: TableFeedbackEvent[];
+  /** Ephemeral latest result (formerly center ribbon) — shown in panel only. */
+  liveEvent?: TableFeedbackEvent | null;
   viewportWidth: number;
 };
 
+const TONE_CLASS: Record<TableFeedbackEvent["tone"], string> = {
+  neutral: "table-info-live--neutral",
+  win: "table-info-live--win",
+  loss: "table-info-live--loss",
+  shistri: "table-info-live--shistri",
+  action: "table-info-live--action",
+};
+
 /**
- * Layer 3 — bounded hand history.
- * Desktop: collapsible dock.
- * Mobile: 44×44 FAB above emote; bottom sheet.
- * Does not auto-scroll away from a user who scrolled up.
+ * Layer 3 — hand history + live status (panel-only; not center-felt).
+ * Desktop: left info rail.
+ * Mobile: 44×44 FAB + bottom sheet.
  */
-export default function TableEventLog({ entries, viewportWidth }: TableEventLogProps) {
-  const isMobile = viewportWidth < 768;
+export default function TableEventLog({
+  entries,
+  liveEvent = null,
+  viewportWidth,
+}: TableEventLogProps) {
+  // Match `.game-stage-side` (≥1024): rail on desktop, FAB below that.
+  const isMobile = viewportWidth < 1024;
   const [open, setOpen] = useState(!isMobile);
   const listRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
   const prevLen = useRef(0);
 
   useEffect(() => {
-    // Collapse by default when switching to mobile
     if (isMobile) setOpen(false);
+    else setOpen(true);
   }, [isMobile]);
 
   useEffect(() => {
@@ -41,6 +55,26 @@ export default function TableEventLog({ entries, viewportWidth }: TableEventLogP
     const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
     stickToBottom.current = dist < 28;
   };
+
+  const liveStatus = liveEvent ? (
+    <div
+      key={liveEvent.id}
+      className={`table-info-live ${TONE_CLASS[liveEvent.tone]}`}
+      role="status"
+      aria-live={liveEvent.ariaLive === "off" ? "off" : liveEvent.ariaLive}
+      aria-atomic="true"
+      data-testid="table-result-ribbon"
+      data-tone={liveEvent.tone}
+    >
+      <span className="table-info-live-label font-ui">Latest</span>
+      <span className="table-info-live-text">{liveEvent.ribbonText}</span>
+    </div>
+  ) : (
+    <div className="table-info-live table-info-live--idle" data-testid="table-info-live-idle">
+      <span className="table-info-live-label font-ui">Latest</span>
+      <span className="table-info-live-text table-info-live-text--muted">Waiting for action…</span>
+    </div>
+  );
 
   const body = (
     <div
@@ -86,7 +120,7 @@ export default function TableEventLog({ entries, viewportWidth }: TableEventLogP
             aria-label="Hand history"
           >
             <div className="table-event-log-sheet-header">
-              <span className="font-ui text-sm text-gold-light">Hand history</span>
+              <span className="font-ui text-sm text-gold-light">Table info</span>
               <button
                 type="button"
                 className="table-event-log-close"
@@ -96,6 +130,7 @@ export default function TableEventLog({ entries, viewportWidth }: TableEventLogP
                 ✕
               </button>
             </div>
+            {liveStatus}
             {body}
           </div>
         )}
@@ -104,7 +139,16 @@ export default function TableEventLog({ entries, viewportWidth }: TableEventLogP
   }
 
   return (
-    <div className="table-event-log-desktop" data-testid="table-event-log">
+    <aside
+      className="table-info-panel table-event-log-desktop"
+      data-testid="table-event-log"
+      aria-label="Table info and hand history"
+    >
+      <div className="table-info-panel-header">
+        <span className="table-info-panel-title font-ui">Table info</span>
+        <span className="table-event-log-count">{entries.length}</span>
+      </div>
+      {liveStatus}
       <button
         type="button"
         className="table-event-log-toggle"
@@ -112,9 +156,9 @@ export default function TableEventLog({ entries, viewportWidth }: TableEventLogP
         onClick={() => setOpen((v) => !v)}
       >
         <span>Hand history</span>
-        <span className="table-event-log-count">{entries.length}</span>
+        <span aria-hidden="true">{open ? "▾" : "▸"}</span>
       </button>
       {open && body}
-    </div>
+    </aside>
   );
 }

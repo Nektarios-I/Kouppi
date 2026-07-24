@@ -217,7 +217,14 @@ function SinglePlayerTableBody() {
         </RoundEndPanel>
       )}
 
-      <div className="game-stage">
+      <div
+        className={`game-stage${
+          (isMyTurn && up && !awaitingNext && state.phase === "Round") ||
+          (awaitingNext && state.phase === "Round")
+            ? " game-stage--dock-open"
+            : ""
+        }`}
+      >
         <div className="game-stage-hud">
           <GameHUD
             title="KOUPPI"
@@ -242,24 +249,29 @@ function SinglePlayerTableBody() {
           />
         </div>
 
-        <div className="game-stage-table-region relative">
-          <PokerTable
-            pot={state.round.pot}
-            players={state.players}
-            currentIndex={state.currentIndex}
-            playerId={you.id}
-            avatars={avatarMap}
-            dealerMessage={dealerMessage}
-            surfaceRef={tableSurfaceRef}
-            currentBetByPlayerId={
-              state.turn?.betAmount && state.turn.playerId
-                ? { [state.turn.playerId]: state.turn.betAmount }
-                : undefined
-            }
-          >
-            <CenterCards presentation={centerCards} />
-          </PokerTable>
-          <TableFeedbackOverlays tableSurfaceRef={tableSurfaceRef} />
+        <div className="game-stage-main">
+          <div className="game-stage-side">
+            <TableFeedbackLogSlot />
+          </div>
+          <div className="game-stage-table-region relative">
+            <PokerTable
+              pot={state.round.pot}
+              players={state.players}
+              currentIndex={state.currentIndex}
+              playerId={you.id}
+              avatars={avatarMap}
+              dealerMessage={dealerMessage}
+              surfaceRef={tableSurfaceRef}
+              currentBetByPlayerId={
+                state.turn?.betAmount && state.turn.playerId
+                  ? { [state.turn.playerId]: state.turn.betAmount }
+                  : undefined
+              }
+            >
+              <CenterCards presentation={centerCards} />
+            </PokerTable>
+            <TableFeedbackOverlays tableSurfaceRef={tableSurfaceRef} />
+          </div>
         </div>
 
         {awaitingNext && state.phase === "Round" && (
@@ -291,7 +303,7 @@ function SinglePlayerTableBody() {
                 dispatch({ type: "pass" });
               }}
               onBet={() => {
-                // Outcome feedback (chips + ribbon) comes from lastResolution via TableFeedbackProvider
+                // Outcome feedback (chips + side panel) comes from lastResolution via TableFeedbackProvider
                 dispatch({ type: "bet", amount: bet });
               }}
               onKouppi={() => {
@@ -303,15 +315,6 @@ function SinglePlayerTableBody() {
             />
           </div>
         )}
-
-        <div className="game-stage-secondary">
-          <TableFeedbackLogSlot />
-          <p className="mt-1 text-center text-xs text-gray-600 font-ui">
-            <Link href="/3d-preview" className="text-gold/60 hover:text-gold transition-colors">
-              3D preview
-            </Link>
-          </p>
-        </div>
       </div>
     </CasinoBackground>
   );

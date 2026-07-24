@@ -264,7 +264,7 @@ export function PokerTable({
             <div className="absolute left-1/2 top-[38%] -translate-x-1/2 -translate-y-1/2 w-[24%] h-[17%] rounded-[50%] table-pot-zone pointer-events-none" />
           </div>
 
-          {/* Dealer chip tray */}
+          {/* Dealer tray rail (ornamental discs removed — official chip system only) */}
           <div
             className="absolute top-[5%] left-1/2 -translate-x-1/2 z-[5] w-[32%] pointer-events-none"
             aria-hidden="true"
@@ -276,24 +276,17 @@ export function PokerTable({
                 boxShadow: "inset 0 2px 6px rgba(255,255,255,0.1), 0 4px 14px rgba(0,0,0,0.55)",
               }}
             />
-            <div className="flex justify-center gap-1 mt-0.5 opacity-60">
-              {[0, 1, 2, 3, 4].map((n) => (
-                <div
-                  key={n}
-                  className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full border border-gold/30"
-                  style={{
-                    background: n % 2 === 0 ? "#c03030" : "#f5f5f5",
-                    boxShadow: "0 1px 2px rgba(0,0,0,0.5)",
-                  }}
-                />
-              ))}
-            </div>
           </div>
 
           <div className="absolute top-[16%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 w-max max-w-[90%]">
-            <div className="table-dealer-banner px-4 sm:px-6 py-1.5 sm:py-2">
+            <div
+              className="table-dealer-banner px-3 sm:px-5 py-1.5 sm:py-2"
+              role="status"
+              aria-label={`Dealer: ${dealerMessage}`}
+            >
+              <div className="table-dealer-banner-label font-ui">Dealer</div>
               <div
-                className="text-gold-light font-display font-semibold text-sm sm:text-lg tracking-[0.25em] text-center truncate drop-shadow-sm"
+                className="table-dealer-banner-message text-gold-light font-display font-semibold text-sm sm:text-lg tracking-[0.25em] text-center truncate drop-shadow-sm"
                 aria-live="polite"
               >
                 {dealerMessage}

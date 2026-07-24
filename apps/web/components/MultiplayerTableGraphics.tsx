@@ -459,7 +459,13 @@ function MultiplayerTableBody() {
       {leaveErrorBanner}
       {actionErrorBanner}
 
-      <div className="game-stage">
+      <div
+        className={`game-stage${
+          isMyTurn && up && !awaitingNext && gameState.phase === "Round" && !currentBankrupt && !isSpectator
+            ? " game-stage--dock-open"
+            : ""
+        }`}
+      >
         {isSpectator && (
           <div className="mb-2 flex justify-center game-stage-hud">
             <span className="hud-badge hud-badge-live text-sm px-4 py-2">Spectating — read-only</span>
@@ -524,37 +530,42 @@ function MultiplayerTableBody() {
         />
         </div>
 
-        <div className="game-stage-table-region relative">
-          <PokerTable
-            pot={gameState.round.pot}
-            players={gameState.players}
-            currentIndex={gameState.currentIndex}
-            playerId={playerId || undefined}
-            avatars={avatarMap}
-            cosmeticsByPlayerId={cosmeticsMap}
-            dealerMessage={dealerMessage}
-            surfaceRef={tableSurfaceRef}
-            connectionByPlayerId={Object.fromEntries(
-              playersInRoom.map((p) => [
-                p.id,
-                {
-                  connected: p.connected,
-                  reconnectRemainingSec: p.reconnectRemainingSec ?? null,
-                },
-              ])
-            )}
-            currentBetByPlayerId={
-              gameState.turn?.betAmount && gameState.turn.playerId
-                ? { [gameState.turn.playerId]: gameState.turn.betAmount }
-                : undefined
-            }
-            turnRemainingSec={
-              turnTimer && !awaitingNext && isMyTurn ? turnTimer.remaining : null
-            }
-          >
-            <CenterCards presentation={centerCards} />
-          </PokerTable>
-          <TableFeedbackOverlays tableSurfaceRef={tableSurfaceRef} />
+        <div className="game-stage-main">
+          <div className="game-stage-side">
+            <TableFeedbackLogSlot />
+          </div>
+          <div className="game-stage-table-region relative">
+            <PokerTable
+              pot={gameState.round.pot}
+              players={gameState.players}
+              currentIndex={gameState.currentIndex}
+              playerId={playerId || undefined}
+              avatars={avatarMap}
+              cosmeticsByPlayerId={cosmeticsMap}
+              dealerMessage={dealerMessage}
+              surfaceRef={tableSurfaceRef}
+              connectionByPlayerId={Object.fromEntries(
+                playersInRoom.map((p) => [
+                  p.id,
+                  {
+                    connected: p.connected,
+                    reconnectRemainingSec: p.reconnectRemainingSec ?? null,
+                  },
+                ])
+              )}
+              currentBetByPlayerId={
+                gameState.turn?.betAmount && gameState.turn.playerId
+                  ? { [gameState.turn.playerId]: gameState.turn.betAmount }
+                  : undefined
+              }
+              turnRemainingSec={
+                turnTimer && !awaitingNext && isMyTurn ? turnTimer.remaining : null
+              }
+            >
+              <CenterCards presentation={centerCards} />
+            </PokerTable>
+            <TableFeedbackOverlays tableSurfaceRef={tableSurfaceRef} />
+          </div>
         </div>
 
         {isHost && !isSpectator && playersInRoom.length > 1 && (
@@ -617,10 +628,6 @@ function MultiplayerTableBody() {
           />
           </div>
         )}
-
-        <div className="game-stage-secondary">
-          <TableFeedbackLogSlot />
-        </div>
       </div>
 
       {pendingConfirm?.type === "closeRoom" && (
