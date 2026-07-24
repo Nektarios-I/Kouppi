@@ -296,4 +296,12 @@ describe("effects preferences", () => {
     expect(msg).toBe("RESOLVED");
     expect(msg.includes("!")).toBe(false);
   });
+
+  it("keeps the dealer calm instead of duplicating the local turn message", () => {
+    expect(calmDealerMessage({
+      awaitingNext: false,
+      resolution: null,
+      isMyTurn: true,
+    })).toBe("KOUPPI");
+  });
 });

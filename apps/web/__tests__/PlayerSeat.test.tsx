@@ -61,7 +61,7 @@ describe("PlayerSeat", () => {
     expect(screen.getByText(/Bot 1's turn/i)).toBeInTheDocument();
   });
 
-  it("announces Your turn only for local player via sr-only", () => {
+  it("shows YOUR TURN badge and announces it only for the local player", () => {
     render(
       <PlayerSeat
         player={basePlayer({
@@ -74,7 +74,7 @@ describe("PlayerSeat", () => {
         turnRemainingSec={12}
       />
     );
-    expect(screen.getByText("TURN")).toBeInTheDocument();
+    expect(screen.getByText("YOUR TURN")).toBeInTheDocument();
     expect(screen.getByText("12")).toBeInTheDocument();
     expect(screen.getByText("Your turn")).toBeInTheDocument();
   });

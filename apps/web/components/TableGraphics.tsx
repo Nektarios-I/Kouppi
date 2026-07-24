@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { useGameStore } from "@/store/gameStore";
 import type { Upcards } from "@kouppi/game-core";
 import {
@@ -13,7 +14,6 @@ import { PokerTable } from "./PokerTable";
 import { useGameSounds } from "@/hooks/useSounds";
 import CenterCards from "./game/CenterCards";
 import { useCenterCardsPresentation } from "./game/useCenterCardsPresentation";
-import GameHUD, { GameStatusBanner } from "./game/GameHUD";
 import GameActionPanel from "./game/GameActionPanel";
 import { NextTurnButton, RoundEndPanel } from "./game/GamePanels";
 import { HudButton } from "./game/HudButton";
@@ -21,15 +21,20 @@ import { getAvatarFromId, getBotAvatar } from "@/lib/avatars";
 import type { AvatarConfig } from "@/store/remoteGameStore";
 import Link from "next/link";
 import CasinoBackground from "./game/CasinoBackground";
-import TableThemeSelector from "./game/TableThemeSelector";
 import { useTableTheme } from "@/hooks/useTableTheme";
 import { calmDealerMessage } from "@/lib/tableEventFeedback";
 import {
   TableFeedbackProvider,
   TableFeedbackOverlays,
-  TableFeedbackLogSlot,
+  useTableFeedback,
 } from "./tableFeedback/TableEventFeedbackRoot";
 import { useTableEffectsStore } from "@/store/tableEffectsStore";
+import GameScreen from "./game/GameScreen";
+import GameUtilityBar from "./game/GameUtilityBar";
+import GameSettingsMenu from "./game/GameSettingsMenu";
+import HistoryDrawer from "./game/HistoryDrawer";
+import GameActionDock, { type GameActionDockState } from "./game/GameActionDock";
+import ConfirmDialog from "./game/ConfirmDialog";
 
 export default function SinglePlayerTableGraphics() {
   const { state } = useGameStore();
@@ -58,13 +63,16 @@ export default function SinglePlayerTableGraphics() {
 }
 
 function SinglePlayerTableBody() {
+  const router = useRouter();
   const { state, dispatch, ready, botProfiles } = useGameStore();
   const { theme } = useTableTheme();
   const tableSound = useTableEffectsStore((s) => s.sound);
   const [bet, setBet] = useState<number>(10);
   const [botThinking, setBotThinking] = useState(false);
   const [botPlanned, setBotPlanned] = useState<string | null>(null);
+  const [confirmLeave, setConfirmLeave] = useState(false);
   const tableSurfaceRef = useRef<HTMLDivElement>(null);
+  const feedback = useTableFeedback();
 
   const sounds = useGameSounds();
   const prevIsMyTurn = useRef<boolean>(false);
@@ -105,6 +113,14 @@ function SinglePlayerTableBody() {
 
   const currentPlayer = state.players[state.currentIndex];
   const isMyTurn = state.currentIndex === 0;
+  const actionDockState: GameActionDockState =
+    !ready || state.phase !== "Round"
+      ? "disabled"
+      : awaitingNext
+        ? "next"
+        : isMyTurn && !!up
+          ? "active"
+          : "waiting";
 
   const avatarMap = useMemo(() => {
     const map: Record<string, AvatarConfig> = {};
@@ -217,43 +233,34 @@ function SinglePlayerTableBody() {
         </RoundEndPanel>
       )}
 
-      <div
-        className={`game-stage${
-          (isMyTurn && up && !awaitingNext && state.phase === "Round") ||
-          (awaitingNext && state.phase === "Round")
-            ? " game-stage--dock-open"
-            : ""
-        }`}
-      >
-        <div className="game-stage-hud">
-          <GameHUD
-            title="KOUPPI"
-            badges={[{ id: "mode", label: "Single Player", variant: "gold" }]}
-            rightActions={
-              <div className="flex items-center gap-2 flex-wrap justify-end">
-                <TableThemeSelector compact id="sp-table-theme" />
-                <Link
-                  href="/"
-                  className="hud-btn hud-btn-danger hud-btn-sm no-underline"
-                  aria-label="Exit game"
-                >
-                  Exit
-                </Link>
-              </div>
-            }
-            statusBanner={
-              !isMyTurn && state.phase === "Round" && !awaitingNext ? (
-                <GameStatusBanner>{currentPlayer?.name} is thinking...</GameStatusBanner>
-              ) : undefined
-            }
+      <GameScreen
+        utility={
+          <GameUtilityBar
+            modeLabel="Single Player"
+            settings={<GameSettingsMenu onRequestLeave={() => setConfirmLeave(true)} />}
           />
-        </div>
-
-        <div className="game-stage-main">
-          <div className="game-stage-side">
-            <TableFeedbackLogSlot />
-          </div>
-          <div className="game-stage-table-region relative">
+        }
+        history={
+          <HistoryDrawer
+            entries={feedback.logEntries}
+            liveEvent={feedback.activeRibbon}
+            round={{
+              phase: state.phase,
+              summary: botThinking ? botPlanned || `${currentPlayer?.name} is thinking` : null,
+              awaitingNext,
+            }}
+            table={{
+              mode: "Single Player",
+              details: [
+                `Ante ${state.config.ante}`,
+                `${Math.max(0, state.players.length - 1)} bots`,
+                `Minimum bet ${minBet}`,
+              ],
+            }}
+          />
+        }
+        table={
+          <div className="relative game-table-protected">
             <PokerTable
               pot={state.round.pot}
               players={state.players}
@@ -272,50 +279,52 @@ function SinglePlayerTableBody() {
             </PokerTable>
             <TableFeedbackOverlays tableSurfaceRef={tableSurfaceRef} />
           </div>
-        </div>
-
-        {awaitingNext && state.phase === "Round" && (
-          <div className="game-stage-dock py-1">
-            <NextTurnButton onClick={() => dispatch({ type: "nextPlayer" })} />
-          </div>
-        )}
-
-        {isMyTurn && up && !awaitingNext && state.phase === "Round" && (
-          <div className="game-stage-dock">
-            <GameActionPanel
-              bet={bet}
-              onBetChange={setBet}
-              minBet={minBet}
-              maxBet={maxBet}
-              bankroll={you.bankroll}
-              pot={state.round.pot}
-              canKouppi={canKouppi}
-              shistriEligible={shistriEligible}
-              shistriAmount={shistriAmount}
-              shistriPercent={state.config.shistri.percent}
-              disabled={!ready || state.phase !== "Round" || awaitingNext}
-              showPairWarning={
-                !!(up.a && up.b && (up.a.rank === up.b.rank || Math.abs(up.a.rank - up.b.rank) === 1))
-              }
-              pairIsConsecutive={!!(up.a && up.b && up.a.rank !== up.b.rank)}
-              onPass={() => {
-                if (sfx) sounds.click();
-                dispatch({ type: "pass" });
-              }}
-              onBet={() => {
-                // Outcome feedback (chips + side panel) comes from lastResolution via TableFeedbackProvider
-                dispatch({ type: "bet", amount: bet });
-              }}
-              onKouppi={() => {
-                dispatch({ type: "kouppi" });
-              }}
-              onShistri={() => {
-                dispatch({ type: "shistri" });
-              }}
-            />
-          </div>
-        )}
-      </div>
+        }
+        dock={
+          <GameActionDock state={actionDockState} waitingFor={currentPlayer?.name}>
+            {actionDockState === "next" ? (
+              <NextTurnButton onClick={() => dispatch({ type: "nextPlayer" })} />
+            ) : actionDockState === "active" && up ? (
+              <GameActionPanel
+                bet={bet}
+                onBetChange={setBet}
+                minBet={minBet}
+                maxBet={maxBet}
+                bankroll={you.bankroll}
+                pot={state.round.pot}
+                canKouppi={canKouppi}
+                shistriEligible={shistriEligible}
+                shistriAmount={shistriAmount}
+                shistriPercent={state.config.shistri.percent}
+                disabled={!ready || state.phase !== "Round" || awaitingNext}
+                showPairWarning={
+                  !!(up.a && up.b && (up.a.rank === up.b.rank || Math.abs(up.a.rank - up.b.rank) === 1))
+                }
+                pairIsConsecutive={!!(up.a && up.b && up.a.rank !== up.b.rank)}
+                onPass={() => {
+                  if (sfx) sounds.click();
+                  dispatch({ type: "pass" });
+                }}
+                onBet={() => dispatch({ type: "bet", amount: bet })}
+                onKouppi={() => dispatch({ type: "kouppi" })}
+                onShistri={() => dispatch({ type: "shistri" })}
+              />
+            ) : null}
+          </GameActionDock>
+        }
+      />
+      {confirmLeave ? (
+        <ConfirmDialog
+          title="Leave game?"
+          message="Your current single-player round will be abandoned."
+          confirmLabel="Leave game"
+          onConfirm={() => {
+            setConfirmLeave(false);
+            router.push("/");
+          }}
+          onCancel={() => setConfirmLeave(false)}
+        />
+      ) : null}
     </CasinoBackground>
   );
 }

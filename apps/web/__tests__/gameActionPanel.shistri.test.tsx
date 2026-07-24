@@ -20,6 +20,18 @@ const baseProps = {
 };
 
 describe("GameActionPanel SHISTRI stake display", () => {
+  it("renders compact controls without legacy YOUR MOVE window chrome", () => {
+    render(
+      <GameActionPanel
+        {...baseProps}
+        shistriEligible={false}
+        shistriAmount={0}
+      />
+    );
+    expect(screen.queryByText("YOUR MOVE")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: /your move controls/i })).not.toBeInTheDocument();
+  });
+
   it("shows Risk line with amount and percent when eligible", () => {
     render(
       <GameActionPanel

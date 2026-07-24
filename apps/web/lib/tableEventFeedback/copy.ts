@@ -148,6 +148,5 @@ export function calmDealerMessage(input: {
     if (input.resolution.kind === "kouppi") return "KOUPPI";
     return "RESOLVED";
   }
-  if (input.isMyTurn) return "YOUR TURN";
   return "KOUPPI";
 }

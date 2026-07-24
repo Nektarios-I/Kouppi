@@ -204,7 +204,7 @@ export function TableFeedbackProvider({
 
 /**
  * Mount inside `.game-stage-table-region` (position:relative).
- * Physical Layer 1 only — result copy lives in the side info panel (Layer 3),
+ * Physical Layer 1 only — result copy lives in the History Drawer (Layer 3),
  * not as a center-felt ribbon.
  */
 export function TableFeedbackOverlays({
@@ -224,7 +224,7 @@ export function TableFeedbackOverlays({
   );
 }
 
-/** Mount in left stage rail (desktop) or as mobile FAB sibling of stage. */
+/** @deprecated Active game shells render HistoryDrawer directly from useTableFeedback. */
 export function TableFeedbackLogSlot() {
   const ctx = useTableFeedbackOptional();
   if (!ctx) return null;

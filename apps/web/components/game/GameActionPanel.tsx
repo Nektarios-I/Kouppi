@@ -61,10 +61,9 @@ export default function GameActionPanel({
     : "SHISTRI not available for these cards";
 
   return (
-    <div className="game-action-dock" role="region" aria-label="Your move controls">
+    <div className="game-action-panel">
       <div className="game-action-dock-inner">
-        <div className="game-action-header">
-          <span className="game-action-title font-display">YOUR MOVE</span>
+        <div className="game-action-header game-action-header--compact">
           <div className="game-action-stats font-ui">
             <span>
               Bankroll <strong className="text-gold-light tabular-nums">{bankroll}</strong>

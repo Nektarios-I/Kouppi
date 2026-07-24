@@ -6,7 +6,6 @@ import { useRemoteGameStore, type AvatarConfig } from "@/store/remoteGameStore";
 import { useAuthStore } from "@/store/authStore";
 import dynamic from "next/dynamic";
 import Chat from "../../../components/Chat";
-import SoundControl from "../../../components/SoundControl";
 import EmotePanel from "../../../components/EmotePanel";
 import { getDefaultAvatar, normalizeAvatarConfig } from "@/lib/avatars";
 import { useToast } from "@/components/game/Toast";
@@ -432,7 +431,6 @@ export default function RoomPage() {
       <>
         <MultiplayerTable />
         <Chat />
-        <SoundControl />
         {!isSpectator && <EmotePanel />}
         {isSpectator && (
           <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2">

@@ -134,7 +134,9 @@ export default function PlayerSeat({
           </span>
           <div className="flex items-center gap-0.5 flex-wrap justify-center">
             {player.isBot && <PlayerStatusBadge kind="bot" />}
-            {player.isCurrentTurn && <PlayerStatusBadge kind="turn" />}
+            {player.isCurrentTurn && (
+              <PlayerStatusBadge kind="turn" label={player.isMe ? "YOUR TURN" : undefined} />
+            )}
             {player.connected === false && <PlayerStatusBadge kind="offline" />}
           </div>
         </div>
@@ -209,7 +211,7 @@ export default function PlayerSeat({
             </span>
             {player.isCurrentTurn && (
               <span className="inline-flex items-center gap-0.5 shrink-0">
-                <PlayerStatusBadge kind="turn" />
+                <PlayerStatusBadge kind="turn" label={player.isMe ? "YOUR TURN" : undefined} />
                 {showTimer && (
                   <span
                     className="player-seat__timer font-ui tabular-nums"

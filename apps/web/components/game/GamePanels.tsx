@@ -31,7 +31,7 @@ export function RoundEndPanel({
   children,
 }: RoundEndPanelProps) {
   return (
-    <div className="fixed inset-0 bg-black/85 backdrop-blur-sm grid place-items-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/85 backdrop-blur-sm grid place-items-center z-[70] p-4">
       <div className="game-modal-panel w-full max-w-md" role="dialog" aria-modal="true">
         <div className="game-modal-header">
           <h2 className="font-display text-2xl font-bold text-gold-light tracking-wide text-center">

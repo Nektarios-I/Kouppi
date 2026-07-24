@@ -11,12 +11,10 @@ import { PokerTable } from "./PokerTable";
 import { useGameSounds } from "@/hooks/useSounds";
 import CenterCards from "./game/CenterCards";
 import { useCenterCardsPresentation } from "./game/useCenterCardsPresentation";
-import GameHUD, { GameStatusBanner } from "./game/GameHUD";
 import GameActionPanel from "./game/GameActionPanel";
 import { RoundEndPanel } from "./game/GamePanels";
 import { HudButton } from "./game/HudButton";
 import CasinoBackground from "./game/CasinoBackground";
-import TableThemeSelector from "./game/TableThemeSelector";
 import ConnectionStatusBanner from "./game/ConnectionStatusBanner";
 import ConfirmDialog from "./game/ConfirmDialog";
 import { useTableTheme } from "@/hooks/useTableTheme";
@@ -25,12 +23,18 @@ import { calmDealerMessage } from "@/lib/tableEventFeedback";
 import {
   TableFeedbackProvider,
   TableFeedbackOverlays,
-  TableFeedbackLogSlot,
+  useTableFeedback,
 } from "./tableFeedback/TableEventFeedbackRoot";
 import { useTableEffectsStore } from "@/store/tableEffectsStore";
+import GameScreen from "./game/GameScreen";
+import GameUtilityBar from "./game/GameUtilityBar";
+import GameSettingsMenu from "./game/GameSettingsMenu";
+import HistoryDrawer from "./game/HistoryDrawer";
+import GameActionDock, { type GameActionDockState } from "./game/GameActionDock";
 
 type PendingConfirm =
   | { type: "closeRoom" }
+  | { type: "leave" }
   | { type: "kouppi" }
   | { type: "shistri"; amount: number }
   | { type: "kick"; targetId: string; targetName: string }
@@ -100,6 +104,7 @@ function MultiplayerTableBody() {
   const [hostActionError, setHostActionError] = useState<string | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm>(null);
   const tableSurfaceRef = useRef<HTMLDivElement>(null);
+  const feedback = useTableFeedback();
 
   const sounds = useGameSounds();
   const prevIsMyTurn = useRef<boolean>(false);
@@ -451,6 +456,43 @@ function MultiplayerTableBody() {
     ) : null;
 
   const currentTurnPlayerId = gameState.players[gameState.currentIndex]?.id;
+  const actionDockState: GameActionDockState =
+    isSpectator
+      ? "spectator"
+      : awaitingNext
+        ? "disabled"
+        : pendingIntent || currentBankrupt
+          ? "disabled"
+          : isMyTurn && !!up && !awaitingNext && gameState.phase === "Round"
+            ? "active"
+            : "waiting";
+
+  const hostControls =
+    isHost && !isSpectator ? (
+      <div className="game-settings-host-tools">
+        {playersInRoom
+          .filter((player) => player.id !== playerId)
+          .map((player) => (
+            <HudButton
+              key={player.id}
+              variant="danger"
+              size="sm"
+              disabled={currentTurnPlayerId === player.id}
+              onClick={() => handleKickPlayer(player.id)}
+              title={
+                currentTurnPlayerId === player.id
+                  ? "Cannot kick during their turn"
+                  : `Remove ${player.name}`
+              }
+            >
+              Kick {player.name}
+            </HudButton>
+          ))}
+        <HudButton variant="danger" size="sm" onClick={handleCloseRoom}>
+          Close room
+        </HudButton>
+      </div>
+    ) : undefined;
 
   return (
     <CasinoBackground className="text-white" theme={theme} lockViewport>
@@ -459,82 +501,58 @@ function MultiplayerTableBody() {
       {leaveErrorBanner}
       {actionErrorBanner}
 
-      <div
-        className={`game-stage${
-          isMyTurn && up && !awaitingNext && gameState.phase === "Round" && !currentBankrupt && !isSpectator
-            ? " game-stage--dock-open"
-            : ""
-        }`}
-      >
-        {isSpectator && (
-          <div className="mb-2 flex justify-center game-stage-hud">
-            <span className="hud-badge hud-badge-live text-sm px-4 py-2">Spectating — read-only</span>
-          </div>
-        )}
-        {hostActionError && isHost && !isSpectator && (
-          <div className="mb-2 hud-status-banner !text-center text-warning text-sm game-stage-hud" role="alert">
-            {hostActionError}
-            <button type="button" className="ml-2 underline" onClick={() => setHostActionError(null)}>
-              Dismiss
-            </button>
-          </div>
-        )}
-        <div className="game-stage-hud">
-        <GameHUD
-          title="KOUPPI"
-          badges={[
-            ...(roomId
-              ? [{ id: "room", label: roomId, variant: "muted" as const }]
-              : []),
-            { id: "phase", label: gameState.phase, variant: "default" as const },
-            {
-              id: "spec",
-              label: `${spectatorsInRoom.length} watching`,
-              variant: spectatorsInRoom.length > 0 ? ("live" as const) : ("muted" as const),
-            },
-          ]}
-          turnTimer={
-            turnTimer && !awaitingNext
-              ? { remaining: turnTimer.remaining, total: turnTimer.total }
-              : null
-          }
-          rightActions={
-            <div className="flex items-center gap-2 flex-wrap justify-end">
-              <TableThemeSelector compact id="mp-table-theme" />
-              {isHost && !isSpectator && (
-                <HudButton variant="ghost" size="sm" onClick={handleCloseRoom}>
-                  Close Room
-                </HudButton>
-              )}
-              <HudButton
-                variant="danger"
-                size="sm"
-                onClick={handleLeave}
-                aria-label={isSpectator ? "Stop watching" : "Leave game"}
-              >
-                {isSpectator ? "Stop Watching" : "Leave"}
-              </HudButton>
-            </div>
-          }
-          resultBanner={undefined}
-          statusBanner={
-            isMyTurn && !up && !awaitingNext && gameState.phase === "Round" && currentBankrupt ? (
-              <GameStatusBanner>You have zero bankroll — auto-passing this turn.</GameStatusBanner>
-            ) : !isMyTurn && gameState.phase === "Round" && !awaitingNext ? (
-              <GameStatusBanner>
-                Waiting for <strong className="text-white">{currentPlayer?.name}</strong>&apos;s
-                move...
-              </GameStatusBanner>
-            ) : undefined
-          }
-        />
+      {hostActionError && isHost && !isSpectator ? (
+        <div className="hud-status-banner !fixed top-20 right-4 z-[100] text-warning text-sm" role="alert">
+          {hostActionError}
+          <button type="button" className="ml-2 underline" onClick={() => setHostActionError(null)}>
+            Dismiss
+          </button>
         </div>
+      ) : null}
 
-        <div className="game-stage-main">
-          <div className="game-stage-side">
-            <TableFeedbackLogSlot />
-          </div>
-          <div className="game-stage-table-region relative">
+      <GameScreen
+        utility={
+          <GameUtilityBar
+            modeLabel={isCareerGameRoomId(roomId) ? "Career" : "Multiplayer"}
+            turnTimer={turnTimer && !awaitingNext ? turnTimer : null}
+            badges={
+              <span className="game-utility-room font-ui">
+                {roomId} · {spectatorsInRoom.length} watching
+              </span>
+            }
+            settings={
+              <GameSettingsMenu
+                leaveLabel={isSpectator ? "Stop watching" : "Leave game"}
+                onRequestLeave={() => setPendingConfirm({ type: "leave" })}
+                hostControls={hostControls}
+              />
+            }
+          />
+        }
+        history={
+          <HistoryDrawer
+            entries={feedback.logEntries}
+            liveEvent={feedback.activeRibbon}
+            round={{
+              phase: gameState.phase,
+              summary: awaitingNext
+                ? "Waiting for the server to advance the turn"
+                : `Current player: ${currentPlayer?.name || "Unknown"}`,
+              awaitingNext,
+            }}
+            table={{
+              mode: isCareerGameRoomId(roomId) ? "Career" : "Multiplayer",
+              details: [
+                `Room ${roomId}`,
+                `Ante ${gameState.config.ante}`,
+                `Minimum bet ${minBet}`,
+                `${spectatorsInRoom.length} spectators`,
+              ],
+            }}
+          />
+        }
+        table={
+          <div className="relative game-table-protected">
             <PokerTable
               pot={gameState.round.pot}
               players={gameState.players}
@@ -566,70 +584,65 @@ function MultiplayerTableBody() {
             </PokerTable>
             <TableFeedbackOverlays tableSurfaceRef={tableSurfaceRef} />
           </div>
-        </div>
-
-        {isHost && !isSpectator && playersInRoom.length > 1 && (
-          <div className="game-stage-secondary mb-1 p-2 rounded-xl border border-white/10 bg-black/25">
-            <p className="text-xs text-gray-400 font-ui uppercase tracking-wider mb-1">Host Controls</p>
-            <div className="flex flex-wrap gap-2">
-              {playersInRoom
-                .filter((p) => p.id !== playerId)
-                .map((p) => (
-                  <HudButton
-                    key={p.id}
-                    variant="danger"
-                    size="sm"
-                    disabled={currentTurnPlayerId === p.id}
-                    onClick={() => handleKickPlayer(p.id)}
-                    title={
-                      currentTurnPlayerId === p.id
-                        ? "Cannot kick during their turn"
-                        : `Remove ${p.name}`
-                    }
-                  >
-                    Kick {p.name}
-                  </HudButton>
-                ))}
-            </div>
-          </div>
-        )}
-
-        {isMyTurn && up && !awaitingNext && gameState.phase === "Round" && !currentBankrupt && !isSpectator && (
-          <div className="game-stage-dock">
-          <GameActionPanel
-            bet={bet}
-            onBetChange={setBet}
-            minBet={minBet}
-            maxBet={maxBet}
-            bankroll={me?.bankroll || 0}
-            pot={gameState.round.pot}
-            canKouppi={!!canKouppi}
-            shistriEligible={!!shistriEligible}
-            shistriAmount={shistriBetAmount}
-            shistriPercent={gameState.config.shistri.percent}
-            disabled={!!pendingIntent}
-            showPairWarning={
-              !!(up.a && up.b && (up.a.rank === up.b.rank || Math.abs(up.a.rank - up.b.rank) === 1))
+        }
+        dock={
+          <GameActionDock
+            state={actionDockState}
+            waitingFor={currentPlayer?.name}
+            disabledMessage={
+              awaitingNext
+                ? "Waiting for the server to advance the turn"
+                : currentBankrupt
+                  ? "Zero bankroll — this turn will auto-pass"
+                  : "Submitting action…"
             }
-            pairIsConsecutive={!!(up.a && up.b && up.a.rank !== up.b.rank)}
-            onPass={() => {
-              if (sfx) sounds.click();
-              sendIntent({ type: "pass" });
-            }}
-            onBet={() => {
-              sendIntent({ type: "bet", amount: bet });
-            }}
-            onKouppi={() => {
-              setPendingConfirm({ type: "kouppi" });
-            }}
-            onShistri={() => {
-              setPendingConfirm({ type: "shistri", amount: shistriBetAmount });
-            }}
-          />
-          </div>
-        )}
-      </div>
+          >
+            {actionDockState === "active" && up ? (
+              <GameActionPanel
+                bet={bet}
+                onBetChange={setBet}
+                minBet={minBet}
+                maxBet={maxBet}
+                bankroll={me?.bankroll || 0}
+                pot={gameState.round.pot}
+                canKouppi={!!canKouppi}
+                shistriEligible={!!shistriEligible}
+                shistriAmount={shistriBetAmount}
+                shistriPercent={gameState.config.shistri.percent}
+                disabled={!!pendingIntent}
+                showPairWarning={
+                  !!(up.a && up.b && (up.a.rank === up.b.rank || Math.abs(up.a.rank - up.b.rank) === 1))
+                }
+                pairIsConsecutive={!!(up.a && up.b && up.a.rank !== up.b.rank)}
+                onPass={() => {
+                  if (sfx) sounds.click();
+                  sendIntent({ type: "pass" });
+                }}
+                onBet={() => sendIntent({ type: "bet", amount: bet })}
+                onKouppi={() => setPendingConfirm({ type: "kouppi" })}
+                onShistri={() => setPendingConfirm({ type: "shistri", amount: shistriBetAmount })}
+              />
+            ) : null}
+          </GameActionDock>
+        }
+      />
 
+      {pendingConfirm?.type === "leave" && (
+        <ConfirmDialog
+          title={isSpectator ? "Stop watching?" : "Leave game?"}
+          message={
+            isSpectator
+              ? "You will return to the previous screen."
+              : "Leaving now may abandon the active round."
+          }
+          confirmLabel={isSpectator ? "Stop watching" : "Leave game"}
+          onConfirm={() => {
+            setPendingConfirm(null);
+            void handleLeave();
+          }}
+          onCancel={() => setPendingConfirm(null)}
+        />
+      )}
       {pendingConfirm?.type === "closeRoom" && (
         <ConfirmDialog
           title="Close Room?"
