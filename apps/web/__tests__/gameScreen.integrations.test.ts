@@ -14,6 +14,7 @@ describe("shared game-screen integrations", () => {
       expect(code).toContain("<GameScreen");
       expect(code).toContain("<GameUtilityBar");
       expect(code).toContain("<HistoryDrawer");
+      expect(code).toContain("history={");
       expect(code).toContain("<GameActionDock");
       expect(code).not.toContain("<GameHUD");
       expect(code).not.toContain("game-stage-side");
@@ -41,6 +42,15 @@ describe("shared game-screen integrations", () => {
     const css = readFileSync(resolve(process.cwd(), "app", "globals.css"), "utf8").replace(/\r\n/g, "\n");
     expect(css).toContain(".history-drawer-layer {\n    bottom: calc(var(--gs-dock-h) + var(--gs-gutter));");
     expect(css).toContain(".history-drawer-panel {\n    inset: auto 0 0 0;");
+    expect(css).toContain("writing-mode: horizontal-tb;");
+    expect(css).toContain(".history-drawer-trigger--toolbar");
+  });
+
+  it("themes utility and turn chrome from the active table style", () => {
+    const css = readFileSync(resolve(process.cwd(), "app", "globals.css"), "utf8").replace(/\r\n/g, "\n");
+    expect(css).toContain('.casino-room[data-table-theme="classic-green"]');
+    expect(css).toContain('.casino-room[data-table-theme="woodland"]');
+    expect(css).toContain("--gs-chrome-accent:");
   });
 
   it("keeps every mobile action visible without scrolling the dock", () => {

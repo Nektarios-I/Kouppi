@@ -92,16 +92,28 @@ describe("GameActionDock", () => {
 });
 
 describe("GameUtilityBar and settings", () => {
-  it("shows compact identity, one-tap mute, and settings", async () => {
+  it("shows compact identity, one-tap mute, history, and settings", async () => {
     const user = userEvent.setup();
     render(
       <GameUtilityBar
         modeLabel="Single Player"
+        history={
+          <HistoryDrawer
+            entries={[]}
+            round={{ phase: "Round", awaitingNext: false }}
+            table={{ mode: "Single Player" }}
+          />
+        }
         settings={<GameSettingsMenu onRequestLeave={vi.fn()} />}
       />
     );
     expect(screen.getByText("KOUPPI")).toBeInTheDocument();
     expect(screen.getByText("Single Player")).toBeInTheDocument();
+    const history = screen.getByRole("button", { name: /open history/i });
+    expect(history).toHaveClass("history-drawer-trigger--toolbar");
+    expect(history.compareDocumentPosition(screen.getByRole("button", { name: "Mute" }))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING
+    );
     await user.click(screen.getByRole("button", { name: "Mute" }));
     expect(toggleMute).toHaveBeenCalledOnce();
     expect(screen.getByRole("button", { name: /open game settings/i })).toBeInTheDocument();
@@ -136,6 +148,7 @@ describe("HistoryDrawer", () => {
       />
     );
     const trigger = screen.getByRole("button", { name: /open history/i });
+    expect(trigger).toHaveClass("history-drawer-trigger--toolbar");
     expect(screen.queryByRole("dialog", { name: /game history/i })).not.toBeInTheDocument();
     await user.click(trigger);
     expect(screen.getByRole("dialog", { name: /game history/i })).toHaveClass("history-drawer-panel");

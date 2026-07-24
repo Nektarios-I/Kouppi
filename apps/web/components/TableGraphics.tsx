@@ -237,26 +237,26 @@ function SinglePlayerTableBody() {
         utility={
           <GameUtilityBar
             modeLabel="Single Player"
+            history={
+              <HistoryDrawer
+                entries={feedback.logEntries}
+                liveEvent={feedback.activeRibbon}
+                round={{
+                  phase: state.phase,
+                  summary: botThinking ? botPlanned || `${currentPlayer?.name} is thinking` : null,
+                  awaitingNext,
+                }}
+                table={{
+                  mode: "Single Player",
+                  details: [
+                    `Ante ${state.config.ante}`,
+                    `${Math.max(0, state.players.length - 1)} bots`,
+                    `Minimum bet ${minBet}`,
+                  ],
+                }}
+              />
+            }
             settings={<GameSettingsMenu onRequestLeave={() => setConfirmLeave(true)} />}
-          />
-        }
-        history={
-          <HistoryDrawer
-            entries={feedback.logEntries}
-            liveEvent={feedback.activeRibbon}
-            round={{
-              phase: state.phase,
-              summary: botThinking ? botPlanned || `${currentPlayer?.name} is thinking` : null,
-              awaitingNext,
-            }}
-            table={{
-              mode: "Single Player",
-              details: [
-                `Ante ${state.config.ante}`,
-                `${Math.max(0, state.players.length - 1)} bots`,
-                `Minimum bet ${minBet}`,
-              ],
-            }}
           />
         }
         table={

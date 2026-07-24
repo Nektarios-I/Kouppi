@@ -30,6 +30,7 @@ export default function CasinoBackground({
       className={`relative casino-room ${
         lockViewport ? "game-viewport-shell" : "lobby-viewport-shell"
       } ${className}`}
+      data-table-theme={theme.id}
     >
       <CasinoFloor theme={theme} />
       <BackgroundProps theme={theme} />

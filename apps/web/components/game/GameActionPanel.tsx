@@ -29,6 +29,15 @@ function clampBet(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
+function ActionAmountLabel({ label, amount }: { label: string; amount: number | string }) {
+  return (
+    <span className="game-action-btn-stack">
+      <span className="game-action-btn-label">{label}</span>
+      <span className="game-action-btn-amount tabular-nums">{amount}</span>
+    </span>
+  );
+}
+
 export default function GameActionPanel({
   bet,
   onBetChange,
@@ -57,7 +66,7 @@ export default function GameActionPanel({
   ].filter((q, i, arr) => arr.findIndex((x) => x.value === q.value) === i);
 
   const riskTitle = shistriEligible
-    ? `Risk: ${shistriAmount} (${shistriPercent}% of pot)`
+    ? `SHISTRI ${shistriAmount} (${shistriPercent}% of pot)`
     : "SHISTRI not available for these cards";
 
   return (
@@ -141,18 +150,17 @@ export default function GameActionPanel({
             aria-label={`Bet ${bet}`}
             className="game-action-bet-main"
           >
-            <span className="block text-[10px] sm:text-xs opacity-80 font-normal">Bet</span>
-            <span className="tabular-nums">{bet}</span>
+            <ActionAmountLabel label="Bet" amount={bet} />
           </HudButton>
 
           <HudButton
             variant="kouppi"
             onClick={onKouppi}
             disabled={disabled || !canKouppi}
-            aria-label="KOUPPI all-in"
+            aria-label={`KOUPPI all-in ${pot}`}
             title={canKouppi ? `Take the pot (${pot})` : "Cannot KOUPPI"}
           >
-            KOUPPI
+            <ActionAmountLabel label="KOUPPI" amount={pot} />
           </HudButton>
 
           <HudButton
@@ -161,44 +169,21 @@ export default function GameActionPanel({
             disabled={disabled || !shistriEligible}
             aria-label={
               shistriEligible
-                ? `SHISTRI risk ${shistriAmount} chips (${shistriPercent}% of pot)`
+                ? `SHISTRI ${shistriAmount} chips (${shistriPercent}% of pot)`
                 : "SHISTRI not available"
             }
             title={riskTitle}
             className="game-action-shistri"
           >
-            {/* Mobile: SHISTRI {n} */}
-            <span className="shistri-label-mobile">
-              SHISTRI
-              {shistriEligible ? (
-                <span className="tabular-nums"> {shistriAmount}</span>
-              ) : null}
-            </span>
-            {/* Narrow laptop: SHISTRI · n */}
-            <span className="shistri-label-compact">
-              SHISTRI
-              {shistriEligible ? (
-                <span className="tabular-nums"> · {shistriAmount}</span>
-              ) : null}
-            </span>
-            {/* Desktop: SHISTRI + Risk line */}
-            <span className="shistri-label-desktop">
-              <span className="block">SHISTRI</span>
-              {shistriEligible ? (
-                <span className="block text-[10px] sm:text-[11px] opacity-85 font-ui font-normal leading-tight">
-                  Risk: <span className="tabular-nums">{shistriAmount}</span> ({shistriPercent}% of
-                  pot)
-                </span>
-              ) : null}
-            </span>
+            {shistriEligible ? (
+              <ActionAmountLabel label="SHISTRI" amount={shistriAmount} />
+            ) : (
+              <span className="game-action-btn-stack">
+                <span className="game-action-btn-label">SHISTRI</span>
+              </span>
+            )}
           </HudButton>
         </div>
-
-        {shistriEligible && (
-          <p className="game-action-shistri-helper font-ui" aria-hidden="true">
-            {shistriPercent}% of pot
-          </p>
-        )}
 
         <p className="game-action-hint font-ui">
           Range {minBet}–{maxBet}

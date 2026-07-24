@@ -7,6 +7,7 @@ import type { TurnTimerProps } from "./GameHUD";
 export interface GameUtilityBarProps {
   modeLabel: string;
   settings: ReactNode;
+  history?: ReactNode;
   turnTimer?: TurnTimerProps | null;
   badges?: ReactNode;
 }
@@ -14,6 +15,7 @@ export interface GameUtilityBarProps {
 export default function GameUtilityBar({
   modeLabel,
   settings,
+  history,
   turnTimer,
   badges,
 }: GameUtilityBarProps) {
@@ -25,7 +27,9 @@ export default function GameUtilityBar({
   return (
     <header className="game-utility-bar">
       <div className="game-utility-brand">
-        <span className="game-utility-mark" aria-hidden="true">K</span>
+        <span className="game-utility-mark" aria-hidden="true">
+          K
+        </span>
         <span className="font-display game-utility-title">KOUPPI</span>
         <span className="game-utility-mode font-ui">{modeLabel}</span>
       </div>
@@ -41,6 +45,7 @@ export default function GameUtilityBar({
             {turnTimer.remaining}s
           </div>
         ) : null}
+        {history}
         <button
           type="button"
           className="game-utility-icon"

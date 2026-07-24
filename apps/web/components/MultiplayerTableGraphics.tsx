@@ -520,6 +520,28 @@ function MultiplayerTableBody() {
                 {roomId} · {spectatorsInRoom.length} watching
               </span>
             }
+            history={
+              <HistoryDrawer
+                entries={feedback.logEntries}
+                liveEvent={feedback.activeRibbon}
+                round={{
+                  phase: gameState.phase,
+                  summary: awaitingNext
+                    ? "Waiting for the server to advance the turn"
+                    : `Current player: ${currentPlayer?.name || "Unknown"}`,
+                  awaitingNext,
+                }}
+                table={{
+                  mode: isCareerGameRoomId(roomId) ? "Career" : "Multiplayer",
+                  details: [
+                    `Room ${roomId}`,
+                    `Ante ${gameState.config.ante}`,
+                    `Minimum bet ${minBet}`,
+                    `${spectatorsInRoom.length} spectators`,
+                  ],
+                }}
+              />
+            }
             settings={
               <GameSettingsMenu
                 leaveLabel={isSpectator ? "Stop watching" : "Leave game"}
@@ -527,28 +549,6 @@ function MultiplayerTableBody() {
                 hostControls={hostControls}
               />
             }
-          />
-        }
-        history={
-          <HistoryDrawer
-            entries={feedback.logEntries}
-            liveEvent={feedback.activeRibbon}
-            round={{
-              phase: gameState.phase,
-              summary: awaitingNext
-                ? "Waiting for the server to advance the turn"
-                : `Current player: ${currentPlayer?.name || "Unknown"}`,
-              awaitingNext,
-            }}
-            table={{
-              mode: isCareerGameRoomId(roomId) ? "Career" : "Multiplayer",
-              details: [
-                `Room ${roomId}`,
-                `Ante ${gameState.config.ante}`,
-                `Minimum bet ${minBet}`,
-                `${spectatorsInRoom.length} spectators`,
-              ],
-            }}
           />
         }
         table={

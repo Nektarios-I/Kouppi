@@ -32,7 +32,7 @@ describe("GameActionPanel SHISTRI stake display", () => {
     expect(screen.queryByRole("region", { name: /your move controls/i })).not.toBeInTheDocument();
   });
 
-  it("shows Risk line with amount and percent when eligible", () => {
+  it("shows stake amount on Bet, KOUPPI, and SHISTRI without Risk copy", () => {
     render(
       <GameActionPanel
         {...baseProps}
@@ -41,9 +41,14 @@ describe("GameActionPanel SHISTRI stake display", () => {
         shistriPercent={7}
       />
     );
-    expect(screen.getByRole("button", { name: /SHISTRI risk 7 chips \(7% of pot\)/i })).toBeEnabled();
-    expect(screen.getByText(/Risk:/i)).toBeInTheDocument();
-    expect(screen.getByTitle("Risk: 7 (7% of pot)")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Bet 10" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /KOUPPI all-in 100/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /SHISTRI 7 chips \(7% of pot\)/i })).toBeEnabled();
+    expect(screen.queryByText(/Risk:/i)).not.toBeInTheDocument();
+    expect(screen.getByTitle("SHISTRI 7 (7% of pot)")).toBeInTheDocument();
+    const shistri = screen.getByRole("button", { name: /SHISTRI 7 chips/i });
+    expect(shistri).toHaveTextContent("SHISTRI");
+    expect(shistri).toHaveTextContent("7");
   });
 
   it("does not show a playable stake when ineligible", () => {

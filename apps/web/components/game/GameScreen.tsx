@@ -4,15 +4,16 @@ import type { ReactNode } from "react";
 
 export interface GameScreenProps {
   utility: ReactNode;
-  history: ReactNode;
   table: ReactNode;
   dock: ReactNode;
+  /** @deprecated History now lives in the utility bar; kept optional for adapters. */
+  history?: ReactNode;
   className?: string;
 }
 
 export default function GameScreen({
   utility,
-  history,
+  history = null,
   table,
   dock,
   className = "",

@@ -57,23 +57,28 @@ export default function HistoryDrawer({
   };
 
   return (
-    <div className="history-drawer-root">
+    <div className="history-drawer-root history-drawer-root--toolbar">
       <button
         ref={triggerRef}
         type="button"
-        className="history-drawer-trigger"
+        className="history-drawer-trigger history-drawer-trigger--toolbar"
         aria-label="Open history"
         aria-expanded={open}
         onClick={() => setOpen(true)}
       >
         <span aria-hidden="true">History</span>
-        {entries.length ? <span className="history-drawer-count">{Math.min(99, entries.length)}</span> : null}
+        {entries.length ? (
+          <span className="history-drawer-count">{Math.min(99, entries.length)}</span>
+        ) : null}
       </button>
 
       {open ? (
-        <div className="history-drawer-layer" onMouseDown={(event) => {
-          if (event.target === event.currentTarget) close();
-        }}>
+        <div
+          className="history-drawer-layer"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) close();
+          }}
+        >
           <aside
             ref={panelRef}
             className="history-drawer-panel"
@@ -86,7 +91,12 @@ export default function HistoryDrawer({
                 <p className="game-overlay-eyebrow font-ui">TABLE LOG</p>
                 <h2 className="game-overlay-title font-display">History</h2>
               </div>
-              <button type="button" className="game-overlay-close" aria-label="Close history" onClick={close}>
+              <button
+                type="button"
+                className="game-overlay-close"
+                aria-label="Close history"
+                onClick={close}
+              >
                 ✕
               </button>
             </div>
@@ -94,14 +104,20 @@ export default function HistoryDrawer({
               {TABS.map((item) => (
                 <button
                   key={item.id}
-                  ref={(element) => { tabRefs.current[item.id] = element; }}
+                  ref={(element) => {
+                    tabRefs.current[item.id] = element;
+                  }}
                   id={`history-tab-${item.id}`}
                   type="button"
                   role="tab"
                   aria-controls="history-panel"
                   aria-selected={tab === item.id}
                   tabIndex={tab === item.id ? 0 : -1}
-                  className={tab === item.id ? "history-drawer-tab history-drawer-tab--active" : "history-drawer-tab"}
+                  className={
+                    tab === item.id
+                      ? "history-drawer-tab history-drawer-tab--active"
+                      : "history-drawer-tab"
+                  }
                   onClick={() => setTab(item.id)}
                   onKeyDown={onTabKeyDown}
                 >
@@ -119,27 +135,47 @@ export default function HistoryDrawer({
                 <>
                   {liveEvent ? (
                     <p className="history-drawer-latest" aria-live={liveEvent.ariaLive}>
-                      <span>Latest</span>{liveEvent.ribbonText}
+                      <span>Latest</span>
+                      {liveEvent.ribbonText}
                     </p>
                   ) : null}
-                  {entries.length ? entries.map((entry) => (
-                    <p key={entry.id} className="history-drawer-entry" data-tone={entry.tone}>
-                      {entry.logText}
-                    </p>
-                  )) : <p className="history-drawer-empty">No actions yet.</p>}
+                  {entries.length ? (
+                    entries.map((entry) => (
+                      <p key={entry.id} className="history-drawer-entry" data-tone={entry.tone}>
+                        {entry.logText}
+                      </p>
+                    ))
+                  ) : (
+                    <p className="history-drawer-empty">No actions yet.</p>
+                  )}
                 </>
               ) : null}
               {tab === "round" ? (
                 <dl className="history-drawer-details">
-                  <div><dt>Phase</dt><dd>{round.phase}</dd></div>
-                  <div><dt>Status</dt><dd>{round.summary || (round.awaitingNext ? "Ready for next turn" : "In progress")}</dd></div>
+                  <div>
+                    <dt>Phase</dt>
+                    <dd>{round.phase}</dd>
+                  </div>
+                  <div>
+                    <dt>Status</dt>
+                    <dd>
+                      {round.summary ||
+                        (round.awaitingNext ? "Ready for next turn" : "In progress")}
+                    </dd>
+                  </div>
                 </dl>
               ) : null}
               {tab === "table" ? (
                 <dl className="history-drawer-details">
-                  <div><dt>Mode</dt><dd>{table.mode}</dd></div>
+                  <div>
+                    <dt>Mode</dt>
+                    <dd>{table.mode}</dd>
+                  </div>
                   {(table.details ?? []).map((detail) => (
-                    <div key={detail}><dt>Info</dt><dd>{detail}</dd></div>
+                    <div key={detail}>
+                      <dt>Info</dt>
+                      <dd>{detail}</dd>
+                    </div>
                   ))}
                 </dl>
               ) : null}
