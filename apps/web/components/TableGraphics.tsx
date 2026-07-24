@@ -11,13 +11,11 @@ import {
 } from "@kouppi/game-core";
 import { PokerTable } from "./PokerTable";
 import { useGameSounds } from "@/hooks/useSounds";
-import { Celebration } from "./Confetti";
-import { ChipFlyAnimation } from "./ChipAnimation";
 import CenterCards from "./game/CenterCards";
 import { useCenterCardsPresentation } from "./game/useCenterCardsPresentation";
-import GameHUD, { GameResultBanner, GameStatusBanner } from "./game/GameHUD";
+import GameHUD, { GameStatusBanner } from "./game/GameHUD";
 import GameActionPanel from "./game/GameActionPanel";
-import { GameLog, NextTurnButton, RoundEndPanel } from "./game/GamePanels";
+import { NextTurnButton, RoundEndPanel } from "./game/GamePanels";
 import { HudButton } from "./game/HudButton";
 import { getAvatarFromId, getBotAvatar } from "@/lib/avatars";
 import type { AvatarConfig } from "@/store/remoteGameStore";
@@ -25,21 +23,52 @@ import Link from "next/link";
 import CasinoBackground from "./game/CasinoBackground";
 import TableThemeSelector from "./game/TableThemeSelector";
 import { useTableTheme } from "@/hooks/useTableTheme";
+import { calmDealerMessage } from "@/lib/tableEventFeedback";
+import {
+  TableFeedbackProvider,
+  TableFeedbackOverlays,
+  TableFeedbackLogSlot,
+} from "./tableFeedback/TableEventFeedbackRoot";
+import { useTableEffectsStore } from "@/store/tableEffectsStore";
 
 export default function SinglePlayerTableGraphics() {
+  const { state } = useGameStore();
+  const you = state.players[0];
+  const last = state.lastResolution as
+    | {
+        kind: "bet" | "kouppi" | "shistri" | "pass";
+        playerId: string;
+        amount?: number;
+        win?: boolean;
+        reveal?: { rank: number; suit: string };
+      }
+    | null
+    | undefined;
+
+  return (
+    <TableFeedbackProvider
+      lastResolution={last}
+      players={state.players.map((p) => ({ id: p.id, name: p.name, isBot: p.isBot }))}
+      localPlayerId={you?.id}
+      sequenceSalt={state.history.length}
+    >
+      <SinglePlayerTableBody />
+    </TableFeedbackProvider>
+  );
+}
+
+function SinglePlayerTableBody() {
   const { state, dispatch, ready, botProfiles } = useGameStore();
   const { theme } = useTableTheme();
+  const tableSound = useTableEffectsStore((s) => s.sound);
   const [bet, setBet] = useState<number>(10);
   const [botThinking, setBotThinking] = useState(false);
   const [botPlanned, setBotPlanned] = useState<string | null>(null);
-  const [showCelebration, setShowCelebration] = useState(false);
-  const [celebrationType, setCelebrationType] = useState<"win" | "kouppi" | "shistri">("win");
-  const [showChipFly, setShowChipFly] = useState(false);
-  const [chipFlyAmount, setChipFlyAmount] = useState(0);
+  const tableSurfaceRef = useRef<HTMLDivElement>(null);
 
   const sounds = useGameSounds();
   const prevIsMyTurn = useRef<boolean>(false);
-  const prevResolution = useRef<unknown>(null);
+  const sfx = tableSound === "on";
 
   const atRoundEnd = state.phase === "RoundEnd";
   const awaitingNext = !!state.awaitNext;
@@ -92,48 +121,22 @@ export default function SinglePlayerTableGraphics() {
     waitingMessage: botThinking ? botPlanned || "Bot is thinking..." : "Waiting for cards...",
   });
 
-  const dealerMessage =
-    awaitingNext && last
-      ? last.win
-        ? `${last.kind.toUpperCase()} - WIN!`
-        : last.kind === "pass"
-          ? "PASS"
-          : `${last.kind.toUpperCase()} - LOSS`
-      : botThinking
-        ? "BOT THINKING..."
-        : isMyTurn
-          ? "YOUR TURN"
-          : "KOUPPI";
+  const dealerMessage = calmDealerMessage({
+    awaitingNext,
+    resolution: last,
+    isMyTurn,
+    botThinking,
+  });
 
   useEffect(() => {
     if (isMyTurn && !prevIsMyTurn.current && state.phase === "Round" && !awaitingNext) {
-      sounds.yourTurn();
-      sounds.deal();
+      if (sfx) {
+        sounds.yourTurn();
+        sounds.deal();
+      }
     }
     prevIsMyTurn.current = isMyTurn;
-  }, [isMyTurn, state.phase, awaitingNext, sounds]);
-
-  useEffect(() => {
-    if (last && last !== prevResolution.current) {
-      if (last.reveal) {
-        sounds.flip();
-        setTimeout(() => {
-          if (last.win) {
-            sounds.win();
-            if (last.playerId === state.players[0].id) {
-              setCelebrationType(
-                last.kind === "kouppi" ? "kouppi" : last.kind === "shistri" ? "shistri" : "win"
-              );
-              setShowCelebration(true);
-            }
-          } else {
-            sounds.lose();
-          }
-        }, 600);
-      }
-      prevResolution.current = last;
-    }
-  }, [last, sounds, state.players]);
+  }, [isMyTurn, state.phase, awaitingNext, sounds, sfx]);
 
   useEffect(() => {
     if (!ready) return;
@@ -157,7 +160,10 @@ export default function SinglePlayerTableGraphics() {
     if (turn && current.isBot) {
       const profile: BotProfile =
         botProfiles[current.id] ?? { mode: "deterministic", difficulty: "normal" };
-      const act = botChooseActionWithProfile(state as Parameters<typeof botChooseActionWithProfile>[0], profile);
+      const act = botChooseActionWithProfile(
+        state as Parameters<typeof botChooseActionWithProfile>[0],
+        profile
+      );
       const actText =
         act.type === "pass"
           ? "Pass"
@@ -182,17 +188,6 @@ export default function SinglePlayerTableGraphics() {
 
   return (
     <CasinoBackground className="text-white" theme={theme} lockViewport>
-      <Celebration
-        active={showCelebration}
-        type={celebrationType}
-        onComplete={() => setShowCelebration(false)}
-      />
-      <ChipFlyAnimation
-        active={showChipFly}
-        amount={chipFlyAmount}
-        onComplete={() => setShowChipFly(false)}
-      />
-
       {atRoundEnd && (
         <RoundEndPanel
           subtitle="The pot is empty. Continue playing?"
@@ -224,51 +219,30 @@ export default function SinglePlayerTableGraphics() {
 
       <div className="game-stage">
         <div className="game-stage-hud">
-        <GameHUD
-          title="KOUPPI"
-          badges={[{ id: "mode", label: "Single Player", variant: "gold" }]}
-          rightActions={
-            <div className="flex items-center gap-2 flex-wrap justify-end">
-              <TableThemeSelector compact id="sp-table-theme" />
-              <Link
-                href="/"
-                className="hud-btn hud-btn-danger hud-btn-sm no-underline"
-                aria-label="Exit game"
-              >
-                Exit
-              </Link>
-            </div>
-          }
-          resultBanner={
-            awaitingNext && last ? (
-              <GameResultBanner
-                variant={last.kind === "pass" ? "pass" : last.win ? "win" : "loss"}
-              >
-                {(() => {
-                  const who =
-                    state.players.find((p) => p.id === last.playerId)?.name || "Player";
-                  if (last.kind === "pass") return `${who}: PASS`;
-                  const status = last.win ? "WON" : "LOST";
-                  const tag =
-                    last.kind === "shistri"
-                      ? " (SHISTRI)"
-                      : last.kind === "kouppi"
-                        ? " (KOUPPI)"
-                        : "";
-                  return `${who}: ${status} ${last.amount}${tag}`;
-                })()}
-              </GameResultBanner>
-            ) : undefined
-          }
-          statusBanner={
-            !isMyTurn && state.phase === "Round" && !awaitingNext ? (
-              <GameStatusBanner>🤖 {currentPlayer?.name} is thinking...</GameStatusBanner>
-            ) : undefined
-          }
-        />
+          <GameHUD
+            title="KOUPPI"
+            badges={[{ id: "mode", label: "Single Player", variant: "gold" }]}
+            rightActions={
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <TableThemeSelector compact id="sp-table-theme" />
+                <Link
+                  href="/"
+                  className="hud-btn hud-btn-danger hud-btn-sm no-underline"
+                  aria-label="Exit game"
+                >
+                  Exit
+                </Link>
+              </div>
+            }
+            statusBanner={
+              !isMyTurn && state.phase === "Round" && !awaitingNext ? (
+                <GameStatusBanner>{currentPlayer?.name} is thinking...</GameStatusBanner>
+              ) : undefined
+            }
+          />
         </div>
 
-        <div className="game-stage-table-region">
+        <div className="game-stage-table-region relative">
           <PokerTable
             pot={state.round.pot}
             players={state.players}
@@ -276,6 +250,7 @@ export default function SinglePlayerTableGraphics() {
             playerId={you.id}
             avatars={avatarMap}
             dealerMessage={dealerMessage}
+            surfaceRef={tableSurfaceRef}
             currentBetByPlayerId={
               state.turn?.betAmount && state.turn.playerId
                 ? { [state.turn.playerId]: state.turn.betAmount }
@@ -284,6 +259,7 @@ export default function SinglePlayerTableGraphics() {
           >
             <CenterCards presentation={centerCards} />
           </PokerTable>
+          <TableFeedbackOverlays tableSurfaceRef={tableSurfaceRef} />
         </div>
 
         {awaitingNext && state.phase === "Round" && (
@@ -294,50 +270,42 @@ export default function SinglePlayerTableGraphics() {
 
         {isMyTurn && up && !awaitingNext && state.phase === "Round" && (
           <div className="game-stage-dock">
-          <GameActionPanel
-            bet={bet}
-            onBetChange={setBet}
-            minBet={minBet}
-            maxBet={maxBet}
-            bankroll={you.bankroll}
-            pot={state.round.pot}
-            canKouppi={canKouppi}
-            shistriEligible={shistriEligible}
-            shistriAmount={shistriAmount}
-            shistriPercent={state.config.shistri.percent}
-            disabled={!ready || state.phase !== "Round" || awaitingNext}
-            showPairWarning={
-              !!(up.a && up.b && (up.a.rank === up.b.rank || Math.abs(up.a.rank - up.b.rank) === 1))
-            }
-            pairIsConsecutive={!!(up.a && up.b && up.a.rank !== up.b.rank)}
-            onPass={() => {
-              sounds.click();
-              dispatch({ type: "pass" });
-            }}
-            onBet={() => {
-              sounds.bet();
-              setChipFlyAmount(bet);
-              setShowChipFly(true);
-              dispatch({ type: "bet", amount: bet });
-            }}
-            onKouppi={() => {
-              sounds.chips();
-              setChipFlyAmount(state.round.pot);
-              setShowChipFly(true);
-              dispatch({ type: "kouppi" });
-            }}
-            onShistri={() => {
-              sounds.chips();
-              setChipFlyAmount(shistriAmount);
-              setShowChipFly(true);
-              dispatch({ type: "shistri" });
-            }}
-          />
+            <GameActionPanel
+              bet={bet}
+              onBetChange={setBet}
+              minBet={minBet}
+              maxBet={maxBet}
+              bankroll={you.bankroll}
+              pot={state.round.pot}
+              canKouppi={canKouppi}
+              shistriEligible={shistriEligible}
+              shistriAmount={shistriAmount}
+              shistriPercent={state.config.shistri.percent}
+              disabled={!ready || state.phase !== "Round" || awaitingNext}
+              showPairWarning={
+                !!(up.a && up.b && (up.a.rank === up.b.rank || Math.abs(up.a.rank - up.b.rank) === 1))
+              }
+              pairIsConsecutive={!!(up.a && up.b && up.a.rank !== up.b.rank)}
+              onPass={() => {
+                if (sfx) sounds.click();
+                dispatch({ type: "pass" });
+              }}
+              onBet={() => {
+                // Outcome feedback (chips + ribbon) comes from lastResolution via TableFeedbackProvider
+                dispatch({ type: "bet", amount: bet });
+              }}
+              onKouppi={() => {
+                dispatch({ type: "kouppi" });
+              }}
+              onShistri={() => {
+                dispatch({ type: "shistri" });
+              }}
+            />
           </div>
         )}
 
         <div className="game-stage-secondary">
-          <GameLog entries={state.history} />
+          <TableFeedbackLogSlot />
           <p className="mt-1 text-center text-xs text-gray-600 font-ui">
             <Link href="/3d-preview" className="text-gold/60 hover:text-gold transition-colors">
               3D preview

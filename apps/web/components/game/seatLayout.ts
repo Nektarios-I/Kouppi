@@ -22,7 +22,10 @@ export type SeatEdge =
 
 export interface SeatSlotConfig {
   seat: SeatAnchor;
+  /** Wager marker — closer to table center than bankroll stack */
   bet: SeatAnchor;
+  /** Visual bankroll chip stack — in front of seat, toward center */
+  bankroll: SeatAnchor;
   edge: SeatEdge;
 }
 
@@ -58,6 +61,9 @@ export const BET_SAFE_CORE: SeatSafeZone = {
 };
 
 const TABLE_CENTER: SeatAnchor = { x: 50, y: 42 };
+/** Fraction along seat→center for bankroll chip stack (closer to seat). */
+const BANKROLL_T = 0.28;
+/** Fraction along seat→center for wager / bet marker. */
 const BET_T = 0.55;
 
 /** Desktop / tablet outer ring (8 slots) — pod centers near the rail */
@@ -148,7 +154,8 @@ export function getSeatLayoutConfig(options: {
     const seat = { ...base.seat };
     slots.push({
       seat,
-      bet: betAnchor(seat),
+      bankroll: betAnchor(seat, TABLE_CENTER, BANKROLL_T),
+      bet: betAnchor(seat, TABLE_CENTER, BET_T),
       edge: base.edge,
     });
   }

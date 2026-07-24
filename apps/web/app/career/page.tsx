@@ -10,6 +10,25 @@ import CareerLobby from "@/components/CareerLobby";
 import { LobbyShell, LobbyCard } from "@/components/game/LobbyUI";
 import { HudButton } from "@/components/game/HudButton";
 import { Avatar } from "@/components/AvatarPicker";
+import { useRewardStore } from "@/store/rewardStore";
+import { getBadgeLabel, getTitleLabel } from "@/lib/cosmetics";
+
+function CareerTitleLine() {
+  const equipped = useRewardStore((s) => s.state?.equipped);
+  const title = getTitleLabel(equipped?.titleId);
+  const badge = getBadgeLabel(equipped?.badgeId);
+  if (!title && !badge) return null;
+  return (
+    <div className="flex items-center gap-2 mt-0.5 mb-0.5">
+      {title && <span className="text-xs font-ui text-gold-light">{title}</span>}
+      {badge && (
+        <span className="text-[10px] font-ui uppercase tracking-wide px-1.5 py-0.5 rounded border border-gold/40 text-gold">
+          {badge}
+        </span>
+      )}
+    </div>
+  );
+}
 
 export default function CareerPage() {
   const { user, isLoggedIn, logout, refreshUser } = useAuthStore();
@@ -44,6 +63,11 @@ export default function CareerPage() {
 
           {isLoggedIn() && user ? (
             <div className="flex items-center gap-3 flex-wrap justify-end">
+              <Link href="/rewards" className="no-underline">
+                <HudButton variant="ghost" size="sm">
+                  Rewards
+                </HudButton>
+              </Link>
               <TrophyBadge
                 trophies={user.trophies}
                 arena={user.arena}
@@ -82,6 +106,7 @@ export default function CareerPage() {
                 <Avatar avatar={{ id: user.avatarId }} size="lg" />
                 <div>
                   <div className="font-display text-xl font-bold text-gold-light">{user.username}</div>
+                  <CareerTitleLine />
                   <div className="text-gray-400 text-sm font-ui">
                     {joinedLabel ? `Joined ${joinedLabel}` : "Career player"}
                   </div>
@@ -105,14 +130,19 @@ export default function CareerPage() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                <TrophyBadge
-                  trophies={user.trophies}
-                  arena={user.arena}
-                  arenaName={user.arenaName}
-                />
-                <RatingBadge rating={user.rating} />
-              </div>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/rewards" className="no-underline">
+              <HudButton variant="kouppi" size="sm">
+                Rewards
+              </HudButton>
+            </Link>
+            <TrophyBadge
+              trophies={user.trophies}
+              arena={user.arena}
+              arenaName={user.arenaName}
+            />
+            <RatingBadge rating={user.rating} />
+          </div>
             </LobbyCard>
           )}
 

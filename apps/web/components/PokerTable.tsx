@@ -2,7 +2,7 @@
 
 import React, { useMemo, useRef } from "react";
 import TableSeatLayout from "@/components/game/TableSeatLayout";
-import { ChipStack } from "@/components/ChipAnimation";
+import PotChipStack from "@/components/chips/PotChipStack";
 import type { AvatarConfig } from "@/store/remoteGameStore";
 import { useTableTheme } from "@/hooks/useTableTheme";
 import { useTextureImage } from "@/hooks/useTextureImage";
@@ -24,12 +24,23 @@ export interface PokerTableProps {
   children?: React.ReactNode;
   dealerMessage?: string;
   avatars?: Record<string, AvatarConfig>;
+  cosmeticsByPlayerId?: Record<
+    string,
+    {
+      titleId?: string | null;
+      badgeId?: string | null;
+      frameId?: string | null;
+      seatRingId?: string | null;
+    }
+  >;
   connectionByPlayerId?: Record<
     string,
     { connected?: boolean; reconnectRemainingSec?: number | null }
   >;
   currentBetByPlayerId?: Record<string, number>;
   turnRemainingSec?: number | null;
+  /** Optional external ref to the tilted table surface (chip/seat anchors). */
+  surfaceRef?: React.MutableRefObject<HTMLDivElement | null>;
 }
 
 const RAIL_STUDS = Array.from({ length: 20 }, (_, i) => i);
@@ -43,14 +54,22 @@ export function PokerTable({
   children,
   dealerMessage = "KOUPPI",
   avatars = {},
+  cosmeticsByPlayerId,
   connectionByPlayerId,
   currentBetByPlayerId,
   turnRemainingSec = null,
+  surfaceRef,
 }: PokerTableProps) {
   const { theme } = useTableTheme();
   const feltTextureState = useTextureImage(theme.tableTextureUrl);
   const railTextureState = useTextureImage(theme.railTextureUrl);
-  const tableSurfaceRef = useRef<HTMLDivElement>(null);
+  const internalSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const setSurfaceRef = (node: HTMLDivElement | null) => {
+    internalSurfaceRef.current = node;
+    if (surfaceRef) {
+      surfaceRef.current = node;
+    }
+  };
 
   const feltTextureReady = feltTextureState === "loaded";
   const railTextureReady = railTextureState === "loaded";
@@ -110,7 +129,7 @@ export function PokerTable({
 
       <div className="table-perspective relative z-10">
         <div
-          ref={tableSurfaceRef}
+          ref={setSurfaceRef}
           className="table-tilt relative w-full aspect-[16/10] select-none overflow-visible poker-table-surface"
           style={
             {
@@ -282,18 +301,11 @@ export function PokerTable({
             </div>
           </div>
 
-          <div className="absolute top-[38%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex flex-col items-center gap-1">
-            <div className="relative">
-              <ChipStack amount={pot} size="small" animate className="scale-90 sm:scale-100" />
-            </div>
-            <div className="table-pot-amount px-4 py-1 rounded-full mt-0.5">
-              <span className="font-display text-xl sm:text-2xl font-bold text-gold-light tabular-nums drop-shadow-md">
-                {pot}
-              </span>
-            </div>
-            <span className="text-[9px] sm:text-[10px] text-gold/50 font-ui tracking-[0.3em] uppercase">
-              Pot
-            </span>
+          <div
+            className="absolute top-[38%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex flex-col items-center gap-1"
+            data-pot-anchor="true"
+          >
+            <PotChipStack amount={pot} animate />
           </div>
 
           <div className="absolute top-[54%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 w-full flex justify-center px-2">
@@ -305,10 +317,11 @@ export function PokerTable({
             currentIndex={currentIndex}
             playerId={playerId}
             avatars={avatars}
+            cosmeticsByPlayerId={cosmeticsByPlayerId}
             connectionByPlayerId={connectionByPlayerId}
             currentBetByPlayerId={currentBetByPlayerId}
             turnRemainingSec={turnRemainingSec}
-            containerRef={tableSurfaceRef}
+            containerRef={internalSurfaceRef}
           />
         </div>
       </div>

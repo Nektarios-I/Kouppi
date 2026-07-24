@@ -29,6 +29,12 @@ export default function HomePage() {
             </HudButton>
           </Link>
 
+          <Link href="/rewards" className="w-full max-w-xs no-underline">
+            <HudButton variant="ghost" size="lg" fullWidth>
+              Reward Center
+            </HudButton>
+          </Link>
+
           <div className="flex flex-wrap justify-center gap-3 mt-2 w-full">
             <Link href="/play/single" className="no-underline">
               <HudButton variant="ghost">Single Player</HudButton>

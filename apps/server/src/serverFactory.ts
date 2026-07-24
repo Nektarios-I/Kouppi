@@ -28,10 +28,11 @@ import profileRoutes, { leaderboardRouter, matchesRouter } from "./career/profil
 import careerHttpRoutes from "./career/careerHttpRoutes.js";
 import casualRoutes from "./casual/casualRoutes.js";
 import friendsRoutes from "./friends/friendsRoutes.js";
+import rewardsRoutes from "./rewards/routes.js";
 import { persistCasualFriendsSessionFromRoom } from "./casual/persistCasualSession.js";
 import { registerCareerHandlers } from "./career/careerSocketHandlers.js";
 import { registerFriendHandlers, updateAndBroadcastPresence } from "./friends/friendSocketHandlers.js";
-import { isCareerGame, handleCareerGameEnd, getCareerRoomByGameId, handleMatchFound, startCareerStaleRoomCleanup, stopCareerStaleRoomCleanup } from "./career/careerRoomManager.js";
+import { isCareerGame, handleCareerGameEnd, getCareerRoomByGameId, handleMatchFound, startCareerStaleRoomCleanup, stopCareerStaleRoomCleanup, getRoomBySocket, buildCareerRoomUpdatePayload } from "./career/careerRoomManager.js";
 import { setCareerGameKickoff } from "./career/careerGameKickoff.js";
 import {
   setOnMatchFound,
@@ -44,14 +45,26 @@ import { sanitizeDisplayName, sanitizeChatText, sanitizeEmote } from "./security
 import { checkEventRateLimit, recordEvent, clearRateLimitsForSocket } from "./security/rateLimit.js";
 import { logServerEvent } from "./security/log.js";
 import { verifyActiveAuthToken } from "./auth/verifyActiveAuth.js";
-import { getUserById } from "@kouppi/database";
-import type { AvatarConfig } from "./types.js";
+import { getRoomStore } from "./stores/initRoomStore.js";
+import { getUserById, getPublicPlayerCosmetics } from "@kouppi/database";
+import type { AvatarConfig, PlayerCosmetics } from "./types.js";
+
+function loadPublicCosmetics(userId: string, skipCareerDatabase: boolean): PlayerCosmetics | undefined {
+  if (skipCareerDatabase) return undefined;
+  try {
+    return getPublicPlayerCosmetics(userId);
+  } catch {
+    return undefined;
+  }
+}
 
 function resolveJoinIdentity(
   identity: { id: string; name: string; avatar?: AvatarConfig },
   authToken: string | undefined,
   skipCareerDatabase: boolean
-): { identity: { id: string; name: string; avatar?: AvatarConfig } } | { error: string } {
+): {
+  identity: { id: string; name: string; avatar?: AvatarConfig; cosmetics?: PlayerCosmetics };
+} | { error: string } {
   const guest = { identity: { id: identity.id, name: identity.name, avatar: identity.avatar } };
   if (!authToken) {
     return guest;
@@ -80,6 +93,7 @@ function resolveJoinIdentity(
         id: user.id,
         name: identity.name || user.username,
         avatar: identity.avatar ?? { id: user.avatarId },
+        cosmetics: loadPublicCosmetics(user.id, skipCareerDatabase),
       },
     };
   }
@@ -88,6 +102,7 @@ function resolveJoinIdentity(
       id: payload.userId,
       name: identity.name || payload.username,
       avatar: identity.avatar,
+      cosmetics: loadPublicCosmetics(payload.userId, skipCareerDatabase),
     },
   };
 }
@@ -156,6 +171,7 @@ export function createKouppiServer(opts?: {
   app.use("/api/casual", casualRoutes);
   app.use("/api/friends", friendsRoutes);
   app.use("/api/career", careerHttpRoutes);
+  app.use("/api/rewards", rewardsRoutes);
 
   const httpServer = createServer(app);
   const websocketOnly = opts?.websocketOnly ?? process.env.NODE_ENV === "production";
@@ -472,6 +488,7 @@ export function createKouppiServer(opts?: {
           name: creatorResolved.identity.name,
           socketId: socket.id,
           avatar: creatorResolved.identity.avatar,
+          cosmetics: creatorResolved.identity.cosmetics,
         };
         createRoomWithCreator(
           roomId,
@@ -547,6 +564,7 @@ export function createKouppiServer(opts?: {
               name: resolvedPlayer.name,
               socketId: socket.id,
               avatar: resolvedPlayer.avatar,
+              cosmetics: resolvedPlayer.cosmetics,
             },
             { joinSessionToken: data.joinSessionToken }
           );
@@ -1868,6 +1886,75 @@ export function createKouppiServer(opts?: {
         cb ? cb(null) : void 0;
       } catch (e: any) {
         console.error("setAvatar error", e);
+        const err = { code: "error", message: e.message };
+        cb ? cb(err) : socket.emit("error", err);
+      }
+    });
+
+    // syncCosmetics: reload equipped identity cosmetics from DB and broadcast
+    socket.on("syncCosmetics", (payload?: { roomId?: string }, cb?: (err: any | null) => void) => {
+      try {
+        if (opts?.skipCareerDatabase) {
+          cb ? cb(null) : void 0;
+          return;
+        }
+
+        const roomId = payload?.roomId;
+        let resolvedId = roomId ? resolveRoomIdentifier(roomId) : undefined;
+        let room = resolvedId ? getRoom(resolvedId) : undefined;
+
+        if (!room) {
+          const careerRoom = getRoomBySocket(socket.id);
+          if (careerRoom) {
+            const careerPlayer = careerRoom.players.find((p) => p.socketId === socket.id);
+            if (careerPlayer) {
+              careerPlayer.cosmetics = loadPublicCosmetics(careerPlayer.userId, false);
+              io.to(careerRoom.id).emit("career:roomUpdate", buildCareerRoomUpdatePayload(careerRoom));
+            }
+            // Also refresh in-game seat if career match already started
+            if (careerRoom.gameRoomId) {
+              const gameRoom = getRoom(careerRoom.gameRoomId);
+              const gamePlayer = gameRoom?.players.find((p) => p.id === careerPlayer?.userId);
+              if (gameRoom && gamePlayer) {
+                gamePlayer.cosmetics = loadPublicCosmetics(gamePlayer.id, false);
+                bumpRoomRevision(gameRoom);
+                io.to(careerRoom.gameRoomId).emit("roomUpdate", buildRoomUpdatePayload(gameRoom));
+              }
+            }
+            cb ? cb(null) : void 0;
+            return;
+          }
+        }
+
+        if (!room) {
+          for (const rid of getRoomStore().keys()) {
+            const candidate = getRoom(rid);
+            if (candidate?.players.some((p) => p.socketId === socket.id)) {
+              room = candidate;
+              resolvedId = rid;
+              break;
+            }
+          }
+        }
+
+        if (!room || !resolvedId) {
+          // Soft-success when not seated — equip still works offline
+          cb ? cb(null) : void 0;
+          return;
+        }
+
+        const player = room.players.find((p) => p.socketId === socket.id);
+        if (!player) {
+          cb ? cb(null) : void 0;
+          return;
+        }
+
+        player.cosmetics = loadPublicCosmetics(player.id, false);
+        bumpRoomRevision(room);
+        io.to(resolvedId).emit("roomUpdate", buildRoomUpdatePayload(room));
+        cb ? cb(null) : void 0;
+      } catch (e: any) {
+        console.error("syncCosmetics error", e);
         const err = { code: "error", message: e.message };
         cb ? cb(err) : socket.emit("error", err);
       }

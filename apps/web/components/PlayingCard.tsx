@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRewardStore } from "@/store/rewardStore";
+import { getCardBackClass } from "@/lib/cosmetics";
 
 const SUIT_MAP: Record<string, string> = {
   S: "S",
@@ -108,15 +110,17 @@ function CardFallbackFace({
   suit,
   size,
   faceDown,
+  cardBackClass = "playing-card-kouppi-back",
 }: {
   rankStr: string;
   suit: string;
   size: CardSize;
   faceDown: boolean;
+  cardBackClass?: string;
 }) {
   if (faceDown) {
     return (
-      <div className="absolute inset-0 playing-card-kouppi-back flex items-center justify-center">
+      <div className={`absolute inset-0 ${cardBackClass} flex items-center justify-center`}>
         <div className="text-center">
           <div className={`font-display font-bold text-gold/90 tracking-widest ${CORNER_TEXT[size]}`}>
             K
@@ -159,6 +163,8 @@ interface PlayingCardProps {
   faceDown?: boolean;
   className?: string;
   animate?: "deal" | "none";
+  /** Cosmetic card-back class override when face-down */
+  cardBackClass?: string;
 }
 
 export function PlayingCard({
@@ -169,7 +175,10 @@ export function PlayingCard({
   faceDown = false,
   className = "",
   animate = "none",
+  cardBackClass,
 }: PlayingCardProps) {
+  const equippedBack = useRewardStore((s) => s.state?.equipped?.cardBackId);
+  const resolvedBackClass = cardBackClass ?? getCardBackClass(equippedBack);
   const [imgFailed, setImgFailed] = useState(false);
   const rankStr = RANK_MAP[rank] || String(rank);
   const suitStr = SUIT_MAP[suit.toUpperCase()] || "S";
@@ -180,6 +189,7 @@ export function PlayingCard({
     setImgFailed(false);
   }, [cardUrl]);
 
+  // Face-down always uses our themed back (never CDN generic back)
   const showFallback = imgFailed || faceDown;
 
   return (
@@ -194,7 +204,13 @@ export function PlayingCard({
         />
       )}
       {showFallback && (
-        <CardFallbackFace rankStr={rankStr} suit={suit} size={size} faceDown={faceDown} />
+        <CardFallbackFace
+          rankStr={rankStr}
+          suit={suit}
+          size={size}
+          faceDown={faceDown}
+          cardBackClass={resolvedBackClass}
+        />
       )}
       {!faceDown && !imgFailed && (
         <div className="absolute inset-0 playing-card-glass-sheen pointer-events-none rounded-[5px]" />

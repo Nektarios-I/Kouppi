@@ -46,6 +46,12 @@ export type PlayerInfo = {
   id: string;
   name: string;
   avatar?: AvatarConfig;
+  cosmetics?: {
+    titleId?: string | null;
+    badgeId?: string | null;
+    frameId?: string | null;
+    seatRingId?: string | null;
+  };
   ready?: boolean;
   connected?: boolean;
   reconnectRemainingSec?: number | null;
@@ -206,7 +212,7 @@ type RemoteStore = {
   transferHost: (targetId: string) => Promise<{ success: boolean; error?: string }>;
   closeRoomAsHost: () => Promise<{ success: boolean; error?: string }>;
   resumeActiveRoom: () => Promise<{ success: boolean; error?: string }>;
-  subscribeToCareerRoom: (roomId: string) => Promise<{ success: boolean; error?: string }>; // Subscribe to room without re-joining (for career games)
+  subscribeToCareerRoom: (roomId: string) => Promise<{ success: boolean; error?: string; code?: string }>; // Subscribe to room without re-joining (for career games)
   leaveRoom: () => Promise<{ success: boolean; error?: string; code?: string }>;
   startGame: () => Promise<{ success: boolean; error?: string; code?: string }>;
   sendIntent: (intent: Intent) => void;
@@ -224,6 +230,8 @@ type RemoteStore = {
   sendEmote: (emote: string) => void;
   // Avatar actions
   setAvatar: (avatar: AvatarConfig) => void;
+  /** Push latest equipped cosmetics to roommates (server loads from DB) */
+  syncCosmetics: () => void;
   // Spectator actions
   joinAsSpectator: (roomId: string, password?: string) => Promise<{ success: boolean; error?: string; code?: string }>;
   leaveSpectator: () => void;
@@ -356,11 +364,13 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
       const { version: _version, ...gameState } = snapshot;
       const existingPlayers = get().playersInRoom;
       const avatarById = new Map(existingPlayers.map((p) => [p.id, p.avatar]));
+      const cosmeticsById = new Map(existingPlayers.map((p) => [p.id, p.cosmetics]));
       const players: PlayerInfo[] =
         gameState.players?.map((p: any) => ({
           id: p.id,
           name: p.name,
           avatar: avatarById.get(p.id),
+          cosmetics: cosmeticsById.get(p.id),
         })) || [];
       set({
         state: gameState as GameState,
@@ -1143,6 +1153,13 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
     if (socket && roomId) {
       socket.emit("setAvatar", { roomId, avatar });
     }
+  },
+
+  /** Reload equipped cosmetics from server DB and broadcast to roommates */
+  syncCosmetics: () => {
+    const { socket, roomId } = get();
+    if (!socket) return;
+    socket.emit("syncCosmetics", roomId ? { roomId } : {});
   },
   
   // Spectator actions

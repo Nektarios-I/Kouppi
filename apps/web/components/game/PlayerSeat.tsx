@@ -25,6 +25,10 @@ export interface SeatPlayerView {
   currentBet?: number;
   connected?: boolean;
   reconnectRemainingSec?: number | null;
+  title?: string | null;
+  badge?: string | null;
+  frameId?: string | null;
+  seatRingId?: string | null;
 }
 
 /** @deprecated Prefer SeatPlayerView — kept for gradual migration */
@@ -106,6 +110,8 @@ export default function PlayerSeat({
             avatar={player.avatar}
             playerId={player.id}
             size="sm"
+            frameId={player.frameId}
+            seatRingId={player.seatRingId}
           />
           {player.isCurrentTurn && (
             <span className="player-seat__turn-pip" aria-hidden="true" />
@@ -168,6 +174,8 @@ export default function PlayerSeat({
             avatar={player.avatar}
             playerId={player.id}
             size={isMobile ? "sm" : breakpoint === "desktop" ? "md" : "sm"}
+            frameId={player.frameId}
+            seatRingId={player.seatRingId}
           />
         </div>
 
@@ -179,9 +187,17 @@ export default function PlayerSeat({
             >
               {displayName}
             </span>
+            {player.badge && (
+              <span className="text-[9px] font-ui uppercase tracking-wide px-1 rounded border border-gold/35 text-gold shrink-0">
+                {player.badge}
+              </span>
+            )}
             {player.isBot && <PlayerStatusBadge kind="bot" />}
             {player.isMe && !player.isBot && <PlayerStatusBadge kind="you" />}
           </div>
+          {player.title && (
+            <div className="text-[10px] text-gold/70 font-ui truncate leading-tight">{player.title}</div>
+          )}
 
           <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
             <span

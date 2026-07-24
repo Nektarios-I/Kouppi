@@ -47,8 +47,35 @@ describe("seatLayout", () => {
         });
         const seatKeys = layout.slots.map((s) => `${s.seat.x},${s.seat.y}`);
         const betKeys = layout.slots.map((s) => `${s.bet.x},${s.bet.y}`);
+        const bankrollKeys = layout.slots.map(
+          (s) => `${s.bankroll.x},${s.bankroll.y}`
+        );
         expect(new Set(seatKeys).size).toBe(n);
         expect(new Set(betKeys).size).toBe(n);
+        expect(new Set(bankrollKeys).size).toBe(n);
+      }
+    });
+
+    it("places bankroll between seat and bet toward center", () => {
+      const layout = getSeatLayoutConfig({
+        playerCount: 4,
+        viewerIndex: 0,
+        breakpoint: "desktop",
+      });
+      for (const slot of layout.slots) {
+        expect(
+          slot.bankroll.x === slot.seat.x && slot.bankroll.y === slot.seat.y
+        ).toBe(false);
+        expect(
+          slot.bankroll.x === slot.bet.x && slot.bankroll.y === slot.bet.y
+        ).toBe(false);
+        // bankroll closer to seat than bet is (smaller distance to seat)
+        const dBank =
+          (slot.bankroll.x - slot.seat.x) ** 2 +
+          (slot.bankroll.y - slot.seat.y) ** 2;
+        const dBet =
+          (slot.bet.x - slot.seat.x) ** 2 + (slot.bet.y - slot.seat.y) ** 2;
+        expect(dBank).toBeLessThan(dBet);
       }
     });
 

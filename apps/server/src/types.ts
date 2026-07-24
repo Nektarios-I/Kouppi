@@ -5,12 +5,21 @@ export type AvatarConfig = {
   id: string;
 };
 
+/** Identity cosmetics broadcast to other players */
+export type PlayerCosmetics = {
+  titleId?: string | null;
+  badgeId?: string | null;
+  frameId?: string | null;
+  seatRingId?: string | null;
+};
+
 export type PlayerSession = {
   id: string;
   name: string;
   socketId: string;
   afkCount?: number; // consecutive AFK turns
   avatar?: AvatarConfig; // player's chosen avatar
+  cosmetics?: PlayerCosmetics;
   ready?: boolean;
   disconnectedAt?: number;
   pendingRemovalTimer?: ReturnType<typeof setTimeout>;

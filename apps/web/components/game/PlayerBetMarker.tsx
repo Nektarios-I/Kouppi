@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { Chip } from "@/components/ChipAnimation";
+import ChipStack from "@/components/chips/ChipStack";
+import { formatChipAmountExact } from "@/lib/chips/formatChipAmount";
 import { formatSeatAmount } from "@/components/game/seatLayout";
 
 export interface PlayerBetMarkerProps {
@@ -10,6 +11,10 @@ export interface PlayerBetMarkerProps {
   compact?: boolean;
 }
 
+/**
+ * Active wager marker between bankroll stack and pot.
+ * Only rendered when parent has authoritative per-seat bet amount (> 0).
+ */
 export default function PlayerBetMarker({
   amount,
   isCurrentTurn = false,
@@ -22,9 +27,16 @@ export default function PlayerBetMarker({
       className={`player-bet-marker ${isCurrentTurn ? "player-bet-marker--active" : ""} ${
         compact ? "player-bet-marker--compact" : ""
       }`}
-      aria-label={`Bet ${amount}`}
+      aria-label={`Bet ${formatChipAmountExact(amount)}`}
+      title={`Bet ${formatChipAmountExact(amount)}`}
     >
-      <Chip amount={amount} size="small" className={compact ? "scale-75" : "scale-90"} />
+      <ChipStack
+        amount={amount}
+        context="player-bet"
+        size={compact ? "xs" : "sm"}
+        dense
+        ariaLabel={`Wager ${formatChipAmountExact(amount)} chips`}
+      />
       <span className="player-bet-marker__amount font-ui tabular-nums">
         {formatSeatAmount(amount)}
       </span>

@@ -49,6 +49,12 @@ export interface RoomPlayer {
   username: string;
   rating: number;
   avatarId: string;
+  cosmetics?: {
+    titleId?: string | null;
+    badgeId?: string | null;
+    frameId?: string | null;
+    seatRingId?: string | null;
+  };
   ready?: boolean;
   connected?: boolean;
 }
@@ -145,6 +151,8 @@ interface CareerLobbyState {
   clearError: () => void;
   /** Clear waiting/game session pointers after leaving a Career in-game room. */
   clearGameSession: () => void;
+  /** Reload equipped cosmetics for Career waiting roommates */
+  syncCosmetics: () => void;
   reset: () => void;
 }
 
@@ -765,6 +773,12 @@ export const useCareerLobbyStore = create<CareerLobbyState>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  syncCosmetics: () => {
+    const { socket } = get();
+    if (!socket?.connected) return;
+    socket.emit("syncCosmetics", {});
+  },
 
   clearGameSession: () => {
     set({

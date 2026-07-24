@@ -22,6 +22,7 @@ export {
   getProfileById,
   getProfileByUsername,
   updateBankroll,
+  creditBankroll,
   updateRatingAndTrophies,
   updateMatchStats,
   updateAvatar,
@@ -31,6 +32,40 @@ export {
   type User,
   type UserProfile,
 } from "./users.js";
+
+// Reward system
+export {
+  getRewardPublicState,
+  claimDaily,
+  claimMission,
+  rerollMission,
+  claimTrack,
+  spinRewardWheel,
+  onCareerMatchFinished,
+  onMatchFinished,
+  onGameplayRewardEvent,
+  equipRewardCosmetic,
+  previewDailyClaim,
+  RewardActionError,
+  REWARD_FEATURE_FLAGS,
+  ACTIVE_SEASON,
+  FIRST_WIN_REWARD_CHIPS,
+  FIRST_WIN_BONUS_XP,
+  DAILY_STREAK_REWARDS,
+  getEquippedCosmetics,
+  ensureEquippedRow,
+  getPublicPlayerCosmetics,
+  type RewardPublicState,
+  type CareerMatchRewardEvent,
+  type MatchRewardEvent,
+  type GameplayRewardEvent,
+  type MissionSlotView,
+  type AchievementView,
+  type TrackLevelView,
+  type EquippedCosmetics,
+  type CosmeticSlot,
+  type PublicPlayerCosmetics,
+} from "./rewards/public.js";
 
 // Sessions
 export {

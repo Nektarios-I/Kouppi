@@ -15,6 +15,7 @@ import {
   LobbyAlert,
 } from "@/components/game/LobbyUI";
 import { Avatar } from "@/components/AvatarPicker";
+import { getBadgeLabel, getFrameStyle, getTitleLabel } from "@/lib/cosmetics";
 
 /**
  * Career entry: three parallel paths
@@ -310,7 +311,11 @@ export default function CareerLobby({ expectedRoomId }: { expectedRoomId?: strin
               className={`lobby-player-row ${player.userId === user?.id ? "lobby-player-row-me" : ""}`}
             >
               <div className="flex items-center gap-3 min-w-0">
-                <Avatar avatar={{ id: player.avatarId }} size="md" />
+                <Avatar
+                  avatar={{ id: player.avatarId }}
+                  size="md"
+                  frameStyle={getFrameStyle(player.cosmetics?.frameId)}
+                />
                 <div className="min-w-0">
                   <div className="font-ui font-medium truncate">
                     {player.username}
@@ -318,6 +323,15 @@ export default function CareerLobby({ expectedRoomId }: { expectedRoomId?: strin
                       <span className="text-gold text-xs ml-1">(you)</span>
                     )}
                   </div>
+                  {(getTitleLabel(player.cosmetics?.titleId) ||
+                    getBadgeLabel(player.cosmetics?.badgeId)) && (
+                    <div className="text-[10px] text-gold/70 font-ui truncate">
+                      {getTitleLabel(player.cosmetics?.titleId)}
+                      {getBadgeLabel(player.cosmetics?.badgeId)
+                        ? ` · ${getBadgeLabel(player.cosmetics?.badgeId)}`
+                        : ""}
+                    </div>
+                  )}
                   <div className="text-xs text-gray-500">
                     Rating {player.rating}
                     {" · "}

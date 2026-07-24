@@ -252,6 +252,21 @@ export function updateBankroll(userId: string, newBankroll: number): void {
 }
 
 /**
+ * Credit (or debit) chips relative to current bankroll. Floor at 0.
+ * Used by the reward grant pipeline — prefer this over absolute set for deltas.
+ */
+export function creditBankroll(userId: string, delta: number): number {
+  const db = getRawDb();
+  const user = getUserById(userId);
+  if (!user) {
+    throw new Error("User not found");
+  }
+  const next = Math.max(0, user.bankroll + Math.floor(delta));
+  db.prepare("UPDATE users SET bankroll = ? WHERE id = ?").run(next, userId);
+  return next;
+}
+
+/**
  * Update user's rating and trophies after a match
  */
 export function updateRatingAndTrophies(

@@ -9,13 +9,11 @@ import type { GameState } from "@kouppi/game-core";
 import { canShistri, shistriBet } from "@kouppi/game-core";
 import { PokerTable } from "./PokerTable";
 import { useGameSounds } from "@/hooks/useSounds";
-import { Celebration } from "./Confetti";
-import { ChipFlyAnimation } from "./ChipAnimation";
 import CenterCards from "./game/CenterCards";
 import { useCenterCardsPresentation } from "./game/useCenterCardsPresentation";
-import GameHUD, { GameResultBanner, GameStatusBanner } from "./game/GameHUD";
+import GameHUD, { GameStatusBanner } from "./game/GameHUD";
 import GameActionPanel from "./game/GameActionPanel";
-import { GameLog, RoundEndPanel } from "./game/GamePanels";
+import { RoundEndPanel } from "./game/GamePanels";
 import { HudButton } from "./game/HudButton";
 import CasinoBackground from "./game/CasinoBackground";
 import TableThemeSelector from "./game/TableThemeSelector";
@@ -23,6 +21,13 @@ import ConnectionStatusBanner from "./game/ConnectionStatusBanner";
 import ConfirmDialog from "./game/ConfirmDialog";
 import { useTableTheme } from "@/hooks/useTableTheme";
 import { isCareerGameRoomId, postRoomExitPath } from "@/lib/careerRoom";
+import { calmDealerMessage } from "@/lib/tableEventFeedback";
+import {
+  TableFeedbackProvider,
+  TableFeedbackOverlays,
+  TableFeedbackLogSlot,
+} from "./tableFeedback/TableEventFeedbackRoot";
+import { useTableEffectsStore } from "@/store/tableEffectsStore";
 
 type PendingConfirm =
   | { type: "closeRoom" }
@@ -32,6 +37,34 @@ type PendingConfirm =
   | null;
 
 export default function MultiplayerTableGraphics() {
+  const { state, playerId } = useRemoteGameStore();
+  const gameState = state as GameState | null;
+  const lastResolution = gameState?.lastResolution as
+    | {
+        kind: "bet" | "kouppi" | "shistri" | "pass";
+        playerId: string;
+        amount?: number;
+        win?: boolean;
+        reveal?: { rank: number; suit: string };
+      }
+    | null
+    | undefined;
+
+  if (!gameState) return null;
+
+  return (
+    <TableFeedbackProvider
+      lastResolution={lastResolution}
+      players={gameState.players.map((p) => ({ id: p.id, name: p.name, isBot: p.isBot }))}
+      localPlayerId={playerId}
+      sequenceSalt={gameState.history.length}
+    >
+      <MultiplayerTableBody />
+    </TableFeedbackProvider>
+  );
+}
+
+function MultiplayerTableBody() {
   const router = useRouter();
   const {
     state,
@@ -58,20 +91,18 @@ export default function MultiplayerTableGraphics() {
     lastError,
   } = useRemoteGameStore();
   const { theme } = useTableTheme();
+  const tableSound = useTableEffectsStore((s) => s.sound);
+  const sfx = tableSound === "on";
 
   const [bet, setBet] = useState<number>(10);
-  const [showCelebration, setShowCelebration] = useState(false);
-  const [celebrationType, setCelebrationType] = useState<"win" | "kouppi" | "shistri">("win");
-  const [showChipFly, setShowChipFly] = useState(false);
-  const [chipFlyAmount, setChipFlyAmount] = useState(0);
   const [resettingTable, setResettingTable] = useState(false);
   const [leaveError, setLeaveError] = useState<string | null>(null);
   const [hostActionError, setHostActionError] = useState<string | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm>(null);
+  const tableSurfaceRef = useRef<HTMLDivElement>(null);
 
   const sounds = useGameSounds();
   const prevIsMyTurn = useRef<boolean>(false);
-  const prevResolution = useRef<unknown>(null);
   const prevTimerLow = useRef<boolean>(false);
   const clearCareerGameSession = useCareerLobbyStore((s) => s.clearGameSession);
 
@@ -81,6 +112,22 @@ export default function MultiplayerTableGraphics() {
     const map: Record<string, AvatarConfig> = {};
     for (const p of playersInRoom) {
       if (p.avatar) map[p.id] = p.avatar;
+    }
+    return map;
+  }, [playersInRoom]);
+
+  const cosmeticsMap = useMemo(() => {
+    const map: Record<
+      string,
+      {
+        titleId?: string | null;
+        badgeId?: string | null;
+        frameId?: string | null;
+        seatRingId?: string | null;
+      }
+    > = {};
+    for (const p of playersInRoom) {
+      if (p.cosmetics) map[p.id] = p.cosmetics;
     }
     return map;
   }, [playersInRoom]);
@@ -101,53 +148,21 @@ export default function MultiplayerTableGraphics() {
 
   useEffect(() => {
     if (isMyTurn && !prevIsMyTurn.current) {
-      sounds.yourTurn();
-      sounds.deal();
+      if (sfx) {
+        sounds.yourTurn();
+        sounds.deal();
+      }
     }
     prevIsMyTurn.current = isMyTurn;
-  }, [isMyTurn, sounds]);
-
-  useEffect(() => {
-    if (lastResolution && lastResolution !== prevResolution.current) {
-      if (lastResolution.reveal) {
-        sounds.flip();
-        setTimeout(() => {
-          if (lastResolution.win) {
-            sounds.win();
-            if (lastResolution.playerId === playerId) {
-              setCelebrationType(
-                lastResolution.kind === "kouppi"
-                  ? "kouppi"
-                  : lastResolution.kind === "shistri"
-                    ? "shistri"
-                    : "win"
-              );
-              setShowCelebration(true);
-              setTimeout(() => setShowCelebration(false), 4000);
-            }
-          } else {
-            sounds.lose();
-          }
-        }, 600);
-      }
-      prevResolution.current = lastResolution;
-    }
-  }, [lastResolution, sounds, playerId]);
-
-  useEffect(() => {
-    return () => {
-      setShowCelebration(false);
-      setShowChipFly(false);
-    };
-  }, []);
+  }, [isMyTurn, sounds, sfx]);
 
   useEffect(() => {
     const isLow = turnTimer && turnTimer.remaining <= 5 && turnTimer.remaining > 0;
-    if (isLow && !prevTimerLow.current && isMyTurn) {
+    if (isLow && !prevTimerLow.current && isMyTurn && sfx) {
       sounds.timerTick();
     }
     prevTimerLow.current = !!isLow;
-  }, [turnTimer, isMyTurn, sounds]);
+  }, [turnTimer, isMyTurn, sounds, sfx]);
 
   const me = gameState?.players.find((p) => p.id === playerId);
   const currentBankrupt = (currentPlayer?.bankroll ?? 0) <= 0;
@@ -201,14 +216,11 @@ export default function MultiplayerTableGraphics() {
     waitingMessage: "Waiting for cards...",
   });
 
-  const dealerMessage =
-    awaitingNext && lastResolution
-      ? lastResolution.win
-        ? `${lastResolution.kind.toUpperCase()} - WIN!`
-        : `${lastResolution.kind.toUpperCase()} - LOSS`
-      : isMyTurn
-        ? "YOUR TURN"
-        : "KOUPPI";
+  const dealerMessage = calmDealerMessage({
+    awaitingNext,
+    resolution: lastResolution,
+    isMyTurn,
+  });
 
   const handleLeave = async () => {
     setLeaveError(null);
@@ -443,16 +455,6 @@ export default function MultiplayerTableGraphics() {
   return (
     <CasinoBackground className="text-white" theme={theme} lockViewport>
       <ConnectionStatusBanner />
-      <Celebration
-        active={showCelebration}
-        type={celebrationType}
-        onComplete={() => setShowCelebration(false)}
-      />
-      <ChipFlyAnimation
-        active={showChipFly}
-        amount={chipFlyAmount}
-        onComplete={() => setShowChipFly(false)}
-      />
       {timeoutBanner}
       {leaveErrorBanner}
       {actionErrorBanner}
@@ -508,34 +510,7 @@ export default function MultiplayerTableGraphics() {
               </HudButton>
             </div>
           }
-          resultBanner={
-            awaitingNext && lastResolution ? (
-              <GameResultBanner
-                variant={
-                  lastResolution.kind === "pass"
-                    ? "pass"
-                    : lastResolution.win
-                      ? "win"
-                      : "loss"
-                }
-              >
-                {(() => {
-                  const who =
-                    gameState.players.find((p) => p.id === lastResolution.playerId)?.name ||
-                    "Player";
-                  if (lastResolution.kind === "pass") return `${who}: PASS`;
-                  const status = lastResolution.win ? "WON" : "LOST";
-                  const tag =
-                    lastResolution.kind === "shistri"
-                      ? " (SHISTRI)"
-                      : lastResolution.kind === "kouppi"
-                        ? " (KOUPPI)"
-                        : "";
-                  return `${who}: ${status} ${lastResolution.amount}${tag}`;
-                })()}
-              </GameResultBanner>
-            ) : undefined
-          }
+          resultBanner={undefined}
           statusBanner={
             isMyTurn && !up && !awaitingNext && gameState.phase === "Round" && currentBankrupt ? (
               <GameStatusBanner>You have zero bankroll — auto-passing this turn.</GameStatusBanner>
@@ -549,14 +524,16 @@ export default function MultiplayerTableGraphics() {
         />
         </div>
 
-        <div className="game-stage-table-region">
+        <div className="game-stage-table-region relative">
           <PokerTable
             pot={gameState.round.pot}
             players={gameState.players}
             currentIndex={gameState.currentIndex}
             playerId={playerId || undefined}
             avatars={avatarMap}
+            cosmeticsByPlayerId={cosmeticsMap}
             dealerMessage={dealerMessage}
+            surfaceRef={tableSurfaceRef}
             connectionByPlayerId={Object.fromEntries(
               playersInRoom.map((p) => [
                 p.id,
@@ -577,6 +554,7 @@ export default function MultiplayerTableGraphics() {
           >
             <CenterCards presentation={centerCards} />
           </PokerTable>
+          <TableFeedbackOverlays tableSurfaceRef={tableSurfaceRef} />
         </div>
 
         {isHost && !isSpectator && playersInRoom.length > 1 && (
@@ -624,13 +602,10 @@ export default function MultiplayerTableGraphics() {
             }
             pairIsConsecutive={!!(up.a && up.b && up.a.rank !== up.b.rank)}
             onPass={() => {
-              sounds.click();
+              if (sfx) sounds.click();
               sendIntent({ type: "pass" });
             }}
             onBet={() => {
-              sounds.bet();
-              setChipFlyAmount(bet);
-              setShowChipFly(true);
               sendIntent({ type: "bet", amount: bet });
             }}
             onKouppi={() => {
@@ -644,7 +619,7 @@ export default function MultiplayerTableGraphics() {
         )}
 
         <div className="game-stage-secondary">
-          <GameLog entries={gameState.history} />
+          <TableFeedbackLogSlot />
         </div>
       </div>
 
@@ -668,9 +643,6 @@ export default function MultiplayerTableGraphics() {
           confirmVariant="kouppi"
           onConfirm={() => {
             setPendingConfirm(null);
-            sounds.chips();
-            setChipFlyAmount(gameState.round.pot);
-            setShowChipFly(true);
             sendIntent({ type: "kouppi" });
           }}
           onCancel={() => setPendingConfirm(null)}
@@ -683,11 +655,7 @@ export default function MultiplayerTableGraphics() {
           confirmLabel="SHISTRI"
           confirmVariant="shistri"
           onConfirm={() => {
-            const amount = pendingConfirm.amount;
             setPendingConfirm(null);
-            sounds.chips();
-            setChipFlyAmount(amount);
-            setShowChipFly(true);
             sendIntent({ type: "shistri" });
           }}
           onCancel={() => setPendingConfirm(null)}

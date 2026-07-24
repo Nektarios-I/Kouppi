@@ -76,6 +76,7 @@ export type RoomPlayerPayload = {
   id: string;
   name: string;
   avatar?: AvatarConfig;
+  cosmetics?: import("./types.js").PlayerCosmetics;
   ready: boolean;
   connected: boolean;
   reconnectRemainingSec: number | null;
@@ -123,6 +124,7 @@ export function buildRoomUpdatePayload(room: Room): {
       id: p.id,
       name: p.name,
       avatar: p.avatar,
+      cosmetics: p.cosmetics,
       ready: !!p.ready,
       connected: !!p.socketId && !p.disconnectedAt,
       reconnectRemainingSec: p.disconnectedAt
@@ -318,6 +320,7 @@ export function joinRoom(
     exists.socketId = player.socketId;
     if (player.name) exists.name = player.name;
     if (player.avatar) exists.avatar = normalizeAvatar(player.avatar);
+    if (player.cosmetics) exists.cosmetics = player.cosmetics;
   }
   bumpRoomRevision(room);
   return room;
@@ -680,6 +683,34 @@ export function handleIntent(id: string, playerId: string, intent: Action): Room
   }
   room.state = applyAction(room.state, intent);
   bumpStateRevision(room);
+
+  // Authoritative in-match reward progress for authenticated players
+  try {
+    const resolution = room.state.lastResolution;
+    if (resolution && (resolution.kind === "bet" || resolution.kind === "kouppi" || resolution.kind === "shistri")) {
+      void import("@kouppi/database").then(({ getUserById, onGameplayRewardEvent }) => {
+        const user = getUserById(playerId);
+        if (!user) return;
+        if (resolution.kind === "shistri") {
+          onGameplayRewardEvent({
+            userId: playerId,
+            shistriDeclared: 1,
+            shistriWon: resolution.win ? 1 : 0,
+          });
+        } else {
+          onGameplayRewardEvent({
+            userId: playerId,
+            betsPlaced: 1,
+          });
+        }
+      }).catch(() => {
+        // rewards optional if DB unavailable in tests
+      });
+    }
+  } catch {
+    // never block gameplay on reward telemetry
+  }
+
   return room;
 }
 

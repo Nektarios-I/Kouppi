@@ -9,11 +9,21 @@ export const AvatarConfig = z
   .transform((v) => ({ id: resolveAvatarId(v.id) }));
 export type AvatarConfig = { id: string };
 
+/** Identity cosmetics visible to other players at the table / lobby */
+export const PlayerCosmetics = z.object({
+  titleId: z.string().nullable().optional(),
+  badgeId: z.string().nullable().optional(),
+  frameId: z.string().nullable().optional(),
+  seatRingId: z.string().nullable().optional(),
+});
+export type PlayerCosmetics = z.infer<typeof PlayerCosmetics>;
+
 // Player identity
 export const PlayerIdentity = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   avatar: AvatarConfig.optional(),
+  cosmetics: PlayerCosmetics.optional(),
 });
 export type PlayerIdentity = z.infer<typeof PlayerIdentity>;
 
@@ -68,6 +78,7 @@ export const RoomPlayerInfo = z.object({
   id: z.string(),
   name: z.string(),
   avatar: AvatarConfig.optional(),
+  cosmetics: PlayerCosmetics.optional(),
   ready: z.boolean().optional(),
   connected: z.boolean().optional(),
   reconnectRemainingSec: z.number().int().nullable().optional(),

@@ -4,12 +4,13 @@ import React, { useState } from "react";
 import type { AvatarConfig } from "@/store/remoteGameStore";
 import {
   AVATAR_FALLBACK_SRC,
-  AVATAR_RING,
   getAvatarSrc,
   getBotAvatar,
   normalizeAvatarConfig,
 } from "@/lib/avatars";
 import { seatInitials } from "@/components/game/seatLayout";
+import { getFrameStyle, getSeatRingClass } from "@/lib/cosmetics";
+import { useRewardStore } from "@/store/rewardStore";
 
 export interface PlayerAvatarProps {
   name: string;
@@ -19,6 +20,9 @@ export interface PlayerAvatarProps {
   size?: "sm" | "md" | "lg";
   playerId?: string;
   className?: string;
+  /** Override frame cosmetic (otherwise uses equipped for isMe) */
+  frameId?: string | null;
+  seatRingId?: string | null;
 }
 
 const SIZE_CLASS = {
@@ -32,15 +36,24 @@ const BORDER_PX = { sm: 2, md: 2, lg: 2 } as const;
 export default function PlayerAvatar({
   name,
   isBot,
-  isMe: _isMe,
+  isMe,
   avatar,
   size = "md",
   playerId,
   className = "",
+  frameId,
+  seatRingId,
 }: PlayerAvatarProps) {
   const sizeClass = SIZE_CLASS[size];
   const border = BORDER_PX[size];
   const [broken, setBroken] = useState(false);
+  const equipped = useRewardStore((s) => s.state?.equipped);
+  const resolvedFrame =
+    frameId ?? (isMe ? equipped?.frameId : null) ?? "frame_default";
+  const resolvedRing =
+    seatRingId ?? (isMe ? equipped?.seatRingId : null) ?? "seat_ring_default";
+  const ring = getFrameStyle(resolvedFrame);
+  const ringClass = getSeatRingClass(resolvedRing);
 
   const resolved = isBot
     ? normalizeAvatarConfig(avatar ?? getBotAvatar(playerId || name))
@@ -51,10 +64,10 @@ export default function PlayerAvatar({
   if (resolved && !broken) {
     return (
       <div
-        className={`player-avatar player-avatar--portrait avatar-display avatar-display--portrait ${sizeClass} ${className}`}
+        className={`player-avatar player-avatar--portrait avatar-display avatar-display--portrait ${ringClass} ${sizeClass} ${className}`}
         style={{
-          backgroundColor: AVATAR_RING.fill,
-          border: `${border}px solid ${AVATAR_RING.border}`,
+          backgroundColor: ring.fill,
+          border: `${border}px solid ${ring.border}`,
         }}
         aria-hidden="true"
       >
@@ -73,10 +86,10 @@ export default function PlayerAvatar({
   if (broken && resolved) {
     return (
       <div
-        className={`player-avatar player-avatar--portrait avatar-display avatar-display--portrait ${sizeClass} ${className}`}
+        className={`player-avatar player-avatar--portrait avatar-display avatar-display--portrait ${ringClass} ${sizeClass} ${className}`}
         style={{
-          backgroundColor: AVATAR_RING.fill,
-          border: `${border}px solid ${AVATAR_RING.border}`,
+          backgroundColor: ring.fill,
+          border: `${border}px solid ${ring.border}`,
         }}
         aria-hidden="true"
       >
@@ -90,10 +103,10 @@ export default function PlayerAvatar({
 
   return (
     <div
-      className={`player-avatar player-avatar--initials avatar-display ${sizeClass} ${className}`}
+      className={`player-avatar player-avatar--initials avatar-display ${ringClass} ${sizeClass} ${className}`}
       style={{
-        backgroundColor: AVATAR_RING.fill,
-        border: `${border}px solid ${AVATAR_RING.border}`,
+        backgroundColor: ring.fill,
+        border: `${border}px solid ${ring.border}`,
       }}
       aria-hidden="true"
     >

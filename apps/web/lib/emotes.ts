@@ -60,7 +60,8 @@ export const QUICK_EMOTES: string[] = ["👍", "👎", "😂", "🔥", "🎉", "
  * Validate if an emote is in the allowed list
  */
 export function isValidEmote(emote: string): boolean {
-  return ALL_EMOTES.includes(emote) || QUICK_EMOTES.includes(emote);
+  const REWARD_EMOTES = ["🫡"];
+  return ALL_EMOTES.includes(emote) || QUICK_EMOTES.includes(emote) || REWARD_EMOTES.includes(emote);
 }
 
 /**

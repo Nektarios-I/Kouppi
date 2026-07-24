@@ -129,12 +129,14 @@ export function Avatar({
   avatar,
   size = "md",
   showDefault = true,
+  frameStyle,
 }: {
   avatar?: AvatarConfig | null;
   size?: "sm" | "md" | "lg";
   showDefault?: boolean;
   /** @deprecated unused — kept for call-site compat */
   playerId?: string;
+  frameStyle?: { fill: string; border: string };
 }) {
   const sizes = {
     sm: "w-8 h-8",
@@ -142,6 +144,8 @@ export function Avatar({
     lg: "w-14 h-14",
   };
   const borders = { sm: 2, md: 2, lg: 3 };
+  const fill = frameStyle?.fill ?? AVATAR_RING.fill;
+  const border = frameStyle?.border ?? AVATAR_RING.border;
 
   if (!avatar) {
     if (!showDefault) return null;
@@ -149,8 +153,8 @@ export function Avatar({
       <div
         className={`avatar-display avatar-display--portrait ${sizes[size]}`}
         style={{
-          backgroundColor: AVATAR_RING.fill,
-          border: `${borders[size]}px solid ${AVATAR_RING.border}`,
+          backgroundColor: fill,
+          border: `${borders[size]}px solid ${border}`,
         }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -165,8 +169,8 @@ export function Avatar({
     <div
       className={`avatar-display avatar-display--portrait ${sizes[size]}`}
       style={{
-        backgroundColor: AVATAR_RING.fill,
-        border: `${borders[size]}px solid ${AVATAR_RING.border}`,
+        backgroundColor: fill,
+        border: `${borders[size]}px solid ${border}`,
       }}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}

@@ -44,7 +44,15 @@ import {
   setCareerPlayerReady,
   type CareerPlayer,
 } from "./careerRoomManager.js";
-import { getUserById } from "@kouppi/database";
+import { getUserById, getPublicPlayerCosmetics } from "@kouppi/database";
+
+function careerPlayerCosmetics(userId: string) {
+  try {
+    return getPublicPlayerCosmetics(userId);
+  } catch {
+    return undefined;
+  }
+}
 import { verifyActiveAuthToken } from "../auth/verifyActiveAuth.js";
 import { createRoomWithCreator, snapshot, getRoom, closeRoom, startRoom } from "../rooms.js";
 import type { TableConfig } from "@kouppi/game-core";
@@ -523,6 +531,7 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
           bankroll: user.bankroll,
           socketId: socket.id,
           avatarId: user.avatarId,
+          cosmetics: careerPlayerCosmetics(user.id),
           joinedAt: Date.now(),
           ready: false,
         };
@@ -615,6 +624,7 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
           bankroll: user.bankroll,
           socketId: socket.id,
           avatarId: user.avatarId,
+          cosmetics: careerPlayerCosmetics(user.id),
           joinedAt: Date.now(),
           ready: false,
         };
@@ -727,6 +737,7 @@ export function registerCareerHandlers(io: Server, socket: Socket, defaultConfig
           username: p.username,
           rating: p.rating,
           avatarId: p.avatarId,
+          cosmetics: p.cosmetics,
           ready: !!p.ready,
         })),
         playerCount: currentRoom.players.length,

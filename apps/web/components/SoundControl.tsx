@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useSounds } from "@/hooks/useSounds";
 import { HudButton } from "@/components/game/HudButton";
+import { useTableEffectsStore } from "@/store/tableEffectsStore";
+import type { TableEffectsLevel, TableSoundPreference } from "@/lib/tableEventFeedback/types";
 
 export default function SoundControl() {
   const {
@@ -22,12 +24,27 @@ export default function SoundControl() {
     sounds,
   } = useSounds();
 
+  const effects = useTableEffectsStore((s) => s.effects);
+  const tableSound = useTableEffectsStore((s) => s.sound);
+  const setEffects = useTableEffectsStore((s) => s.setEffects);
+  const setTableSound = useTableEffectsStore((s) => s.setSound);
+
   const [isOpen, setIsOpen] = useState(false);
 
   const handleToggleMusic = () => {
     if (isMusicPlaying) stopBackgroundMusic();
     else playBackgroundMusic();
   };
+
+  const effectOptions: { id: TableEffectsLevel; label: string }[] = [
+    { id: "full", label: "Full" },
+    { id: "reduced", label: "Reduced" },
+    { id: "off", label: "Off" },
+  ];
+  const soundOptions: { id: TableSoundPreference; label: string }[] = [
+    { id: "on", label: "On" },
+    { id: "off", label: "Off" },
+  ];
 
   return (
     <div className="fixed top-4 right-4 z-50">
@@ -107,6 +124,43 @@ export default function SoundControl() {
             >
               {isMusicMuted ? "🔇" : "🔊"}
             </HudButton>
+          </div>
+
+          <div className="table-effects-row" data-testid="table-effects-settings">
+            <span className="table-effects-label">Table effects</span>
+            <div className="table-effects-options" role="group" aria-label="Table effects">
+              {effectOptions.map((opt) => (
+                <HudButton
+                  key={opt.id}
+                  variant={effects === opt.id ? "success" : "ghost"}
+                  size="sm"
+                  aria-pressed={effects === opt.id}
+                  onClick={() => {
+                    setEffects(opt.id);
+                    sounds.click();
+                  }}
+                >
+                  {opt.label}
+                </HudButton>
+              ))}
+            </div>
+            <span className="table-effects-label">Table sound</span>
+            <div className="table-effects-options" role="group" aria-label="Table sound">
+              {soundOptions.map((opt) => (
+                <HudButton
+                  key={opt.id}
+                  variant={tableSound === opt.id ? "success" : "ghost"}
+                  size="sm"
+                  aria-pressed={tableSound === opt.id}
+                  onClick={() => {
+                    setTableSound(opt.id);
+                    sounds.click();
+                  }}
+                >
+                  {opt.label}
+                </HudButton>
+              ))}
+            </div>
           </div>
 
           <div className="pt-3 border-t border-white/10">

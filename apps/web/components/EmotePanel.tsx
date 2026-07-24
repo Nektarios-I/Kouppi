@@ -5,12 +5,17 @@ import { useRemoteGameStore } from "@/store/remoteGameStore";
 import { EMOTE_CATEGORIES, QUICK_EMOTES } from "@/lib/emotes";
 import { useGameSounds } from "@/hooks/useSounds";
 import { HudIconButton } from "@/components/game/HudButton";
+import { useRewardStore } from "@/store/rewardStore";
+import { getUnlockedEmoteGlyphs } from "@/lib/cosmetics";
 
 export default function EmotePanel() {
   const [isOpen, setIsOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState(EMOTE_CATEGORIES[0].id);
   const sendEmote = useRemoteGameStore((s) => s.sendEmote);
   const sounds = useGameSounds();
+  const catalog = useRewardStore((s) => s.state?.cosmeticsCatalog);
+  const bonusEmotes = getUnlockedEmoteGlyphs(catalog ?? []);
+  const quickEmotes = Array.from(new Set([...QUICK_EMOTES, ...bonusEmotes]));
 
   const handleEmoteClick = (emote: string) => {
     sendEmote(emote);
@@ -48,7 +53,7 @@ export default function EmotePanel() {
           </div>
 
           <div className="flex flex-wrap gap-1 mb-3 pb-3 border-b border-white/10">
-            {QUICK_EMOTES.map((emote) => (
+            {quickEmotes.map((emote) => (
               <button
                 key={emote}
                 type="button"

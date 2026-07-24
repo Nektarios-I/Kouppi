@@ -46,7 +46,7 @@ body {
   color: #f9fafb;
 }
 
-/* ─── Casino room environment ─── */
+/* ??? Casino room environment ??? */
 .casino-room-base {
   background:
     radial-gradient(ellipse 120% 80% at 50% -10%, var(--bg-casino-accent) 0%, transparent 55%),
@@ -150,7 +150,7 @@ body {
   background-size: 256px 256px;
 }
 
-/* ─── Perspective casino floor ─── */
+/* ??? Perspective casino floor ??? */
 .casino-floor-perspective {
   perspective: 520px;
   perspective-origin: 50% 0%;
@@ -584,7 +584,7 @@ body {
   animation: pot-pulse 0.4s ease-out;
 }
 
-/* ─── Playing cards (casino frame) ─── */
+/* ??? Playing cards (casino frame) ??? */
 .playing-card-shell {
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5)) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.35));
   transition: transform 0.2s ease, filter 0.2s ease;
@@ -622,6 +622,40 @@ body {
     ),
     radial-gradient(ellipse at center, var(--card-back-accent) 0%, var(--card-back) 70%);
   border: 1px solid rgba(212, 175, 55, 0.2);
+}
+
+.playing-card-back--classic-blue {
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      #1a3a6e 0px,
+      #1a3a6e 5px,
+      #245090 5px,
+      #245090 10px
+    ),
+    radial-gradient(ellipse at center, #2a5a9a 0%, #0e2248 75%);
+  border: 1px solid rgba(140, 180, 255, 0.35);
+}
+
+.kouppi-poker-chip--gold-edge {
+  filter: drop-shadow(0 0 2px rgba(212, 175, 55, 0.55));
+}
+
+.kouppi-poker-chip--gold-edge::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1.5px rgba(212, 175, 55, 0.65);
+}
+
+.seat-ring--classic {
+  box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.35), 0 0 10px rgba(212, 175, 55, 0.2);
+}
+
+.seat-ring--default {
+  /* no extra ring */
 }
 
 .playing-card-hidden-face {
@@ -710,7 +744,7 @@ body {
   animation: toast-in 0.25s ease-out;
 }
 
-/* ─── Game HUD & action dock ─── */
+/* ??? Game HUD & action dock ??? */
 .hud-header-strip {
   position: relative;
   padding: 0.75rem 1rem;
@@ -804,7 +838,7 @@ body {
   backdrop-filter: blur(6px);
 }
 
-/* ─── Viewport shells ─── */
+/* ??? Viewport shells ??? */
 /* Lobby / mode pages: full casino look, document may scroll */
 .lobby-viewport-shell {
   min-height: 100dvh;
@@ -1198,7 +1232,7 @@ body {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
 }
 
-/* ─── Lobby & pre-game ─── */
+/* ??? Lobby & pre-game ??? */
 .lobby-card {
   border-radius: 1rem;
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.35) 100%);
@@ -1348,7 +1382,7 @@ body {
   box-shadow: 0 0 0 1px rgba(212, 175, 55, 0.35), 0 0 10px rgba(212, 175, 55, 0.25);
 }
 
-/* ─── Perimeter seat pods ─── */
+/* ??? Perimeter seat pods ??? */
 .player-seat {
   --seat-surface: rgba(8, 12, 24, 0.82);
   --seat-border: rgba(148, 163, 184, 0.35);
@@ -1552,11 +1586,33 @@ body {
   color: #e0f2fe;
 }
 
+.player-chip-stack {
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.5));
+  max-width: 4.5rem;
+}
+
+.player-chip-stack--dense {
+  max-width: 3.25rem;
+  transform: scale(0.92);
+}
+
+.kouppi-chip-stack {
+  max-width: 100%;
+}
+
+.pot-chip-stack {
+  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.45));
+}
+
+.kouppi-poker-chip {
+  -webkit-tap-highlight-color: transparent;
+}
+
 .player-avatar--initials {
   font-size: inherit;
 }
 
-/* ─── In-game overlays: chat & emotes ─── */
+/* ??? In-game overlays: chat & emotes ??? */
 .chat-fab {
   @apply fixed z-50 flex items-center gap-2 px-4 py-3 rounded-2xl font-ui font-semibold transition-transform hover:scale-105 min-h-[44px];
   right: calc(1rem + var(--safe-right));
@@ -1725,3 +1781,310 @@ body {
   }
 }
 
+
+/* --- Table event feedback (Layers 1�3) --- */
+.table-result-ribbon-host {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  transform: translate(-50%, -50%);
+  z-index: 22;
+  pointer-events: none;
+  width: min(92%, 18rem);
+  display: flex;
+  justify-content: center;
+}
+
+.table-result-ribbon {
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(180, 190, 210, 0.22);
+  background: rgba(6, 12, 28, 0.88);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+  animation: table-ribbon-in 180ms ease-out;
+}
+
+.table-result-ribbon-text {
+  font-family: var(--font-ui, ui-sans-serif, system-ui, sans-serif);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #e8ecf4;
+  text-align: center;
+  line-height: 1.25;
+}
+
+.table-result-ribbon--win .table-result-ribbon-text {
+  color: #e8d5a3;
+}
+
+.table-result-ribbon--loss .table-result-ribbon-text {
+  color: #c4a8a8;
+}
+
+.table-result-ribbon--shistri {
+  border-color: rgba(212, 175, 55, 0.45);
+}
+
+.table-result-ribbon--shistri .table-result-ribbon-text {
+  color: #e6c86a;
+}
+
+.table-result-ribbon--action .table-result-ribbon-text,
+.table-result-ribbon--neutral .table-result-ribbon-text {
+  color: #d0d6e2;
+}
+
+@keyframes table-ribbon-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .table-result-ribbon {
+    animation: none;
+  }
+  .table-chip-travel {
+    animation: none !important;
+    opacity: 0;
+  }
+}
+
+.table-chip-travel {
+  transform: translate(-50%, -50%);
+  animation: table-chip-travel-anim var(--chip-dur, 500ms) ease-out forwards;
+}
+
+@keyframes table-chip-travel-anim {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) translate(0, 0);
+  }
+  to {
+    opacity: 0.85;
+    transform: translate(-50%, -50%) translate(var(--chip-dx), var(--chip-dy));
+  }
+}
+
+.table-shistri-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  pointer-events: none;
+  z-index: 22;
+}
+
+.table-shistri-badge-label {
+  font-family: var(--font-ui, ui-sans-serif, system-ui, sans-serif);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #1a1408;
+  background: linear-gradient(180deg, #f0d78c 0%, #d4af37 100%);
+  border: 1px solid rgba(255, 240, 180, 0.5);
+  border-radius: 0.25rem;
+  padding: 0.2rem 0.45rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.table-shistri-badge-amt {
+  font-size: 0.65rem;
+  color: #e6c86a;
+  font-variant-numeric: tabular-nums;
+}
+
+.seat-fx-win {
+  outline: 2px solid rgba(232, 213, 163, 0.75);
+  outline-offset: 3px;
+  border-radius: 0.75rem;
+  box-shadow: 0 0 12px rgba(232, 213, 163, 0.25);
+  transition: outline 0.2s ease, box-shadow 0.2s ease;
+}
+
+.seat-fx-loss {
+  outline: 1px solid rgba(160, 100, 100, 0.55);
+  outline-offset: 2px;
+  border-radius: 0.75rem;
+  opacity: 0.88;
+  transition: outline 0.15s ease, opacity 0.15s ease;
+}
+
+.table-event-log-desktop {
+  width: 100%;
+  max-width: 28rem;
+  margin: 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.65rem;
+  background: rgba(6, 10, 22, 0.72);
+  overflow: hidden;
+}
+
+.table-event-log-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0.4rem 0.75rem;
+  font-family: var(--font-ui, ui-sans-serif, system-ui, sans-serif);
+  font-size: 0.75rem;
+  color: #c8d0e0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.table-event-log-toggle:focus-visible {
+  outline: 2px solid rgba(100, 200, 220, 0.7);
+  outline-offset: 2px;
+}
+
+.table-event-log-count {
+  font-variant-numeric: tabular-nums;
+  color: rgba(212, 175, 55, 0.7);
+  font-size: 0.7rem;
+}
+
+.table-event-log-body {
+  max-height: 4.5rem;
+  overflow-y: auto;
+  padding: 0.35rem 0.65rem 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.table-event-log-line {
+  font-family: var(--font-ui, ui-sans-serif, system-ui, sans-serif);
+  font-size: 0.7rem;
+  color: #b8c0d0;
+  line-height: 1.35;
+  padding: 0.1rem 0;
+}
+
+.table-event-log-empty {
+  font-size: 0.7rem;
+  color: #667088;
+  margin: 0;
+}
+
+.table-event-log-mobile {
+  position: fixed;
+  z-index: 45;
+  left: calc(1rem + var(--safe-left, 0px));
+  bottom: calc(5.5rem + var(--safe-bottom, 0px));
+}
+
+.table-event-log-fab {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  background: rgba(10, 14, 28, 0.94);
+  color: #e8d5a3;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.table-event-log-fab:focus-visible {
+  outline: 2px solid rgba(100, 200, 220, 0.7);
+  outline-offset: 2px;
+}
+
+.table-event-log-fab-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 1.1rem;
+  height: 1.1rem;
+  padding: 0 0.2rem;
+  border-radius: 999px;
+  background: rgba(212, 175, 55, 0.9);
+  color: #1a1408;
+  font-size: 0.6rem;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+
+.table-event-log-sheet {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 0.5rem);
+  width: min(88vw, 18rem);
+  max-height: 40vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(212, 175, 55, 0.25);
+  background: rgba(8, 10, 20, 0.96);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.table-event-log-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.65rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.table-event-log-close {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 0;
+  color: #9aa3b5;
+  cursor: pointer;
+}
+
+.table-event-log-close:focus-visible {
+  outline: 2px solid rgba(100, 200, 220, 0.7);
+  outline-offset: 2px;
+}
+
+.table-event-log-sheet .table-event-log-body {
+  max-height: min(32vh, 12rem);
+}
+
+.table-effects-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.table-effects-label {
+  font-family: var(--font-ui, ui-sans-serif, system-ui, sans-serif);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #8892a8;
+}
+
+.table-effects-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}

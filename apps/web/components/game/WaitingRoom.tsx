@@ -11,6 +11,7 @@ import {
   LobbyAlert,
   LobbyFooterLink,
 } from "./LobbyUI";
+import { getBadgeLabel, getFrameStyle, getTitleLabel } from "@/lib/cosmetics";
 
 export interface WaitingRoomProps {
   roomCode: string;
@@ -114,7 +115,11 @@ export default function WaitingRoom({
                 className={`lobby-player-row ${player.id === playerId ? "lobby-player-row-me" : ""}`}
               >
                 <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <Avatar avatar={player.avatar} size="md" />
+                  <Avatar
+                    avatar={player.avatar}
+                    size="md"
+                    frameStyle={getFrameStyle(player.cosmetics?.frameId)}
+                  />
                   <div className="min-w-0">
                     <span className="font-ui font-medium truncate block">
                       {player.name}
@@ -122,6 +127,15 @@ export default function WaitingRoom({
                         <span className="text-gold text-xs ml-1">(you)</span>
                       )}
                     </span>
+                    {(getTitleLabel(player.cosmetics?.titleId) ||
+                      getBadgeLabel(player.cosmetics?.badgeId)) && (
+                      <span className="text-[10px] text-gold/70 font-ui truncate block">
+                        {getTitleLabel(player.cosmetics?.titleId)}
+                        {getBadgeLabel(player.cosmetics?.badgeId)
+                          ? ` · ${getBadgeLabel(player.cosmetics?.badgeId)}`
+                          : ""}
+                      </span>
+                    )}
                     {player.connected === false && player.reconnectRemainingSec != null && (
                       <span className="text-warning text-xs font-ui">
                         Reconnecting… {player.reconnectRemainingSec}s

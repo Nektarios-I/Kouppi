@@ -33,4 +33,28 @@ export function persistCasualFriendsSessionFromRoom(room: Room): void {
     biggestPot: stats.biggestPot,
     players,
   });
+
+  // Reward progress for authenticated multiplayer participants (session = 1 match)
+  void import("@kouppi/database")
+    .then(({ onMatchFinished, getUserById }) => {
+      for (const p of players) {
+        if (!getUserById(p.playerId)) continue;
+        const bankrolls = players.map((x) => x.finalBankroll);
+        const best = Math.max(...bankrolls);
+        const won =
+          p.finalBankroll === best && players.filter((x) => x.finalBankroll === best).length === 1;
+        onMatchFinished({
+          eventId: `casual:${room.id}:${p.playerId}`,
+          userId: p.playerId,
+          mode: "multiplayer",
+          placement: won ? 1 : 2,
+          chipsWon: 0,
+          potWon: won ? Math.max(0, stats.biggestPot) : 0,
+          won,
+        });
+      }
+    })
+    .catch(() => {
+      // ignore reward failures
+    });
 }

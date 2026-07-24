@@ -13,7 +13,7 @@ import { v4 as uuidv4 } from "uuid";
 import { Server, Socket } from "socket.io";
 import { getAnteOptionById, CAREER_TIERS, canAffordAnte, type AnteTier, type AnteOption } from "./tiers.js";
 import type { MatchFound } from "./queue.js";
-import { getUserById } from "@kouppi/database";
+import { getUserById, getPublicPlayerCosmetics } from "@kouppi/database";
 import { 
   createRoomWithCreator, 
   joinRoom, 
@@ -35,6 +35,14 @@ const MAX_PLAYERS_PER_ROOM = 2;
 let AUTO_START_DELAY_MS = 60_000;
 const DEFAULT_AUTO_START_DELAY_MS = 60_000;
 const CAREER_ROOM_PREFIX = "career-";
+
+function safePublicCosmetics(userId: string) {
+  try {
+    return getPublicPlayerCosmetics(userId);
+  } catch {
+    return undefined;
+  }
+}
 
 /** Read current auto-start delay (tests / diagnostics). */
 export function getAutoStartDelayMs(): number {
@@ -63,6 +71,7 @@ export interface CareerPlayer {
   bankroll: number;
   socketId: string;
   avatarId: string;
+  cosmetics?: import("../types.js").PlayerCosmetics;
   joinedAt: number;
   ready: boolean;
   /** Multiplayer-style reconnect grace (waiting/starting tables). */
@@ -575,6 +584,7 @@ function triggerGameStart(room: CareerRoom, io: Server) {
         avatar: {
           id: firstPlayer.avatarId,
         },
+        cosmetics: firstPlayer.cosmetics ?? safePublicCosmetics(firstPlayer.userId),
       },
       gameConfig,
       Math.floor(Math.random() * 1e9),
@@ -602,6 +612,7 @@ function triggerGameStart(room: CareerRoom, io: Server) {
         avatar: {
           id: player.avatarId,
         },
+        cosmetics: player.cosmetics ?? safePublicCosmetics(player.userId),
       });
     }
 
@@ -750,6 +761,7 @@ export function buildCareerRoomUpdatePayload(room: CareerRoom) {
       username: p.username,
       rating: p.rating,
       avatarId: p.avatarId,
+      cosmetics: p.cosmetics,
       ready: !!p.ready,
       connected: !!p.socketId && !p.disconnectedAt,
     })),
@@ -847,7 +859,7 @@ export function handleCareerGameEnd(
   console.log(`[Career] Game ${gameRoomId} ended. Processing results...`);
 
   // Import database functions dynamically to avoid circular deps
-  import("@kouppi/database").then(({ updateRatingAndTrophies, updateBankroll, updateMatchStats, createMatch, completeMatch, calculateMultiplayerTrophyChange, calculateNewRating }) => {
+  import("@kouppi/database").then(({ updateRatingAndTrophies, updateBankroll, updateMatchStats, createMatch, completeMatch, calculateMultiplayerTrophyChange, calculateNewRating, onCareerMatchFinished }) => {
     // Sort players by chips won (best to worst)
     const sortedResults = [...playerResults].sort((a, b) => b.chipsWon - a.chipsWon);
     
@@ -898,6 +910,24 @@ export function handleCareerGameEnd(
         updateBankroll(result.userId, result.finalBankroll);
 
         updateMatchStats(result.userId, isWinner, Math.max(0, result.chipsWon));
+
+        // Reward system: first-win, missions, season XP (idempotent per event)
+        try {
+          const rewardResult = onCareerMatchFinished({
+            eventId: `${careerRoom.id}:${gameRoomId}:${result.userId}`,
+            userId: result.userId,
+            mode: "career",
+            placement: result.placement,
+            chipsWon: Math.max(0, result.chipsWon),
+            potWon: Math.max(0, result.chipsWon),
+            won: isWinner,
+          });
+          if (rewardResult.firstWin?.applied) {
+            console.log(`[Career] First-win bonus applied for ${careerPlayer.username}`);
+          }
+        } catch (rewardError) {
+          console.error(`[Career] Reward hook failed for ${result.userId}:`, rewardError);
+        }
         
         console.log(`[Career] Updated ${careerPlayer.username}: rating ${previousRating} -> ${newRating} (delta ${ratingDelta >= 0 ? "+" : ""}${ratingDelta}), trophies ${trophyChange >= 0 ? '+' : ''}${trophyChange}, bankroll -> ${result.finalBankroll}`);
       } catch (error) {
@@ -1084,6 +1114,7 @@ export function handleMatchFound(match: MatchFound, io: Server): void {
     bankroll: user1.bankroll,
     socketId: match.player1.socketId,
     avatarId: user1.avatarId,
+    cosmetics: safePublicCosmetics(user1.id),
     joinedAt: Date.now(),
     ready: false,
   };
@@ -1100,6 +1131,7 @@ export function handleMatchFound(match: MatchFound, io: Server): void {
     bankroll: user2.bankroll,
     socketId: match.player2.socketId,
     avatarId: user2.avatarId,
+    cosmetics: safePublicCosmetics(user2.id),
     joinedAt: Date.now(),
     ready: false,
   };
