@@ -9,9 +9,14 @@ import TrophyBadge, { RatingBadge } from "@/components/TrophyBadge";
 import CareerLobby from "@/components/CareerLobby";
 import { LobbyShell, LobbyCard } from "@/components/game/LobbyUI";
 import { HudButton } from "@/components/game/HudButton";
-import { Avatar } from "@/components/AvatarPicker";
+import AvatarPicker, { Avatar } from "@/components/AvatarPicker";
 import { useRewardStore } from "@/store/rewardStore";
 import { getBadgeLabel, getTitleLabel } from "@/lib/cosmetics";
+import { normalizeAvatarConfig, type AvatarConfig } from "@/lib/avatars";
+import {
+  patchProfileAvatar,
+  savePlayerAvatarPreference,
+} from "@/lib/playerAvatarPreference";
 
 function CareerTitleLine() {
   const equipped = useRewardStore((s) => s.state?.equipped);
@@ -31,10 +36,19 @@ function CareerTitleLine() {
 }
 
 export default function CareerPage() {
-  const { user, isLoggedIn, logout, refreshUser } = useAuthStore();
+  const { user, token, isLoggedIn, logout, refreshUser } = useAuthStore();
   const { leaderboard, fetchLeaderboard, isLoadingLeaderboard } = useCareerStore();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [joinedLabel, setJoinedLabel] = useState<string | null>(null);
+
+  const handleAvatarChange = (next: AvatarConfig) => {
+    if (!token) return;
+    const normalized = normalizeAvatarConfig(next);
+    savePlayerAvatarPreference(normalized);
+    void patchProfileAvatar(token, normalized).then((ok) => {
+      if (ok) void refreshUser();
+    });
+  };
 
   useEffect(() => {
     fetchLeaderboard();
@@ -111,6 +125,17 @@ export default function CareerPage() {
                     {joinedLabel ? `Joined ${joinedLabel}` : "Career player"}
                   </div>
                 </div>
+              </div>
+
+              <div className="mb-4">
+                <p className="text-xs text-gray-500 font-ui uppercase tracking-wide mb-2">
+                  Change avatar
+                </p>
+                <AvatarPicker
+                  variant="inline"
+                  currentAvatar={{ id: user.avatarId }}
+                  onSelect={handleAvatarChange}
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3 mb-4">

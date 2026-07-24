@@ -8,6 +8,11 @@ import dynamic from "next/dynamic";
 import Chat from "../../../components/Chat";
 import EmotePanel from "../../../components/EmotePanel";
 import { getDefaultAvatar, normalizeAvatarConfig } from "@/lib/avatars";
+import {
+  loadPlayerAvatarPreference,
+  patchProfileAvatar,
+  savePlayerAvatarPreference,
+} from "@/lib/playerAvatarPreference";
 import { useToast } from "@/components/game/Toast";
 import WaitingRoom from "@/components/game/WaitingRoom";
 import RoomPasswordModal from "@/components/game/RoomPasswordModal";
@@ -21,7 +26,6 @@ import {
 } from "@/components/game/LobbyUI";
 import ConnectionStatusBanner from "@/components/game/ConnectionStatusBanner";
 import { HudButton } from "@/components/game/HudButton";
-import { getServerUrl } from "@/lib/serverUrl";
 import { isCareerGameRoomId, postRoomExitPath } from "@/lib/careerRoom";
 import { useCareerLobbyStore } from "@/store/careerLobbyStore";
 
@@ -130,19 +134,11 @@ export default function RoomPage() {
     if (isCareerGame) return;
     const savedId = sessionStorage.getItem("kouppi_player_id");
     const savedName = sessionStorage.getItem("kouppi_player_name");
-    const savedAvatar = sessionStorage.getItem("kouppi_player_avatar");
     if (savedId && savedName) {
       setIdentity(savedId, savedName);
       setLocalName(savedName);
     }
-    if (savedAvatar) {
-      try {
-        const avatar = normalizeAvatarConfig(JSON.parse(savedAvatar));
-        setAvatar(avatar);
-      } catch {
-        // ignore invalid JSON
-      }
-    }
+    setAvatar(loadPlayerAvatarPreference());
   }, [isLoggedIn, user, setIdentity, setAvatar, isCareerGame]);
 
   const attemptJoin = useCallback(
@@ -238,23 +234,16 @@ export default function RoomPage() {
     if (!playerAvatar) {
       const newAvatar = getDefaultAvatar();
       setAvatar(newAvatar);
-      sessionStorage.setItem("kouppi_player_avatar", JSON.stringify(newAvatar));
+      savePlayerAvatarPreference(newAvatar);
     }
   };
 
   const handleAvatarChange = (newAvatar: AvatarConfig) => {
     const normalized = normalizeAvatarConfig(newAvatar);
     setAvatar(normalized);
-    sessionStorage.setItem("kouppi_player_avatar", JSON.stringify(normalized));
+    savePlayerAvatarPreference(normalized);
     if (isLoggedIn() && token) {
-      void fetch(`${getServerUrl()}/api/profile`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ avatar: { id: normalized.id } }),
-      }).catch(() => undefined);
+      void patchProfileAvatar(token, normalized);
     }
   };
 

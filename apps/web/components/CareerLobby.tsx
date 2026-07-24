@@ -14,8 +14,13 @@ import {
   LobbyCard,
   LobbyAlert,
 } from "@/components/game/LobbyUI";
-import { Avatar } from "@/components/AvatarPicker";
+import AvatarPicker, { Avatar } from "@/components/AvatarPicker";
 import { getBadgeLabel, getFrameStyle, getTitleLabel } from "@/lib/cosmetics";
+import { normalizeAvatarConfig, type AvatarConfig } from "@/lib/avatars";
+import {
+  patchProfileAvatar,
+  savePlayerAvatarPreference,
+} from "@/lib/playerAvatarPreference";
 
 /**
  * Career entry: three parallel paths
@@ -25,7 +30,7 @@ import { getBadgeLabel, getFrameStyle, getTitleLabel } from "@/lib/cosmetics";
  */
 export default function CareerLobby({ expectedRoomId }: { expectedRoomId?: string }) {
   const router = useRouter();
-  const { token, user, isLoggedIn } = useAuthStore();
+  const { token, user, isLoggedIn, refreshUser } = useAuthStore();
   const {
     socket,
     isConnected,
@@ -60,6 +65,17 @@ export default function CareerLobby({ expectedRoomId }: { expectedRoomId?: strin
 
   const [countdown, setCountdown] = useState<number | null>(null);
   const [elapsedSec, setElapsedSec] = useState(0);
+  const [localAvatarId, setLocalAvatarId] = useState<string | null>(null);
+
+  const handleAvatarChange = (next: AvatarConfig) => {
+    if (!token) return;
+    const normalized = normalizeAvatarConfig(next);
+    setLocalAvatarId(normalized.id);
+    savePlayerAvatarPreference(normalized);
+    void patchProfileAvatar(token, normalized).then((ok) => {
+      if (ok) void refreshUser();
+    });
+  };
 
   useEffect(() => {
     if (isLoggedIn() && token && !socket) {
@@ -304,6 +320,17 @@ export default function CareerLobby({ expectedRoomId }: { expectedRoomId?: strin
           Waiting table · Ante: {currentRoom.ante} · Bet: {currentRoom.minBet}–{currentRoom.maxBet}
         </p>
 
+        <div className="mb-4 rounded-xl border border-white/10 bg-black/20 p-3">
+          <p className="text-xs text-gray-500 font-ui uppercase tracking-wide mb-2">Your avatar</p>
+          <AvatarPicker
+            variant="inline"
+            currentAvatar={{
+              id: localAvatarId ?? me?.avatarId ?? user?.avatarId ?? "portrait-01",
+            }}
+            onSelect={handleAvatarChange}
+          />
+        </div>
+
         <div className="space-y-2 mb-4">
           {currentRoom.players.map((player) => (
             <div
@@ -312,7 +339,12 @@ export default function CareerLobby({ expectedRoomId }: { expectedRoomId?: strin
             >
               <div className="flex items-center gap-3 min-w-0">
                 <Avatar
-                  avatar={{ id: player.avatarId }}
+                  avatar={{
+                    id:
+                      player.userId === user?.id
+                        ? localAvatarId ?? player.avatarId
+                        : player.avatarId,
+                  }}
                   size="md"
                   frameStyle={getFrameStyle(player.cosmetics?.frameId)}
                 />
@@ -400,7 +432,7 @@ export default function CareerLobby({ expectedRoomId }: { expectedRoomId?: strin
       )}
 
       <LobbyCard title="Your Stats" icon="◎">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3 mb-4">
           <div className="career-stat-tile">
             <div className="text-xs text-gray-500 font-ui uppercase tracking-wide">Rating</div>
             <div className="text-xl font-display font-bold text-gold-light">{playerRating}</div>

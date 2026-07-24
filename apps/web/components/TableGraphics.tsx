@@ -17,8 +17,11 @@ import { useCenterCardsPresentation } from "./game/useCenterCardsPresentation";
 import GameActionPanel from "./game/GameActionPanel";
 import { NextTurnButton, RoundEndPanel } from "./game/GamePanels";
 import { HudButton } from "./game/HudButton";
-import { getAvatarFromId, getBotAvatar } from "@/lib/avatars";
-import type { AvatarConfig } from "@/store/remoteGameStore";
+import { getBotAvatar, normalizeAvatarConfig, type AvatarConfig } from "@/lib/avatars";
+import {
+  loadPlayerAvatarPreference,
+  savePlayerAvatarPreference,
+} from "@/lib/playerAvatarPreference";
 import Link from "next/link";
 import CasinoBackground from "./game/CasinoBackground";
 import { useTableTheme } from "@/hooks/useTableTheme";
@@ -71,6 +74,7 @@ function SinglePlayerTableBody() {
   const [botThinking, setBotThinking] = useState(false);
   const [botPlanned, setBotPlanned] = useState<string | null>(null);
   const [confirmLeave, setConfirmLeave] = useState(false);
+  const [playerAvatar, setPlayerAvatar] = useState<AvatarConfig>(() => loadPlayerAvatarPreference());
   const tableSurfaceRef = useRef<HTMLDivElement>(null);
   const feedback = useTableFeedback();
 
@@ -125,10 +129,16 @@ function SinglePlayerTableBody() {
   const avatarMap = useMemo(() => {
     const map: Record<string, AvatarConfig> = {};
     for (const p of state.players) {
-      map[p.id] = p.isBot ? getBotAvatar(p.id) : getAvatarFromId(p.id);
+      map[p.id] = p.isBot ? getBotAvatar(p.id) : playerAvatar;
     }
     return map;
-  }, [state.players]);
+  }, [state.players, playerAvatar]);
+
+  const handleAvatarChange = (next: AvatarConfig) => {
+    const normalized = normalizeAvatarConfig(next);
+    setPlayerAvatar(normalized);
+    savePlayerAvatarPreference(normalized);
+  };
 
   const centerCards = useCenterCardsPresentation({
     awaitingNext,
@@ -256,7 +266,12 @@ function SinglePlayerTableBody() {
                 }}
               />
             }
-            settings={<GameSettingsMenu onRequestLeave={() => setConfirmLeave(true)} />}
+            settings={
+              <GameSettingsMenu
+                onRequestLeave={() => setConfirmLeave(true)}
+                avatar={{ currentAvatar: playerAvatar, onChange: handleAvatarChange }}
+              />
+            }
           />
         }
         table={

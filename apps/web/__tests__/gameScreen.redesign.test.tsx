@@ -127,11 +127,12 @@ describe("GameUtilityBar and settings", () => {
     await user.click(trigger);
     expect(screen.getByRole("dialog", { name: /game settings/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/select table visual theme/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /how to play/i })).toHaveAttribute("target", "_blank");
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: /game settings/i })).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
     await user.click(trigger);
+    await user.click(screen.getByRole("tab", { name: "Session" }));
+    expect(screen.getByRole("link", { name: /how to play/i })).toHaveAttribute("target", "_blank");
     await user.click(screen.getByRole("button", { name: /leave game/i }));
     expect(onRequestLeave).toHaveBeenCalledOnce();
   });
@@ -151,7 +152,9 @@ describe("HistoryDrawer", () => {
     expect(trigger).toHaveClass("history-drawer-trigger--toolbar");
     expect(screen.queryByRole("dialog", { name: /game history/i })).not.toBeInTheDocument();
     await user.click(trigger);
-    expect(screen.getByRole("dialog", { name: /game history/i })).toHaveClass("history-drawer-panel");
+    const dialog = screen.getByRole("dialog", { name: /game history/i });
+    expect(dialog).toHaveClass("history-drawer-panel");
+    expect(dialog).toHaveClass("history-drawer-panel--anchored");
     expect(screen.getByText("You passed")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Actions" })).toHaveAttribute(
       "aria-controls",
@@ -165,5 +168,24 @@ describe("HistoryDrawer", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: /game history/i })).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
+  });
+});
+
+describe("GameSettingsMenu avatar tab", () => {
+  it("exposes an Avatar tab and saves a portrait selection", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <GameSettingsMenu
+        onRequestLeave={vi.fn()}
+        avatar={{ currentAvatar: { id: "portrait-01" }, onChange }}
+      />
+    );
+    await user.click(screen.getByRole("button", { name: /open game settings/i }));
+    await user.click(screen.getByRole("tab", { name: "Avatar" }));
+    expect(screen.getByRole("tabpanel", { name: "Avatar" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "portrait-02" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(onChange).toHaveBeenCalledWith({ id: "portrait-02" });
   });
 });

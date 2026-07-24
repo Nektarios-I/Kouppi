@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { TableFeedbackEvent } from "@/lib/tableEventFeedback";
 import { useOverlayDialog } from "./useOverlayDialog";
 
@@ -30,6 +30,17 @@ const TABS: { id: HistoryTab; label: string }[] = [
   { id: "table", label: "Table" },
 ];
 
+const DESKTOP_PANEL_WIDTH = 320;
+const DESKTOP_GAP = 8;
+
+function isMobileHistoryLayout() {
+  if (typeof window === "undefined") return false;
+  if (typeof window.matchMedia === "function") {
+    return window.matchMedia("(max-width: 639px)").matches;
+  }
+  return window.innerWidth <= 639;
+}
+
 export default function HistoryDrawer({
   entries,
   liveEvent = null,
@@ -38,6 +49,8 @@ export default function HistoryDrawer({
 }: HistoryDrawerProps) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<HistoryTab>("actions");
+  const [panelStyle, setPanelStyle] = useState<React.CSSProperties | undefined>(undefined);
+  const [anchored, setAnchored] = useState(false);
   const close = useCallback(() => setOpen(false), []);
   const { panelRef, triggerRef } = useOverlayDialog(open, close);
   const tabRefs = useRef<Record<HistoryTab, HTMLButtonElement | null>>({
@@ -45,6 +58,48 @@ export default function HistoryDrawer({
     round: null,
     table: null,
   });
+
+  const updatePanelPosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger || isMobileHistoryLayout()) {
+      setAnchored(false);
+      setPanelStyle(undefined);
+      return;
+    }
+
+    const rect = trigger.getBoundingClientRect();
+    const width = Math.min(DESKTOP_PANEL_WIDTH, window.innerWidth * 0.86);
+    let left = rect.left;
+    if (left + width > window.innerWidth - DESKTOP_GAP) {
+      left = Math.max(DESKTOP_GAP, rect.right - width);
+    }
+    left = Math.max(DESKTOP_GAP, left);
+
+    const top = rect.bottom + DESKTOP_GAP;
+    const maxHeight = Math.max(180, Math.min(window.innerHeight - top - DESKTOP_GAP, window.innerHeight * 0.72));
+
+    setAnchored(true);
+    setPanelStyle({
+      position: "fixed",
+      top,
+      left,
+      width,
+      maxHeight,
+      inset: "auto",
+    });
+  }, [triggerRef]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    updatePanelPosition();
+    const onReposition = () => updatePanelPosition();
+    window.addEventListener("resize", onReposition);
+    window.addEventListener("scroll", onReposition, true);
+    return () => {
+      window.removeEventListener("resize", onReposition);
+      window.removeEventListener("scroll", onReposition, true);
+    };
+  }, [open, updatePanelPosition]);
 
   const onTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -81,7 +136,12 @@ export default function HistoryDrawer({
         >
           <aside
             ref={panelRef}
-            className="history-drawer-panel"
+            className={
+              anchored
+                ? "history-drawer-panel history-drawer-panel--anchored"
+                : "history-drawer-panel"
+            }
+            style={panelStyle}
             role="dialog"
             aria-modal="true"
             aria-label="Game history"

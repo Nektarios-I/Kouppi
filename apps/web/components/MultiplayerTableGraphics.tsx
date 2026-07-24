@@ -19,6 +19,12 @@ import ConnectionStatusBanner from "./game/ConnectionStatusBanner";
 import ConfirmDialog from "./game/ConfirmDialog";
 import { useTableTheme } from "@/hooks/useTableTheme";
 import { isCareerGameRoomId, postRoomExitPath } from "@/lib/careerRoom";
+import { normalizeAvatarConfig } from "@/lib/avatars";
+import {
+  patchProfileAvatar,
+  savePlayerAvatarPreference,
+} from "@/lib/playerAvatarPreference";
+import { useAuthStore } from "@/store/authStore";
 import { calmDealerMessage } from "@/lib/tableEventFeedback";
 import {
   TableFeedbackProvider,
@@ -93,7 +99,10 @@ function MultiplayerTableBody() {
     sessionSummary,
     pendingIntent,
     lastError,
+    playerAvatar,
+    setAvatar,
   } = useRemoteGameStore();
+  const { token, isLoggedIn, refreshUser } = useAuthStore();
   const { theme } = useTableTheme();
   const tableSound = useTableEffectsStore((s) => s.sound);
   const sfx = tableSound === "on";
@@ -118,8 +127,22 @@ function MultiplayerTableBody() {
     for (const p of playersInRoom) {
       if (p.avatar) map[p.id] = p.avatar;
     }
+    if (playerId && playerAvatar) {
+      map[playerId] = playerAvatar;
+    }
     return map;
-  }, [playersInRoom]);
+  }, [playersInRoom, playerId, playerAvatar]);
+
+  const handleAvatarChange = (next: AvatarConfig) => {
+    const normalized = normalizeAvatarConfig(next);
+    setAvatar(normalized);
+    savePlayerAvatarPreference(normalized);
+    if (isLoggedIn() && token) {
+      void patchProfileAvatar(token, normalized).then((ok) => {
+        if (ok) void refreshUser();
+      });
+    }
+  };
 
   const cosmeticsMap = useMemo(() => {
     const map: Record<
@@ -547,6 +570,14 @@ function MultiplayerTableBody() {
                 leaveLabel={isSpectator ? "Stop watching" : "Leave game"}
                 onRequestLeave={() => setPendingConfirm({ type: "leave" })}
                 hostControls={hostControls}
+                avatar={
+                  isSpectator
+                    ? null
+                    : {
+                        currentAvatar: playerAvatar,
+                        onChange: handleAvatarChange,
+                      }
+                }
               />
             }
           />
