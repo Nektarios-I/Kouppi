@@ -1982,12 +1982,6 @@ body {
 }
 
 .table-chip-travel {
-    animation: none !important;
-    opacity: 0;
-  }
-}
-
-.table-chip-travel {
   transform: translate(-50%, -50%);
   animation: table-chip-travel-anim var(--chip-dur, 500ms) ease-out forwards;
 }
