@@ -16,8 +16,8 @@ export type PotChipStackProps = {
  * Central pot chip stack. Slightly larger than player stacks.
  * Exact pot number remains the authoritative readable value.
  *
- * Mobile: chips sit beside the amount (not above) so the stack
- * no longer collides with the top opponent bankroll.
+ * Mobile: amount first, chips to its RIGHT so the stack stays clear
+ * of the top opponent bankroll and reads as "number + chips".
  */
 export function PotChipStack({
   amount,
@@ -35,16 +35,6 @@ export function PotChipStack({
       role="group"
       aria-label={`Pot: ${exact} chips`}
     >
-      {safe > 0 ? (
-        <ChipStack
-          amount={safe}
-          context="pot"
-          size="sm"
-          animate={animate}
-          className="pot-chip-stack__chips"
-          ariaLabel={`Pot chips ${exact}`}
-        />
-      ) : null}
       <div className="pot-chip-stack__label">
         <div className="table-pot-amount">
           <span className="table-pot-amount__value font-display font-bold text-gold-light tabular-nums drop-shadow-md">
@@ -55,6 +45,16 @@ export function PotChipStack({
           <span className="pot-chip-stack__caption font-ui uppercase">Pot</span>
         ) : null}
       </div>
+      {safe > 0 ? (
+        <ChipStack
+          amount={safe}
+          context="pot"
+          size="sm"
+          animate={animate}
+          className="pot-chip-stack__chips"
+          ariaLabel={`Pot chips ${exact}`}
+        />
+      ) : null}
     </div>
   );
 }

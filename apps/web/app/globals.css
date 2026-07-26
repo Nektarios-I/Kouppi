@@ -757,12 +757,13 @@ body {
    * Phone table (~225px tall):
    * - Bot1 bankroll ≈ 15%, bet ≈ 26%
    * - Hero bankroll ≈ 79%
-   * Pot cluster is horizontal (chips | amount) at 40% → clears Bot1.
+   * Pot at ~26% (~1cm / ~38px above prior 40%) clears the center card
+   *   while chips sit to the RIGHT of the amount.
    * Cards at 58% with ~60px height span ≈ 45–71% → clears hero chips.
    * Wide row gap pulls L/R cards off the hero stack in the middle.
    */
   .poker-table-surface .table-pot-anchor {
-    top: 40%;
+    top: 26%;
   }
 
   .poker-table-surface .table-center-cards-anchor {
@@ -805,27 +806,42 @@ body {
     font-size: 0.55rem;
   }
 
+  .player-chip-stack {
+    transform: scale(0.78);
+    transform-origin: center center;
+  }
+
+  .player-chip-stack--dense {
+    transform: scale(0.72);
+    max-width: 2.75rem;
+  }
+
+  .player-bet-marker {
+    transform: scale(0.78);
+    transform-origin: center center;
+  }
+
   .pot-chip-stack {
     flex-direction: row;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.35rem;
   }
 
   .pot-chip-stack__chips {
-    transform: scale(0.68);
-    transform-origin: center right;
+    transform: scale(0.55);
+    transform-origin: center left;
   }
 
   .table-pot-amount {
-    padding: 0.15rem 0.55rem;
+    padding: 0.1rem 0.4rem;
   }
 
   .table-pot-amount__value {
-    font-size: 0.8125rem;
+    font-size: 0.65rem;
   }
 
   .pot-chip-stack__caption {
-    font-size: 0.5rem;
+    font-size: 0.45rem;
     letter-spacing: 0.28em;
     color: rgba(212, 175, 55, 0.5);
   }
