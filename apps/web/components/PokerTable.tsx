@@ -295,7 +295,7 @@ export function PokerTable({
           </div>
 
           <div
-            className="table-pot-anchor absolute top-[38%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex flex-col items-center gap-1"
+            className="table-pot-anchor absolute top-[38%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-[18] flex flex-col items-center gap-1"
             data-pot-anchor="true"
           >
             <PotChipStack amount={pot} animate />

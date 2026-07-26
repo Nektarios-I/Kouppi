@@ -16,8 +16,8 @@ export type PotChipStackProps = {
  * Central pot chip stack. Slightly larger than player stacks.
  * Exact pot number remains the authoritative readable value.
  *
- * Mobile: amount first, chips to its RIGHT so the stack stays clear
- * of the top opponent bankroll and reads as "number + chips".
+ * Mobile: bare amount first, chips to its RIGHT and slightly up,
+ * sitting in the band between top-opponent chips and center cards.
  */
 export function PotChipStack({
   amount,

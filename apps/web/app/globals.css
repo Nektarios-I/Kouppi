@@ -754,16 +754,16 @@ body {
   }
 
   /*
-   * Phone table (~225px tall):
-   * - Bot1 bankroll ≈ 15%, bet ≈ 26%
+   * Phone table (~225px tall), 2p layout:
+   * - Bot1 bankroll ≈ 15% (visual stack down to ~22%)
+   * - Card center 58%, card tops ≈ 45% (60px / 2)
    * - Hero bankroll ≈ 79%
-   * Pot at ~26% (~1cm / ~38px above prior 40%) clears the center card
-   *   while chips sit to the RIGHT of the amount.
-   * Cards at 58% with ~60px height span ≈ 45–71% → clears hero chips.
-   * Wide row gap pulls L/R cards off the hero stack in the middle.
+   * Pot sits in the open band just above the cards (~36%),
+   * above Bot1 chips and below card tops — no overlap either way.
+   * z-18 keeps the amount readable above bankroll (14) / bet (15).
    */
   .poker-table-surface .table-pot-anchor {
-    top: 26%;
+    top: 36%;
   }
 
   .poker-table-surface .table-center-cards-anchor {
@@ -823,27 +823,30 @@ body {
 
   .pot-chip-stack {
     flex-direction: row;
-    align-items: center;
-    gap: 0.35rem;
+    align-items: flex-start;
+    gap: 0.3rem;
   }
 
   .pot-chip-stack__chips {
-    transform: scale(0.55);
+    transform: scale(0.52) translateY(-3px);
     transform-origin: center left;
   }
 
+  /* Bare number — no pill chrome (saves vertical space between Bot1 and cards) */
   .table-pot-amount {
-    padding: 0.1rem 0.4rem;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    box-shadow: none;
   }
 
   .table-pot-amount__value {
-    font-size: 0.65rem;
+    font-size: 0.7rem;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
   }
 
   .pot-chip-stack__caption {
-    font-size: 0.45rem;
-    letter-spacing: 0.28em;
-    color: rgba(212, 175, 55, 0.5);
+    display: none;
   }
 }
 
@@ -1537,6 +1540,21 @@ body {
   background: linear-gradient(160deg, rgba(14, 14, 28, 0.98) 0%, rgba(8, 8, 18, 0.99) 100%);
   border: 1px solid rgba(212, 175, 55, 0.25);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.65);
+}
+
+.avatar-picker-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(0, 4, 12, 0.35);
+}
+
+.avatar-picker-panel--portaled {
+  position: fixed;
+  z-index: 81;
+  margin-top: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .avatar-picker-panel--inline {
