@@ -49,8 +49,10 @@ describe("shared game-screen integrations", () => {
 
   it("shrinks mobile table center cards away from the pot", () => {
     const css = readFileSync(resolve(process.cwd(), "app", "globals.css"), "utf8").replace(/\r\n/g, "\n");
-    expect(css).toContain(".poker-table-surface .table-pot-anchor {\n    top: 30%;");
-    expect(css).toContain(".poker-table-surface .table-center-cards-anchor {\n    top: 66%;");
+    expect(css).toContain(".poker-table-surface .table-pot-anchor {\n    top: 40%;");
+    expect(css).toContain(".poker-table-surface .table-center-cards-anchor {\n    top: 58%;");
+    expect(css).toContain(".center-cards-row--tight {\n    gap: 1.35rem;");
+    expect(css).toContain(".pot-chip-stack {\n    flex-direction: row;");
   });
 
   it("wires avatar settings into SP and MP game shells", () => {

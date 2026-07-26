@@ -15,6 +15,9 @@ export type PotChipStackProps = {
 /**
  * Central pot chip stack. Slightly larger than player stacks.
  * Exact pot number remains the authoritative readable value.
+ *
+ * Mobile: chips sit beside the amount (not above) so the stack
+ * no longer collides with the top opponent bankroll.
  */
 export function PotChipStack({
   amount,
@@ -27,32 +30,32 @@ export function PotChipStack({
 
   return (
     <div
-          className={`pot-chip-stack flex flex-col items-center gap-0.5 sm:gap-1 ${className}`}
-          data-pot-chip-stack="true"
-          role="group"
-          aria-label={`Pot: ${exact} chips`}
-        >
-          {safe > 0 ? (
-            <ChipStack
-              amount={safe}
-              context="pot"
-              size="sm"
-              animate={animate}
-              className="scale-[0.72] sm:scale-110"
-              ariaLabel={`Pot chips ${exact}`}
-            />
-          ) : null}
-          <div className="table-pot-amount px-2.5 py-0.5 sm:px-4 sm:py-1 rounded-full mt-0.5">
-            <span className="font-display text-sm sm:text-2xl font-bold text-gold-light tabular-nums drop-shadow-md">
-              {exact}
-            </span>
-          </div>
-          {showCaption ? (
-            <span className="text-[8px] sm:text-[10px] text-gold/50 font-ui tracking-[0.3em] uppercase">
-              Pot
-            </span>
-          ) : null}
+      className={`pot-chip-stack ${className}`.trim()}
+      data-pot-chip-stack="true"
+      role="group"
+      aria-label={`Pot: ${exact} chips`}
+    >
+      {safe > 0 ? (
+        <ChipStack
+          amount={safe}
+          context="pot"
+          size="sm"
+          animate={animate}
+          className="pot-chip-stack__chips"
+          ariaLabel={`Pot chips ${exact}`}
+        />
+      ) : null}
+      <div className="pot-chip-stack__label">
+        <div className="table-pot-amount">
+          <span className="table-pot-amount__value font-display font-bold text-gold-light tabular-nums drop-shadow-md">
+            {exact}
+          </span>
         </div>
+        {showCaption ? (
+          <span className="pot-chip-stack__caption font-ui uppercase">Pot</span>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

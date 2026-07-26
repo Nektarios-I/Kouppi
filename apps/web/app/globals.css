@@ -707,23 +707,83 @@ body {
   box-shadow: inset 0 2px 12px rgba(0, 0, 0, 0.25);
 }
 
+.center-cards-row {
+  width: 100%;
+}
+
+.center-cards-row--tight {
+  gap: 0.75rem;
+}
+
+.center-cards-row--wide {
+  gap: 1rem;
+}
+
+.center-cards-pass {
+  min-width: 52px;
+  padding: 0.5rem 0.75rem;
+}
+
+.center-cards-pass__label {
+  font-size: 0.875rem;
+}
+
+@media (min-width: 640px) {
+  .center-cards-row--tight {
+    gap: 0.75rem;
+  }
+
+  .center-cards-row--wide {
+    gap: 1.25rem;
+  }
+
+  .center-cards-pass__label {
+    font-size: 1rem;
+  }
+}
+
 @media (max-width: 639px) {
   .center-cards-stage {
-    min-height: 52px;
+    min-height: 48px;
   }
 
   .center-cards-pad {
-    width: min(78%, 160px);
-    height: 44px;
+    /* Wide pad so spread cards still sit on felt */
+    width: min(96%, 280px);
+    height: 40px;
   }
 
-  /* Separate pot (~30%) from center cards (~66%) so ~80px gap on a 225px table */
+  /*
+   * Phone table (~225px tall):
+   * - Bot1 bankroll ≈ 15%, bet ≈ 26%
+   * - Hero bankroll ≈ 79%
+   * Pot cluster is horizontal (chips | amount) at 40% → clears Bot1.
+   * Cards at 58% with ~60px height span ≈ 45–71% → clears hero chips.
+   * Wide row gap pulls L/R cards off the hero stack in the middle.
+   */
   .poker-table-surface .table-pot-anchor {
-    top: 30%;
+    top: 40%;
   }
 
   .poker-table-surface .table-center-cards-anchor {
-    top: 66%;
+    top: 58%;
+  }
+
+  .center-cards-row--tight {
+    gap: 1.35rem;
+  }
+
+  .center-cards-row--wide {
+    gap: 1.75rem;
+  }
+
+  .center-cards-pass {
+    min-width: 40px;
+    padding: 0.3rem 0.45rem;
+  }
+
+  .center-cards-pass__label {
+    font-size: 0.7rem;
   }
 
   .player-seat__pod {
@@ -743,6 +803,31 @@ body {
 
   .player-seat__bankroll {
     font-size: 0.55rem;
+  }
+
+  .pot-chip-stack {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .pot-chip-stack__chips {
+    transform: scale(0.68);
+    transform-origin: center right;
+  }
+
+  .table-pot-amount {
+    padding: 0.15rem 0.55rem;
+  }
+
+  .table-pot-amount__value {
+    font-size: 0.8125rem;
+  }
+
+  .pot-chip-stack__caption {
+    font-size: 0.5rem;
+    letter-spacing: 0.28em;
+    color: rgba(212, 175, 55, 0.5);
   }
 }
 
@@ -1784,7 +1869,41 @@ body {
 }
 
 .pot-chip-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
   filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.45));
+}
+
+.pot-chip-stack__chips {
+  transform: scale(1.1);
+  transform-origin: center bottom;
+}
+
+.pot-chip-stack__label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.table-pot-amount {
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  padding: 0.25rem 1rem;
+  border-radius: 9999px;
+}
+
+.table-pot-amount__value {
+  font-size: 1.5rem;
+}
+
+.pot-chip-stack__caption {
+  font-size: 0.625rem;
+  letter-spacing: 0.3em;
+  color: rgba(212, 175, 55, 0.5);
 }
 
 .kouppi-poker-chip {

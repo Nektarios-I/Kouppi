@@ -17,13 +17,14 @@ export default function CenterCards({ presentation, size = "medium" }: CenterCar
     );
   }
 
-  const gapClass = presentation.gap === "wide" ? "gap-1.5 sm:gap-5" : "gap-1 sm:gap-3";
+  const gapClass =
+    presentation.gap === "wide" ? "center-cards-row--wide" : "center-cards-row--tight";
 
   return (
     <div className="center-cards-stage relative">
       {/* Subtle felt pad under cards */}
       <div className="center-cards-pad absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none" aria-hidden="true" />
-      <div className={`relative z-10 flex items-center justify-center ${gapClass}`}>
+      <div className={`center-cards-row relative z-10 flex items-center justify-center ${gapClass}`}>
         {presentation.items.map((item, index) => {
           switch (item.type) {
             case "card":
@@ -53,9 +54,9 @@ export default function CenterCards({ presentation, size = "medium" }: CenterCar
               return (
                 <div
                   key={`pass-${index}`}
-                  className="flex flex-col items-center justify-center px-3 py-2 min-w-[52px] rounded-lg border border-gold/25 bg-black/40 backdrop-blur-sm"
+                  className="center-cards-pass flex flex-col items-center justify-center rounded-lg border border-gold/25 bg-black/40 backdrop-blur-sm"
                 >
-                  <span className="text-gold-light font-display font-bold text-sm sm:text-base tracking-[0.2em] drop-shadow">
+                  <span className="center-cards-pass__label text-gold-light font-display font-bold tracking-[0.2em] drop-shadow">
                     PASS
                   </span>
                 </div>
