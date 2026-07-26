@@ -109,7 +109,7 @@ export default function PlayerSeat({
             isMe={player.isMe}
             avatar={player.avatar}
             playerId={player.id}
-            size="sm"
+            size="xs"
             frameId={player.frameId}
             seatRingId={player.seatRingId}
           />
@@ -118,7 +118,7 @@ export default function PlayerSeat({
           )}
         </div>
 
-        <div className="player-seat__mobile-meta mt-0.5 flex flex-col items-center gap-0.5 max-w-[56px]">
+        <div className="player-seat__mobile-meta mt-0.5 flex flex-col items-center gap-0.5 max-w-[48px]">
           <span
             className="text-[9px] font-ui font-medium text-white/90 truncate w-full text-center leading-tight"
             title={player.name}
@@ -175,7 +175,7 @@ export default function PlayerSeat({
             isMe={player.isMe}
             avatar={player.avatar}
             playerId={player.id}
-            size={isMobile ? "sm" : breakpoint === "desktop" ? "md" : "sm"}
+            size={isMobile ? "xs" : breakpoint === "desktop" ? "md" : "sm"}
             frameId={player.frameId}
             seatRingId={player.seatRingId}
           />

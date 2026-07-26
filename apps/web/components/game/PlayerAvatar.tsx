@@ -17,7 +17,7 @@ export interface PlayerAvatarProps {
   isBot: boolean;
   isMe: boolean;
   avatar?: AvatarConfig;
-  size?: "sm" | "md" | "lg";
+  size?: "xs" | "sm" | "md" | "lg";
   playerId?: string;
   className?: string;
   /** Override frame cosmetic (otherwise uses equipped for isMe) */
@@ -26,12 +26,13 @@ export interface PlayerAvatarProps {
 }
 
 const SIZE_CLASS = {
+  xs: "w-6 h-6 text-[9px]",
   sm: "w-7 h-7 text-[10px]",
   md: "w-9 h-9 text-sm",
   lg: "w-11 h-11 text-base",
 } as const;
 
-const BORDER_PX = { sm: 2, md: 2, lg: 2 } as const;
+const BORDER_PX = { xs: 1.5, sm: 2, md: 2, lg: 2 } as const;
 
 export default function PlayerAvatar({
   name,

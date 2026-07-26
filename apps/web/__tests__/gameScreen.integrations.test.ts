@@ -38,13 +38,19 @@ describe("shared game-screen integrations", () => {
     expect(code).toContain('"Waiting for the server to advance the turn"');
   });
 
-  it("keeps the mobile history interaction layer above, not over, the action dock", () => {
+  it("keeps History as a portaled popover under the toolbar control on all viewports", () => {
     const css = readFileSync(resolve(process.cwd(), "app", "globals.css"), "utf8").replace(/\r\n/g, "\n");
-    expect(css).toContain(".history-drawer-layer {\n    bottom: calc(var(--gs-dock-h) + var(--gs-gutter));");
-    expect(css).toContain(".history-drawer-panel {\n    inset: auto 0 0 0;");
     expect(css).toContain(".history-drawer-panel--anchored");
     expect(css).toContain("writing-mode: horizontal-tb;");
     expect(css).toContain(".history-drawer-trigger--toolbar");
+    expect(css).toContain(".history-drawer-layer {\n  pointer-events: auto;\n  z-index: 80;");
+    expect(css).not.toContain(".history-drawer-layer {\n    bottom: calc(var(--gs-dock-h) + var(--gs-gutter));");
+  });
+
+  it("shrinks mobile table center cards away from the pot", () => {
+    const css = readFileSync(resolve(process.cwd(), "app", "globals.css"), "utf8").replace(/\r\n/g, "\n");
+    expect(css).toContain(".poker-table-surface .table-pot-anchor {\n    top: 30%;");
+    expect(css).toContain(".poker-table-surface .table-center-cards-anchor {\n    top: 66%;");
   });
 
   it("wires avatar settings into SP and MP game shells", () => {

@@ -32,21 +32,22 @@ const CARDS_CDN = "https://cdn.jsdelivr.net/npm/cardsjs@1.1.0/cards";
 export type CardSize = "small" | "medium" | "large";
 
 const SIZE_CLASSES: Record<CardSize, string> = {
-  small: "w-11 h-[66px] sm:w-[52px] sm:h-[78px]",
-  medium: "w-16 h-24 sm:w-[72px] sm:h-[108px]",
-  large: "w-24 h-36 sm:w-28 sm:h-[168px]",
+  /* Mobile first: keep cards ≤ ~40% of a ~225px-tall phone table */
+  small: "w-8 h-12 sm:w-[52px] sm:h-[78px]",
+  medium: "w-10 h-[60px] sm:w-[72px] sm:h-[108px]",
+  large: "w-14 h-[84px] sm:w-28 sm:h-[168px]",
 };
 
 const CORNER_TEXT: Record<CardSize, string> = {
-  small: "text-[9px] sm:text-[10px]",
-  medium: "text-xs sm:text-sm",
-  large: "text-sm sm:text-base",
+  small: "text-[8px] sm:text-[10px]",
+  medium: "text-[9px] sm:text-sm",
+  large: "text-[11px] sm:text-base",
 };
 
 const CENTER_TEXT: Record<CardSize, string> = {
-  small: "text-base sm:text-lg",
-  medium: "text-xl sm:text-2xl",
-  large: "text-3xl sm:text-4xl",
+  small: "text-sm sm:text-lg",
+  medium: "text-base sm:text-2xl",
+  large: "text-xl sm:text-4xl",
 };
 
 function getSuitSymbol(suit: string): string {

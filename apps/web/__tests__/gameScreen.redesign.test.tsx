@@ -139,7 +139,7 @@ describe("GameUtilityBar and settings", () => {
 });
 
 describe("HistoryDrawer", () => {
-  it("opens closed-by-default overlay, switches tabs, and restores focus on Escape", async () => {
+  it("opens closed-by-default overlay under the trigger via portal, switches tabs, and restores focus on Escape", async () => {
     const user = userEvent.setup();
     render(
       <HistoryDrawer
@@ -152,9 +152,10 @@ describe("HistoryDrawer", () => {
     expect(trigger).toHaveClass("history-drawer-trigger--toolbar");
     expect(screen.queryByRole("dialog", { name: /game history/i })).not.toBeInTheDocument();
     await user.click(trigger);
-    const dialog = screen.getByRole("dialog", { name: /game history/i });
+    const dialog = await screen.findByRole("dialog", { name: /game history/i });
     expect(dialog).toHaveClass("history-drawer-panel");
     expect(dialog).toHaveClass("history-drawer-panel--anchored");
+    expect(dialog.style.position).toBe("fixed");
     expect(screen.getByText("You passed")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Actions" })).toHaveAttribute(
       "aria-controls",

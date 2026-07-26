@@ -17,7 +17,7 @@ export default function CenterCards({ presentation, size = "medium" }: CenterCar
     );
   }
 
-  const gapClass = presentation.gap === "wide" ? "gap-3 sm:gap-5" : "gap-2 sm:gap-3";
+  const gapClass = presentation.gap === "wide" ? "gap-1.5 sm:gap-5" : "gap-1 sm:gap-3";
 
   return (
     <div className="center-cards-stage relative">
