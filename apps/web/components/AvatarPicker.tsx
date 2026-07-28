@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { AvatarConfig } from "@/store/remoteGameStore";
 import {
   AVATAR_CATALOG,
@@ -10,9 +11,20 @@ import {
   normalizeAvatarConfig,
 } from "@/lib/avatars";
 import { HudButton } from "@/components/game/HudButton";
+import { useOverlayDialog } from "@/components/game/useOverlayDialog";
 
 /** How many portraits to mount at once — scales past 100 without virtualizing libs. */
 const GRID_PAGE_SIZE = 48;
+const PANEL_GAP = 8;
+const DESKTOP_PANEL_WIDTH = 320;
+
+function isNarrowViewport() {
+  if (typeof window === "undefined") return false;
+  if (typeof window.matchMedia === "function") {
+    return window.matchMedia("(max-width: 639px)").matches;
+  }
+  return window.innerWidth <= 639;
+}
 
 interface AvatarPickerProps {
   currentAvatar: AvatarConfig | null;
@@ -116,10 +128,18 @@ export default function AvatarPicker({
   const current = normalizeAvatarConfig(currentAvatar);
   const [selectedId, setSelectedId] = useState(current.id);
   const [query, setQuery] = useState("");
+  const [portalReady, setPortalReady] = useState(false);
+  const [panelStyle, setPanelStyle] = useState<React.CSSProperties | undefined>(undefined);
+  const close = useCallback(() => setIsOpen(false), []);
+  const { panelRef, triggerRef } = useOverlayDialog(isOpen && variant === "popover", close);
 
   useEffect(() => {
     setSelectedId(normalizeAvatarConfig(currentAvatar).id);
   }, [currentAvatar]);
+
+  useEffect(() => {
+    setPortalReady(true);
+  }, []);
 
   const handleSelect = () => {
     onSelect({ id: selectedId });
@@ -129,12 +149,59 @@ export default function AvatarPicker({
   const displayId = currentAvatar ? normalizeAvatarConfig(currentAvatar).id : selectedId;
   const sizeClass = compact ? "w-10 h-10" : "w-14 h-14";
 
-  const panel = (
-    <div
-      className={
-        variant === "inline" ? "avatar-picker-panel avatar-picker-panel--inline" : "avatar-picker-panel left-0 sm:left-auto sm:right-0"
-      }
-    >
+  const updatePanelPosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const narrow = isNarrowViewport();
+    const rect = trigger.getBoundingClientRect();
+    if (narrow) {
+      setPanelStyle({
+        position: "fixed",
+        left: PANEL_GAP,
+        right: PANEL_GAP,
+        bottom: PANEL_GAP,
+        top: "auto",
+        width: "auto",
+        maxHeight: "min(70dvh, 28rem)",
+        inset: undefined,
+      });
+      return;
+    }
+    const width = Math.min(DESKTOP_PANEL_WIDTH, window.innerWidth * 0.9);
+    let left = rect.left;
+    if (left + width > window.innerWidth - PANEL_GAP) {
+      left = Math.max(PANEL_GAP, rect.right - width);
+    }
+    left = Math.max(PANEL_GAP, Math.min(left, window.innerWidth - width - PANEL_GAP));
+    const top = rect.bottom + PANEL_GAP;
+    const maxHeight = Math.max(
+      200,
+      Math.min(window.innerHeight - top - PANEL_GAP, window.innerHeight * 0.7)
+    );
+    setPanelStyle({
+      position: "fixed",
+      top,
+      left,
+      width,
+      maxHeight,
+      inset: "auto",
+    });
+  }, [triggerRef]);
+
+  useLayoutEffect(() => {
+    if (!isOpen || variant !== "popover") return;
+    updatePanelPosition();
+    const onReposition = () => updatePanelPosition();
+    window.addEventListener("resize", onReposition);
+    window.addEventListener("scroll", onReposition, true);
+    return () => {
+      window.removeEventListener("resize", onReposition);
+      window.removeEventListener("scroll", onReposition, true);
+    };
+  }, [isOpen, variant, updatePanelPosition]);
+
+  const panelInner = (
+    <>
       <div className="flex items-center gap-3 mb-3 pb-3 border-b border-white/10">
         <div
           className="avatar-display avatar-display--portrait w-14 h-14"
@@ -184,16 +251,45 @@ export default function AvatarPicker({
           Cancel
         </HudButton>
       ) : null}
-    </div>
+    </>
   );
 
   if (variant === "inline") {
-    return <div className="avatar-picker-inline">{panel}</div>;
+    return (
+      <div className="avatar-picker-inline">
+        <div className="avatar-picker-panel avatar-picker-panel--inline">{panelInner}</div>
+      </div>
+    );
   }
+
+  const overlay =
+    isOpen && portalReady
+      ? createPortal(
+          <div
+            className="avatar-picker-layer"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) close();
+            }}
+          >
+            <div
+              ref={panelRef}
+              className="avatar-picker-panel avatar-picker-panel--portaled"
+              style={panelStyle}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Your avatar choice"
+            >
+              {panelInner}
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
 
   return (
     <div className="relative">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         className={`avatar-picker-trigger avatar-display avatar-display--portrait ${sizeClass}`}
@@ -203,6 +299,7 @@ export default function AvatarPicker({
         }}
         title="Change avatar"
         aria-expanded={isOpen}
+        aria-haspopup="dialog"
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -218,8 +315,7 @@ export default function AvatarPicker({
           ✎
         </span>
       </button>
-
-      {isOpen ? panel : null}
+      {overlay}
     </div>
   );
 }

@@ -63,6 +63,7 @@ export default function RoomPage() {
     joinAsSpectator,
     leaveSpectator,
     roomCode,
+    roomConfig,
     setReady,
     kickPlayer,
     transferHost,
@@ -509,6 +510,21 @@ export default function RoomPage() {
         onToggleRoomChatMuted={handleToggleRoomChatMuted}
         chatMutedAll={chatMutedAll}
         chatMutedPlayerIds={chatMutedPlayerIds}
+        tableRulesSummary={
+          roomConfig
+            ? `Ante ${roomConfig.ante}${
+                roomConfig.anteProgression
+                  ? ` · ${
+                      roomConfig.anteProgression.enabled
+                        ? roomConfig.anteProgression.strategy === "ADD"
+                          ? `+${roomConfig.anteProgression.incrementAmount ?? 0} / ${roomConfig.anteProgression.intervalRounds} rounds`
+                          : `×${roomConfig.anteProgression.multiplier} / ${roomConfig.anteProgression.intervalRounds} rounds`
+                        : "fixed"
+                    }`
+                  : ""
+              }`
+            : null
+        }
       />
       <Chat />
 

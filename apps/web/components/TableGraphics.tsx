@@ -9,6 +9,7 @@ import {
   type BotProfile,
   canShistri,
   shistriBet,
+  ROUND_RESULT_REVEAL_DELAY_MS,
 } from "@kouppi/game-core";
 import { PokerTable } from "./PokerTable";
 import { useGameSounds } from "@/hooks/useSounds";
@@ -75,6 +76,7 @@ function SinglePlayerTableBody() {
   const [botPlanned, setBotPlanned] = useState<string | null>(null);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [playerAvatar, setPlayerAvatar] = useState<AvatarConfig>(() => loadPlayerAvatarPreference());
+  const [showRoundEndUi, setShowRoundEndUi] = useState(false);
   const tableSurfaceRef = useRef<HTMLDivElement>(null);
   const feedback = useTableFeedback();
 
@@ -86,6 +88,16 @@ function SinglePlayerTableBody() {
   const awaitingNext = !!state.awaitNext;
   const up = state.turn?.upcards as Upcards | undefined;
   const you = state.players[0];
+  const youBroke = (you?.bankroll ?? 0) <= 0;
+
+  useEffect(() => {
+    if (!atRoundEnd) {
+      setShowRoundEndUi(false);
+      return;
+    }
+    const timer = setTimeout(() => setShowRoundEndUi(true), ROUND_RESULT_REVEAL_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [atRoundEnd, state.completedRounds, state.lastResolution]);
   const canKouppi = you.bankroll >= state.round.pot && state.round.pot > 0;
   const minBet =
     state.config.minBetPolicy.type === "fixed"
@@ -145,6 +157,7 @@ function SinglePlayerTableBody() {
     upcards: up ?? null,
     lastResolution: last ?? null,
     waitingMessage: botThinking ? botPlanned || "Bot is thinking..." : "Waiting for cards...",
+    keepResultVisible: atRoundEnd && !showRoundEndUi,
   });
 
   const dealerMessage = calmDealerMessage({
@@ -214,9 +227,13 @@ function SinglePlayerTableBody() {
 
   return (
     <CasinoBackground className="text-white" theme={theme} lockViewport>
-      {atRoundEnd && (
+      {atRoundEnd && showRoundEndUi && (
         <RoundEndPanel
-          subtitle="The pot is empty. Continue playing?"
+          subtitle={
+            youBroke
+              ? "You have been removed from active play because you have no chips remaining."
+              : "The pot is empty. Continue playing?"
+          }
           standings={[...state.players]
             .sort((a, b) => b.bankroll - a.bankroll)
             .map((p) => ({
@@ -226,20 +243,66 @@ function SinglePlayerTableBody() {
               isMe: p.id === you.id,
             }))}
         >
-          <HudButton
-            variant="success"
-            fullWidth
-            onClick={() => {
-              dispatch({ type: "nextRound" });
-              dispatch({ type: "ante" });
-              dispatch({ type: "startTurn" });
-            }}
-          >
-            Refill & Continue
-          </HudButton>
-          <Link href="/" className="hud-btn hud-btn-danger flex-1 text-center no-underline">
-            Exit
-          </Link>
+          {youBroke ? (
+            <>
+              <HudButton
+                variant="success"
+                fullWidth
+                onClick={() => {
+                  useGameStore.getState().resetSinglePlayer();
+                  router.push("/play/single");
+                }}
+              >
+                New table
+              </HudButton>
+              <Link href="/" className="hud-btn hud-btn-danger flex-1 text-center no-underline">
+                Exit
+              </Link>
+            </>
+          ) : (
+            <>
+              <HudButton
+                variant="success"
+                fullWidth
+                onClick={() => {
+                  // Drop broke bots before next round
+                  const alive = state.players.filter((p) => p.bankroll > 0 || !p.isBot);
+                  if (alive.length < 2) {
+                    useGameStore.getState().resetSinglePlayer();
+                    router.push("/play/single");
+                    return;
+                  }
+                  useGameStore.setState((s) => {
+                    const players = s.state.players.filter((p) => p.bankroll > 0 || !p.isBot);
+                    const currentId = s.state.players[s.state.currentIndex]?.id;
+                    const nextIndex = Math.max(
+                      0,
+                      players.findIndex((p) => p.id === currentId)
+                    );
+                    return {
+                      state: {
+                        ...s.state,
+                        players,
+                        currentIndex: nextIndex >= 0 ? nextIndex : 0,
+                        round: {
+                          ...s.state.round,
+                          starterIndex: Math.min(s.state.round.starterIndex, Math.max(0, players.length - 1)),
+                        },
+                      },
+                    };
+                  });
+                  dispatch({ type: "nextRound" });
+                  dispatch({ type: "ante" });
+                  dispatch({ type: "startTurn" });
+                }}
+              >
+                Continue
+              </HudButton>
+              <Link href="/" className="hud-btn hud-btn-danger flex-1 text-center no-underline">
+                Exit
+              </Link>
+            </>
+          )}
         </RoundEndPanel>
       )}
 

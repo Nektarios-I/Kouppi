@@ -6,6 +6,11 @@ import { useRemoteGameStore } from "@/store/remoteGameStore";
 import { HudButton } from "@/components/game/HudButton";
 import { LobbyInput, LobbyField, LobbyAlert } from "@/components/game/LobbyUI";
 import { ROOM_PRESETS, getRoomPreset, type RoomPresetId } from "@/lib/roomPresets";
+import {
+  AnteProgressionControls,
+  buildAnteProgressionForm,
+  type AnteProgressionFormState,
+} from "@/components/game/AnteProgressionControls";
 
 function generateClientCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -32,6 +37,9 @@ export default function CreateRoomDialog({
   const [presetId, setPresetId] = useState<RoomPresetId>("classic");
   const [listedInLobby, setListedInLobby] = useState(true);
   const [config, setConfig] = useState(getRoomPreset("classic").config);
+  const [anteProgression, setAnteProgression] = useState<AnteProgressionFormState>(() =>
+    buildAnteProgressionForm(getRoomPreset("classic").config.ante ?? 10)
+  );
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,7 +55,9 @@ export default function CreateRoomDialog({
 
   const applyPreset = (id: RoomPresetId) => {
     setPresetId(id);
-    setConfig(getRoomPreset(id).config);
+    const next = getRoomPreset(id).config;
+    setConfig(next);
+    setAnteProgression(buildAnteProgressionForm(next.ante ?? 10));
   };
 
   if (!open) return null;
@@ -68,7 +78,13 @@ export default function CreateRoomDialog({
 
     const preset = getRoomPreset(presetId);
     const result = await createRoom(
-      config,
+      {
+        ...config,
+        anteProgression: {
+          ...anteProgression,
+          startingAnte: config.ante ?? anteProgression.startingAnte,
+        },
+      },
       password.trim() || undefined,
       code,
       {
@@ -193,15 +209,22 @@ export default function CreateRoomDialog({
                 type="number"
                 min={1}
                 value={config.ante}
-                onChange={(e) =>
-                  setConfig((c) => ({
-                    ...c,
-                    ante: Math.max(1, Number(e.target.value)),
-                  }))
-                }
+                onChange={(e) => {
+                  const ante = Math.max(1, Number(e.target.value));
+                  setConfig((c) => ({ ...c, ante }));
+                  setAnteProgression((p) => ({ ...p, startingAnte: ante }));
+                }}
               />
             </LobbyField>
           </div>
+
+          <LobbyField label="Ante progression">
+            <AnteProgressionControls
+              startingAnte={config.ante ?? 10}
+              value={anteProgression}
+              onChange={setAnteProgression}
+            />
+          </LobbyField>
 
           <label className="flex items-center gap-3 p-3 rounded-xl cursor-pointer lobby-player-row">
             <input

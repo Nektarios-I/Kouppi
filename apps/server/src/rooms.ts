@@ -1,4 +1,4 @@
-import { initGame, applyAction, SHISTRI_DEFAULT_PERCENT, SHISTRI_DEFAULT_MIN_CHIP } from "@kouppi/game-core";
+import { initGame, applyAction, SHISTRI_DEFAULT_PERCENT, SHISTRI_DEFAULT_MIN_CHIP, normalizeAnteProgression } from "@kouppi/game-core";
 import type { Action } from "@kouppi/game-core";
 import type { Room, PlayerSession, SpectatorSession, AvatarConfig } from "./types.js";
 import { hashRoomPassword } from "./security/password.js";
@@ -100,9 +100,16 @@ export function bumpStateRevision(room: Room): number {
   return room.stateRevision;
 }
 
-export function buildStatePayload(room: Room): (NonNullable<Room["state"]> & { version: number }) | undefined {
+export function buildStatePayload(room: Room): (NonNullable<Room["state"]> & {
+  version: number;
+  revealPending?: boolean;
+}) | undefined {
   if (!room.state) return undefined;
-  return { ...room.state, version: room.stateRevision ?? 0 };
+  return {
+    ...room.state,
+    version: room.stateRevision ?? 0,
+    revealPending: !!room.revealPending,
+  };
 }
 
 export function buildRoomUpdatePayload(room: Room): {
@@ -215,7 +222,16 @@ export function createRoomWithCreator(
   options?: { listedInLobby?: boolean; presetLabel?: string },
   metadata?: import("./types.js").CareerMetadata
 ): Room {
-  const merged = { ...defaultConfig(), ...(config || {}) };
+  const mergedRaw = { ...defaultConfig(), ...(config || {}) };
+  const anteProgression = normalizeAnteProgression(
+    mergedRaw.anteProgression,
+    mergedRaw.ante
+  );
+  const merged = {
+    ...mergedRaw,
+    ante: anteProgression.startingAnte,
+    anteProgression,
+  };
   const publicCode = code ?? (id.length <= 8 && /^[A-Za-z0-9]+$/.test(id) ? normalizeRoomCode(id) : generateRoomCode());
   const base = createRoom(id, merged, seed, (config as any)?.maxPlayers ?? merged.maxPlayers ?? 8, publicCode);
   base.hostId = creator.id;
@@ -564,6 +580,68 @@ export function leaveRoom(id: string, playerId: string): Room | undefined {
   room.players = room.players.filter(p => p.id !== playerId);
   bumpRoomRevision(room);
   return room;
+}
+
+export type BankruptDemotion = {
+  id: string;
+  name: string;
+  socketId: string;
+  toSpectator: boolean;
+};
+
+/**
+ * After pot settlement / RoundEnd: remove zero-bankroll seats.
+ * Connected humans become spectators (even if voluntary spectate is disabled).
+ * Idempotent for players already absent.
+ */
+export function demoteBankruptPlayers(roomId: string): BankruptDemotion[] {
+  const room = store().get(roomId);
+  if (!room?.state) return [];
+
+  const demoted: BankruptDemotion[] = [];
+  const bankruptIds = room.state.players
+    .filter((p) => (p.bankroll ?? 0) <= 0)
+    .map((p) => p.id);
+
+  for (const playerId of bankruptIds) {
+    const session = room.players.find((p) => p.id === playerId);
+    if (!session) continue;
+    if (room.spectators?.some((s) => s.id === playerId)) {
+      leaveRoom(roomId, playerId);
+      continue;
+    }
+
+    const socketId = session.socketId;
+    const name = session.name;
+    const avatar = session.avatar;
+    leaveRoom(roomId, playerId);
+
+    let toSpectator = false;
+    if (socketId) {
+      try {
+        joinSpectator(room, {
+          id: playerId,
+          name,
+          socketId,
+          avatar,
+        });
+        toSpectator = true;
+      } catch {
+        toSpectator = false;
+      }
+    }
+    demoted.push({ id: playerId, name, socketId, toSpectator });
+  }
+
+  if (demoted.length > 0) {
+    try {
+      syncGamePlayersToRoom(roomId);
+    } catch {
+      // sync best-effort
+    }
+    bumpRoomRevision(room);
+  }
+  return demoted;
 }
 
 export function removeSpectator(room: Room, spectatorId: string): void {

@@ -8,6 +8,7 @@ import {
   betweenExclusive, effectiveMinBet, isConsecutive, isPair,
   canShistri, shistriBet
 } from "./validators.js";
+import { deriveAnte, normalizeAnteProgression } from "./anteProgression.js";
 
 export type Action =
   | { type: "startRound" }
@@ -47,7 +48,16 @@ export function initGame(params: {
     spectatorsAllowed: false,
     language: "en"
   };
-  const cfg: TableConfig = { ...defaultConfig, ...(params.config || {}) };
+  const merged = { ...defaultConfig, ...(params.config || {}) };
+  const anteProgression = normalizeAnteProgression(
+    params.config?.anteProgression ?? merged.anteProgression,
+    merged.ante
+  );
+  const cfg: TableConfig = {
+    ...merged,
+    ante: anteProgression.startingAnte,
+    anteProgression,
+  };
   const seed = params.seed ?? 123456;
   const rng = makeRng(seed);
   const deck = shuffle(fullDeck(), rng);
@@ -66,8 +76,9 @@ export function initGame(params: {
     turn: null,
     history: ["Game initialized"],
     phase: "Lobby",
-    lastResolution: null, // <--- add this
+    lastResolution: null,
     awaitNext: false,
+    completedRounds: 0,
   };
 
 }
@@ -76,7 +87,15 @@ export function initGame(params: {
 function cloneForMutation(s: GameState): GameState {
   return {
     ...s,
-    // keep rng function reference, config as-is
+    // keep rng function reference
+    config: {
+      ...s.config,
+      anteProgression: s.config.anteProgression
+        ? { ...s.config.anteProgression }
+        : undefined,
+      minBetPolicy: { ...s.config.minBetPolicy } as typeof s.config.minBetPolicy,
+      shistri: { ...s.config.shistri },
+    },
     players: s.players.map(p => ({ ...p })),
     deck: s.deck.slice(),
     discard: s.discard.slice(),
@@ -123,7 +142,13 @@ export function applyAction(s: GameState, action: Action): GameState {
     }
 
     case "ante": {
-      const ante = state.config.ante;
+      const progression = normalizeAnteProgression(
+        state.config.anteProgression,
+        state.config.anteProgression?.startingAnte ?? state.config.ante
+      );
+      state.config.anteProgression = progression;
+      const ante = deriveAnte(progression, state.completedRounds ?? 0);
+      state.config.ante = ante;
       state.players.forEach(p => {
         const pay = Math.min(p.bankroll, ante);
         p.bankroll -= pay;
@@ -326,6 +351,7 @@ case "shistri": {
   if (state.round.pot <= 0) {
     state.phase = "RoundEnd";
     state.awaitNext = false;
+    state.completedRounds = (state.completedRounds ?? 0) + 1;
     log("Round ended (pot=0)");
     return state;
   }

@@ -234,6 +234,10 @@ function MultiplayerTableBody() {
       : 0;
 
   const awaitingNext = !!gameState?.awaitNext;
+  const revealPending = !!(gameState as { revealPending?: boolean } | null)?.revealPending;
+  const keepResultVisible =
+    revealPending ||
+    ((roundEnded || gameState?.phase === "RoundEnd") && !roundDecision?.active && !!lastResolution?.reveal);
 
   const centerCards = useCenterCardsPresentation({
     awaitingNext,
@@ -242,6 +246,7 @@ function MultiplayerTableBody() {
     lastResolution: lastResolution ?? null,
     hideSideCards: currentBankrupt,
     waitingMessage: "Waiting for cards...",
+    keepResultVisible,
   });
 
   const dealerMessage = calmDealerMessage({
@@ -397,7 +402,7 @@ function MultiplayerTableBody() {
     );
   }
 
-  if (roundEnded || gameState.phase === "RoundEnd") {
+  if ((roundEnded || gameState.phase === "RoundEnd") && !keepResultVisible) {
     if (isSpectator) {
       return (
         <RoundEndPanel

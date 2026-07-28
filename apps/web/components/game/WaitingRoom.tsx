@@ -39,6 +39,8 @@ export interface WaitingRoomProps {
   onToggleRoomChatMuted?: (muted: boolean) => void;
   chatMutedAll?: boolean;
   chatMutedPlayerIds?: string[];
+  /** Read-only ante / progression blurb for joiners */
+  tableRulesSummary?: string | null;
 }
 
 export default function WaitingRoom({
@@ -67,6 +69,7 @@ export default function WaitingRoom({
   onToggleRoomChatMuted,
   chatMutedAll,
   chatMutedPlayerIds = [],
+  tableRulesSummary = null,
 }: WaitingRoomProps) {
   const me = players.find((p) => p.id === playerId);
   const allReady = players.length >= 2 && players.every((p) => p.ready && p.connected !== false);
@@ -89,6 +92,9 @@ export default function WaitingRoom({
             <h1 className="font-display text-xl sm:text-2xl font-bold text-gold-light tracking-widest">
               {roomCode}
             </h1>
+            {tableRulesSummary ? (
+              <p className="text-xs text-gray-400 font-ui mt-1">{tableRulesSummary}</p>
+            ) : null}
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <span
@@ -203,8 +209,8 @@ export default function WaitingRoom({
         </LobbyCard>
       )}
 
-      <LobbyCard title="Your Avatar" icon="◎">
-        <div className="flex items-center justify-between gap-4">
+      <LobbyCard title="Your Avatar Choice" icon="◎">
+        <div className="flex flex-col gap-3">
           <p className="text-sm text-gray-400 font-ui">Choose how others see you at the table</p>
           <AvatarPicker currentAvatar={playerAvatar} onSelect={onAvatarChange} />
         </div>

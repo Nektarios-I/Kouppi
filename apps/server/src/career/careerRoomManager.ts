@@ -27,7 +27,7 @@ import {
 } from "../rooms.js";
 import { runCareerGameKickoff } from "./careerGameKickoff.js";
 import type { TableConfig } from "@kouppi/game-core";
-import { SHISTRI_DEFAULT_MIN_CHIP, SHISTRI_DEFAULT_PERCENT } from "@kouppi/game-core";
+import { SHISTRI_DEFAULT_MIN_CHIP, SHISTRI_DEFAULT_PERCENT, defaultAnteProgression } from "@kouppi/game-core";
 
 /** Career ranked waiting / Quick Match tables are 1v1. */
 const MAX_PLAYERS_PER_ROOM = 2;
@@ -568,8 +568,9 @@ function triggerGameStart(room: CareerRoom, io: Server) {
     shistri: { enabled: true, percent: SHISTRI_DEFAULT_PERCENT, minChip: SHISTRI_DEFAULT_MIN_CHIP },
     deckPolicy: "single_no_reshuffle_until_empty",
     allowKouppi: true,
-    spectatorsAllowed: false,
+    spectatorsAllowed: true,
     language: "en",
+    anteProgression: defaultAnteProgression(room.ante),
   } as TableConfig;
 
   try {

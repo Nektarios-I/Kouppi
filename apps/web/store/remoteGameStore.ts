@@ -22,6 +22,7 @@ export type RoomConfig = {
   shistri: { enabled: boolean; percent: number; minChip: number };
   turnTimeout?: number;
   spectatorsAllowed?: boolean;
+  anteProgression?: import("@kouppi/game-core").AnteProgressionConfig;
 };
 
 export type RoomInfo = {
@@ -487,6 +488,19 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
         roundEnded: data.started ? false : prev.roundEnded,
       }));
     });
+
+    s.on(
+      "playerBankruptRemoved",
+      (data: { playerId: string; message: string; spectator: boolean }) => {
+        const currentPlayerId = get().playerId;
+        if (data.playerId !== currentPlayerId) return;
+        set({
+          isSpectator: data.spectator,
+          lastError: data.message,
+          roundDecision: null,
+        });
+      }
+    );
 
     s.on("sessionSummary", (summary: SessionSummary | null) => {
       set({ sessionSummary: summary });

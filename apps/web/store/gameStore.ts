@@ -84,6 +84,9 @@ export const useGameStore = create<GameStore>((set, get) => {
         maxPlayers: Math.max(2, players.length),
         allowKouppi: true as const,
         spectatorsAllowed: false as const,
+        anteProgression: ts.anteProgression
+          ? { ...ts.anteProgression, startingAnte: ts.ante }
+          : undefined,
       };
 
       // Re-init game

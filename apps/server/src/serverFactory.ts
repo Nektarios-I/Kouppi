@@ -16,9 +16,10 @@ import {
   addSystemChatMessage, checkChatRateLimit, recordChatSend,
   trackSessionPot, buildSessionSummary, resetRoomForPlayAgain,
   getPlayerJoinSessionToken, getSpectatorJoinSessionToken, roomsInfoAsync,
+  demoteBankruptPlayers,
 } from "./rooms.js";
 import type { TableConfig } from "@kouppi/game-core";
-import { SHISTRI_DEFAULT_MIN_CHIP, SHISTRI_DEFAULT_PERCENT } from "@kouppi/game-core";
+import { SHISTRI_DEFAULT_MIN_CHIP, SHISTRI_DEFAULT_PERCENT, ROUND_RESULT_REVEAL_DELAY_MS } from "@kouppi/game-core";
 import { applyAction } from "@kouppi/game-core";
 
 // Career Mode imports
@@ -395,6 +396,7 @@ export function createKouppiServer(opts?: {
           }
           room.state.turn = null;
           room.state.phase = "RoundEnd" as any;
+          room.state.completedRounds = (room.state.completedRounds ?? 0) + 1;
           room.state.history.push("Round ended - not enough players");
         } catch (err) {
           console.error(
@@ -409,7 +411,7 @@ export function createKouppiServer(opts?: {
       }
 
       if (room.state?.phase === "RoundEnd" && !room.decision?.active) {
-        handleRoundEnd(roomId);
+        scheduleRoundEndDecision(roomId);
       }
 
       try {
@@ -976,9 +978,9 @@ export function createKouppiServer(opts?: {
         // Handle game flow
         if (!r || !r.state) return;
         
-        // If round ended
+        // If round ended — hold result reveal, then Stay/Leave
         if (r.state.phase === "RoundEnd") {
-          handleRoundEnd(resolvedId);
+          scheduleRoundEndDecision(resolvedId);
           return;
         }
         
@@ -1188,6 +1190,29 @@ export function createKouppiServer(opts?: {
       }, delayMs);
     }
 
+    /**
+     * After RoundEnd settlement is already in state: wait for result reveal,
+     * then open Stay/Leave. Idempotent via revealPending + decision.active.
+     */
+    function scheduleRoundEndDecision(roomId: string) {
+      const room = getRoom(roomId);
+      if (!room || !room.state) return;
+      if (room.state.phase !== "RoundEnd") return;
+      if (room.decision?.active) return;
+      if (room.revealPending) return;
+
+      room.revealPending = true;
+      emitState(roomId);
+      scheduleFlowStep(roomId, ROUND_RESULT_REVEAL_DELAY_MS, () => {
+        const r = getRoom(roomId);
+        if (!r) return;
+        r.revealPending = false;
+        if (r.state?.phase === "RoundEnd" && !r.decision?.active) {
+          handleRoundEnd(roomId);
+        }
+      });
+    }
+
     // Helper function to clear timer interval
     function clearTimerInterval(roomId: string) {
       const room = getRoom(roomId);
@@ -1214,9 +1239,9 @@ export function createKouppiServer(opts?: {
       applySystemIntent(roomId, { type: "startTurn" });
       emitState(roomId);
 
-      // If round ended during startTurn, enter decision phase
+      // If round ended during startTurn, enter decision phase after reveal delay
       if (room.state.phase === "RoundEnd") {
-        handleRoundEnd(roomId);
+        scheduleRoundEndDecision(roomId);
         return;
       }
 
@@ -1288,7 +1313,7 @@ export function createKouppiServer(opts?: {
       }
     }
     
-    // Handle round end -> start decision phase (stay/leave + refill)
+    // Handle round end -> bankrupt demotion, then Stay/Leave
     function handleRoundEnd(roomId: string) {
       const room = getRoom(roomId);
       if (!room || !room.state) return;
@@ -1296,34 +1321,74 @@ export function createKouppiServer(opts?: {
 
       clearTurnTimer(roomId);
       clearTimerInterval(roomId);
+      room.revealPending = false;
 
-      // Initialize decision phase
+      // Demote zero-bankroll players after settlement (Issue 2)
+      const demoted = demoteBankruptPlayers(roomId);
+      for (const d of demoted) {
+        const notice =
+          "You have been removed from active play because you have no chips remaining. You may continue watching the game.";
+        if (d.socketId) {
+          io.to(d.socketId).emit("playerBankruptRemoved", {
+            playerId: d.id,
+            message: notice,
+            spectator: d.toSpectator,
+          });
+        }
+        if (d.toSpectator) {
+          emitSystemMessage(roomId, `${d.name} is out of chips and is now spectating`);
+        } else {
+          emitSystemMessage(roomId, `${d.name} is out of chips and left the table`);
+        }
+      }
+      if (demoted.length > 0) {
+        const refreshed = getRoom(roomId);
+        if (refreshed) {
+          io.to(roomId).emit("roomUpdate", buildRoomData(refreshed));
+          emitState(roomId);
+        }
+      }
+
+      const roomAfterDemote = getRoom(roomId);
+      if (!roomAfterDemote || !roomAfterDemote.state) return;
+      if (roomAfterDemote.players.length === 0) {
+        io.to(roomId).emit("roomClosed", { reason: "no_eligible_players" });
+        closeRoomWithCareerTracking(roomId);
+        return;
+      }
+      if (roomAfterDemote.players.length < 2) {
+        io.to(roomId).emit("roundDecisionEnd", { started: false, reason: "not_enough_players" });
+        io.to(roomId).emit("sessionSummary", buildSessionSummary(roomAfterDemote));
+        return;
+      }
+
+      // Initialize decision phase for remaining active players
       const now = Date.now();
       const deadline = now + DECISION_TIMEOUT_SEC * 1000;
       const choices: Record<string, "stay" | "leave" | null> = {};
-      for (const p of room.players) choices[p.id] = null;
+      for (const p of roomAfterDemote.players) choices[p.id] = null;
       // If an existing decision phase is running, clear timers
-      if (room.decision?.timer) clearTimeout(room.decision.timer);
-      if (room.decision?.interval) clearInterval(room.decision.interval);
-      room.decision = { active: true, deadlineTs: deadline, choices, timer: null, interval: null };
+      if (roomAfterDemote.decision?.timer) clearTimeout(roomAfterDemote.decision.timer);
+      if (roomAfterDemote.decision?.interval) clearInterval(roomAfterDemote.decision.interval);
+      roomAfterDemote.decision = { active: true, deadlineTs: deadline, choices, timer: null, interval: null };
 
-      if (!room.sessionStats) room.sessionStats = { handsPlayed: 0, biggestPot: 0 };
-      room.sessionStats.handsPlayed += 1;
-      const summary = buildSessionSummary(room);
+      if (!roomAfterDemote.sessionStats) roomAfterDemote.sessionStats = { handsPlayed: 0, biggestPot: 0 };
+      roomAfterDemote.sessionStats.handsPlayed += 1;
+      const summary = buildSessionSummary(roomAfterDemote);
       io.to(roomId).emit("sessionSummary", summary);
 
       // Broadcast start of decision phase
       io.to(roomId).emit("roundDecisionStart", {
         deadlineTs: deadline,
-        players: room.players.map(p => ({ id: p.id, name: p.name })),
+        players: roomAfterDemote.players.map(p => ({ id: p.id, name: p.name })),
         choices,
       });
 
       // Periodic updates
-      room.decision.interval = setInterval(() => {
+      roomAfterDemote.decision.interval = setInterval(() => {
         const r = getRoom(roomId);
         if (!r || !r.decision?.active) {
-          if (room.decision?.interval) clearInterval(room.decision.interval);
+          if (roomAfterDemote.decision?.interval) clearInterval(roomAfterDemote.decision.interval);
           return;
         }
         const remaining = Math.max(0, Math.ceil((r.decision.deadlineTs - Date.now()) / 1000));
@@ -1337,7 +1402,7 @@ export function createKouppiServer(opts?: {
       }, 1000);
 
       // Deadline resolution
-      room.decision.timer = setTimeout(() => {
+      roomAfterDemote.decision.timer = setTimeout(() => {
         resolveDecisionPhase(roomId);
       }, DECISION_TIMEOUT_SEC * 1000);
     }

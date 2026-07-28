@@ -30,6 +30,8 @@ export interface CenterCardsInput {
   /** When true, left/right upcards are hidden (bankrupt player) */
   hideSideCards?: boolean;
   waitingMessage?: string;
+  /** Keep lastResolution visible during RoundEnd reveal delay (before Stay/Leave). */
+  keepResultVisible?: boolean;
 }
 
 export function getCenterCardsPresentation(
@@ -42,9 +44,10 @@ export function getCenterCardsPresentation(
     lastResolution,
     hideSideCards = false,
     waitingMessage = "Waiting for cards...",
+    keepResultVisible = false,
   } = input;
 
-  if (awaitingNext && lastResolution) {
+  if ((awaitingNext || keepResultVisible) && lastResolution) {
     if (lastResolution.kind === "pass") {
       return {
         mode: "cards",
@@ -106,6 +109,7 @@ export function useCenterCardsPresentation(input: CenterCardsInput): CenterCards
       input.lastResolution,
       input.hideSideCards,
       input.waitingMessage,
+      input.keepResultVisible,
     ]
   );
 }

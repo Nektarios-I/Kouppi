@@ -2,6 +2,10 @@
 import { useState } from "react";
 import TableThemeSelector from "@/components/game/TableThemeSelector";
 import { HudButton } from "@/components/game/HudButton";
+import {
+  AnteProgressionControls,
+  buildAnteProgressionForm,
+} from "@/components/game/AnteProgressionControls";
 
 export type TableSettings = {
   numberBots: number;
@@ -10,6 +14,7 @@ export type TableSettings = {
   startingBankroll: number;
   ante: number;
   shistri: boolean;
+  anteProgression?: import("@kouppi/game-core").AnteProgressionConfig;
 };
 
 const inputClass =
@@ -31,6 +36,8 @@ export default function SettingsDialog({
     startingBankroll: initial?.startingBankroll ?? 100,
     ante: initial?.ante ?? 10,
     shistri: initial?.shistri ?? true,
+    anteProgression:
+      initial?.anteProgression ?? buildAnteProgressionForm(initial?.ante ?? 10),
   });
 
   if (!open) return null;
@@ -118,11 +125,30 @@ export default function SettingsDialog({
               className={inputClass}
               min={1}
               value={settings.ante}
-              onChange={(e) =>
-                setSettings((s) => ({ ...s, ante: Math.max(1, Number(e.target.value || 1)) }))
-              }
+              onChange={(e) => {
+                const ante = Math.max(1, Number(e.target.value || 1));
+                setSettings((s) => ({
+                  ...s,
+                  ante,
+                  anteProgression: {
+                    ...(s.anteProgression ?? buildAnteProgressionForm(ante)),
+                    startingAnte: ante,
+                  },
+                }));
+              }}
             />
           </label>
+
+          <div className="md:col-span-2">
+            <span className="text-xs text-gray-400 uppercase tracking-wide">Ante progression</span>
+            <div className="mt-2">
+              <AnteProgressionControls
+                startingAnte={settings.ante}
+                value={settings.anteProgression ?? buildAnteProgressionForm(settings.ante)}
+                onChange={(anteProgression) => setSettings((s) => ({ ...s, anteProgression }))}
+              />
+            </div>
+          </div>
 
           <label className="flex items-center gap-2 mt-2 md:mt-6 text-sm text-gray-300">
             <input

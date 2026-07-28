@@ -31,6 +31,17 @@ export type PlayerIdentity = z.infer<typeof PlayerIdentity>;
 // Room config (subset of TableConfig) as partial overrides
 const MinBetPolicy = z.object({ type: z.literal("fixed"), value: z.number().int().min(1) });
 const ShistriConfig = z.object({ enabled: z.boolean(), percent: z.number().int().min(1).max(100), minChip: z.number().int().min(1) });
+export const AnteProgressionConfig = z.object({
+  enabled: z.boolean(),
+  intervalRounds: z.number().int().min(1).max(100),
+  strategy: z.enum(["MULTIPLY", "ADD"]),
+  multiplier: z.number().min(1).max(100),
+  incrementAmount: z.number().int().min(0).nullable(),
+  maxAnte: z.number().int().min(1).nullable().optional(),
+  startingAnte: z.number().int().min(1),
+});
+export type AnteProgressionConfig = z.infer<typeof AnteProgressionConfig>;
+
 export const RoomConfig = z.object({
   ante: z.number().int().min(1),
   startingBankroll: z.number().int().min(1),
@@ -41,6 +52,7 @@ export const RoomConfig = z.object({
   allowKouppi: z.boolean(),
   spectatorsAllowed: z.boolean(),
   language: z.enum(["en"]),
+  anteProgression: AnteProgressionConfig.optional(),
 });
 
 export const CreateRoomPayload = z.object({

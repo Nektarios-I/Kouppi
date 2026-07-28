@@ -16,16 +16,31 @@ export type DeckPolicy =
   | "single_no_reshuffle_until_empty"
   | "single_reshuffle_when_low";
 
+export type AnteProgressionStrategy = "MULTIPLY" | "ADD";
+
+/** Authoritative ante progression (derived ante; do not compound mutate alone). */
+export interface AnteProgressionConfig {
+  enabled: boolean;
+  intervalRounds: number;
+  strategy: AnteProgressionStrategy;
+  multiplier: number;
+  incrementAmount: number | null;
+  maxAnte?: number | null;
+  startingAnte: Chips;
+}
+
 export interface TableConfig {
-  ante: Chips;                       // default 10
+  ante: Chips;                       // current derived ante (broadcast); default 10
   startingBankroll: Chips;           // default 100
   minBetPolicy: MinBetPolicy;        // default fixed(10)
   shistri: { enabled: boolean; percent: number; minChip: number }; // default 7%, min 1
   maxPlayers: number;                // up to 20
   deckPolicy: DeckPolicy;            // MVP: no reshuffle until empty
-  allowKouppi: true;                 // always true for this game
-  spectatorsAllowed: false;
+  allowKouppi: boolean;              // always true for this game in practice
+  spectatorsAllowed: boolean;
   language: "en"|"el";
+  /** When omitted at create time, defaults to double every 5 completed rounds. */
+  anteProgression?: AnteProgressionConfig;
 }
 
 export interface Player {
@@ -80,6 +95,8 @@ export interface GameState {
   phase: "Lobby"|"Round"|"RoundEnd";
   lastResolution?: Resolution | null; // <--- add this line
   awaitNext?: boolean;
+  /** Completed pot-empty / forced round ends; drives ante progression. */
+  completedRounds?: number;
 }
 
 export interface Resolution {

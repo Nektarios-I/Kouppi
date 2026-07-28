@@ -87,6 +87,8 @@ export type Room = {
   turnTimer?: any; // NodeJS.Timeout for auto-pass
   timerIntervalId?: ReturnType<typeof setInterval>;
   flowTimer?: ReturnType<typeof setTimeout>;
+  /** True while waiting ROUND_RESULT_REVEAL_DELAY_MS before Stay/Leave */
+  revealPending?: boolean;
   // Round decision phase (after pot is emptied)
   decision?: {
     active: boolean;
