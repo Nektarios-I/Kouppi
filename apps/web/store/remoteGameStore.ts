@@ -23,6 +23,8 @@ export type RoomConfig = {
   turnTimeout?: number;
   spectatorsAllowed?: boolean;
   anteProgression?: import("@kouppi/game-core").AnteProgressionConfig;
+  deckCount?: 1 | 3 | 5 | 7 | 9;
+  shufflePolicy?: "RESET_EACH_ROUND" | "CONTINUOUS_SHOE";
 };
 
 export type RoomInfo = {
@@ -39,6 +41,8 @@ export type RoomInfo = {
   seatsOpen?: boolean;
   createdAt?: number;
   presetLabel?: string;
+  deckCount?: 1 | 3 | 5 | 7 | 9;
+  shufflePolicy?: "RESET_EACH_ROUND" | "CONTINUOUS_SHOE";
 };
 
 export type ConnectionStatus = "connected" | "connecting" | "reconnecting" | "disconnected";
@@ -392,6 +396,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
       hostId: string;
       chatMutedAll?: boolean;
       chatMutedPlayerIds?: string[];
+      config?: RoomConfig;
     } | null) => {
       if (!data) return;
       const current = get().roomUpdateVersion;
@@ -438,6 +443,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
         roomUpdateVersion: typeof data.version === "number" ? data.version : current,
         chatMutedAll: !!data.chatMutedAll,
         chatMutedPlayerIds: data.chatMutedPlayerIds || [],
+        roomConfig: data.config ? { ...(get().roomConfig || {}), ...data.config } : get().roomConfig,
       });
     });
     
@@ -704,6 +710,8 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
             minChip: SHISTRI_DEFAULT_MIN_CHIP,
           },
           spectatorsAllowed: config.spectatorsAllowed ?? true,
+          deckCount: config.deckCount ?? 1,
+          shufflePolicy: config.shufflePolicy ?? "RESET_EACH_ROUND",
           turnTimeout: options?.turnTimeout,
         },
         password: password?.trim() || undefined,
@@ -783,6 +791,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
             playersInRoom: players,
             spectatorsInRoom: roomData?.spectators || [],
             gameStarted: snap?.phase !== "Lobby" && snap?.phase !== undefined,
+            roomConfig: roomData?.config || get().roomConfig,
             lastError: null,
             roomUpdateVersion: roomData?.version ?? 0,
           });
@@ -919,6 +928,7 @@ export const useRemoteGameStore = create<RemoteStore>((set, get) => ({
             playersInRoom: players,
             spectatorsInRoom: roomData?.spectators || [],
             gameStarted: snap?.phase !== "Lobby" && snap?.phase !== undefined,
+            roomConfig: roomData?.config || get().roomConfig,
             lastError: null,
           });
           resolve({ success: true });

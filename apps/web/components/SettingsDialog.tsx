@@ -1,7 +1,8 @@
 "use client";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import TableThemeSelector from "@/components/game/TableThemeSelector";
 import { HudButton } from "@/components/game/HudButton";
+import InfoTooltip from "@/components/game/InfoTooltip";
 import {
   AnteProgressionControls,
   buildAnteProgressionForm,
@@ -14,11 +15,22 @@ export type TableSettings = {
   startingBankroll: number;
   ante: number;
   shistri: boolean;
+  deckCount: 1 | 3 | 5 | 7 | 9;
+  shufflePolicy: "RESET_EACH_ROUND" | "CONTINUOUS_SHOE";
   anteProgression?: import("@kouppi/game-core").AnteProgressionConfig;
 };
 
 const inputClass =
   "game-action-bet-input w-full text-gray-100 !bg-black/40 border-white/15 py-2";
+
+function fieldLabel(title: string, help: ReactNode) {
+  return (
+    <>
+      <span>{title}</span>
+      <InfoTooltip label={`What ${title} means`}>{help}</InfoTooltip>
+    </>
+  );
+}
 
 export default function SettingsDialog({
   open,
@@ -36,6 +48,8 @@ export default function SettingsDialog({
     startingBankroll: initial?.startingBankroll ?? 100,
     ante: initial?.ante ?? 10,
     shistri: initial?.shistri ?? true,
+    deckCount: initial?.deckCount ?? 1,
+    shufflePolicy: initial?.shufflePolicy ?? "RESET_EACH_ROUND",
     anteProgression:
       initial?.anteProgression ?? buildAnteProgressionForm(initial?.ante ?? 10),
   });
@@ -54,7 +68,12 @@ export default function SettingsDialog({
 
         <div className="grid md:grid-cols-2 gap-4 font-ui">
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-gray-400 uppercase tracking-wide">Bots</span>
+            <span className="flex items-center gap-2 text-xs text-gray-400 uppercase tracking-wide">
+              {fieldLabel(
+                "Bots",
+                "Choose how many computer players will join your table. More bots means a busier game."
+              )}
+            </span>
             <input
               type="number"
               className={inputClass}
@@ -71,7 +90,15 @@ export default function SettingsDialog({
           </label>
 
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-gray-400 uppercase tracking-wide">Bot mode</span>
+            <span className="flex items-center gap-2 text-xs text-gray-400 uppercase tracking-wide">
+              {fieldLabel(
+                "Bot mode",
+                <>
+                  <p><strong>Deterministic:</strong> bots play in a more consistent way.</p>
+                  <p><strong>Stochastic:</strong> bots mix things up more, so their choices can vary from game to game.</p>
+                </>
+              )}
+            </span>
             <select
               className={inputClass}
               value={settings.botMode}
@@ -85,7 +112,16 @@ export default function SettingsDialog({
           </label>
 
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-gray-400 uppercase tracking-wide">Difficulty</span>
+            <span className="flex items-center gap-2 text-xs text-gray-400 uppercase tracking-wide">
+              {fieldLabel(
+                "Difficulty",
+                <>
+                  <p><strong>Easy:</strong> safer, simpler bot play.</p>
+                  <p><strong>Normal:</strong> balanced bot decisions.</p>
+                  <p><strong>Hard:</strong> stronger, more confident bot play.</p>
+                </>
+              )}
+            </span>
             <select
               className={inputClass}
               value={settings.botDifficulty}
@@ -103,7 +139,12 @@ export default function SettingsDialog({
           </label>
 
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-gray-400 uppercase tracking-wide">Bankroll</span>
+            <span className="flex items-center gap-2 text-xs text-gray-400 uppercase tracking-wide">
+              {fieldLabel(
+                "Bankroll",
+                "This is how many chips each player starts with at the table."
+              )}
+            </span>
             <input
               type="number"
               className={inputClass}
@@ -119,7 +160,12 @@ export default function SettingsDialog({
           </label>
 
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-gray-400 uppercase tracking-wide">Ante</span>
+            <span className="flex items-center gap-2 text-xs text-gray-400 uppercase tracking-wide">
+              {fieldLabel(
+                "Ante",
+                "The ante is the starting amount each player puts into the pot at the start of a round."
+              )}
+            </span>
             <input
               type="number"
               className={inputClass}
@@ -140,7 +186,12 @@ export default function SettingsDialog({
           </label>
 
           <div className="md:col-span-2">
-            <span className="text-xs text-gray-400 uppercase tracking-wide">Ante progression</span>
+            <span className="flex items-center gap-2 text-xs text-gray-400 uppercase tracking-wide">
+              {fieldLabel(
+                "Ante progression",
+                "This controls whether the ante stays the same or increases as the game goes on."
+              )}
+            </span>
             <div className="mt-2">
               <AnteProgressionControls
                 startingAnte={settings.ante}
@@ -158,7 +209,85 @@ export default function SettingsDialog({
               onChange={(e) => setSettings((s) => ({ ...s, shistri: e.target.checked }))}
             />
             Enable SHISTRI
+            <InfoTooltip label="What SHISTRI means">
+              A special side bet that is only available in certain card situations.
+            </InfoTooltip>
           </label>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="flex items-center gap-2 text-xs text-gray-400 uppercase tracking-wide">
+              {fieldLabel(
+                "Number of Decks",
+                "Choose how many full decks are mixed together in the shoe. More decks means a larger card pool."
+              )}
+            </span>
+            <select
+              className={inputClass}
+              value={settings.deckCount}
+              onChange={(e) =>
+                setSettings((s) => ({
+                  ...s,
+                  deckCount: Number(e.target.value) as TableSettings["deckCount"],
+                }))
+              }
+            >
+              {[1, 3, 5, 7, 9].map((count) => (
+                <option key={count} value={count}>
+                  {count}
+                </option>
+              ))}
+            </select>
+            <span className="text-xs text-gray-500">Choose how many full decks are combined into the shoe.</span>
+          </label>
+
+          <div className="flex flex-col gap-2">
+            <span className="flex items-center gap-2 text-xs text-gray-400 uppercase tracking-wide">
+              {fieldLabel(
+                "Deck Handling",
+                "Choose whether cards come back every round or stay out until the shoe is reshuffled."
+              )}
+            </span>
+            <label className="flex items-start gap-2 text-sm text-gray-300">
+              <input
+                type="radio"
+                name="sp-shuffle-policy"
+                className="mt-1 accent-gold"
+                checked={settings.shufflePolicy === "RESET_EACH_ROUND"}
+                onChange={() => setSettings((s) => ({ ...s, shufflePolicy: "RESET_EACH_ROUND" }))}
+              />
+              <span>
+                <span className="flex items-center gap-2">
+                  <span className="block">Fresh Deck Every Round</span>
+                  <InfoTooltip label="About Fresh Deck Every Round">
+                    All cards return to the shoe and are shuffled before each new round.
+                  </InfoTooltip>
+                </span>
+                <span className="text-xs text-gray-500">
+                  All cards return to the shoe and are shuffled before each new round.
+                </span>
+              </span>
+            </label>
+            <label className="flex items-start gap-2 text-sm text-gray-300">
+              <input
+                type="radio"
+                name="sp-shuffle-policy"
+                className="mt-1 accent-gold"
+                checked={settings.shufflePolicy === "CONTINUOUS_SHOE"}
+                onChange={() => setSettings((s) => ({ ...s, shufflePolicy: "CONTINUOUS_SHOE" }))}
+              />
+              <span>
+                <span className="flex items-center gap-2">
+                  <span className="block">Continuous Shoe</span>
+                  <InfoTooltip label="About Continuous Shoe">
+                    Played cards stay out until the shoe needs reshuffling.
+                  </InfoTooltip>
+                </span>
+                <span className="text-xs text-gray-500">
+                  Played cards stay out until the shoe needs reshuffling.
+                </span>
+              </span>
+            </label>
+          </div>
 
           <TableThemeSelector id="settings-table-theme" />
         </div>

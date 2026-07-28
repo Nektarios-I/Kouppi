@@ -1,4 +1,10 @@
-import { initGame, applyAction, SHISTRI_DEFAULT_PERCENT, SHISTRI_DEFAULT_MIN_CHIP, normalizeAnteProgression } from "@kouppi/game-core";
+import {
+  initGame,
+  applyAction,
+  SHISTRI_DEFAULT_PERCENT,
+  SHISTRI_DEFAULT_MIN_CHIP,
+  normalizeAnteProgression,
+} from "@kouppi/game-core";
 import type { Action } from "@kouppi/game-core";
 import type { Room, PlayerSession, SpectatorSession, AvatarConfig } from "./types.js";
 import { hashRoomPassword } from "./security/password.js";
@@ -14,6 +20,25 @@ function store() {
 function normalizeAvatar(avatar: unknown): AvatarConfig | undefined {
   if (!avatar) return undefined;
   return { id: resolveAvatarId(avatar) };
+}
+
+const SERVER_ALLOWED_DECK_COUNTS = [1, 3, 5, 7, 9] as const;
+const SERVER_DEFAULT_DECK_COUNT = 1;
+const SERVER_DEFAULT_SHUFFLE_POLICY = "RESET_EACH_ROUND" as const;
+
+function normalizeDeckConfig(raw: Partial<Room["config"]>): Pick<Room["config"], "deckCount" | "shufflePolicy" | "deckPolicy"> {
+  const deckCount = SERVER_ALLOWED_DECK_COUNTS.includes((raw as { deckCount?: number }).deckCount as any)
+    ? ((raw as { deckCount: 1 | 3 | 5 | 7 | 9 }).deckCount)
+    : SERVER_DEFAULT_DECK_COUNT;
+  const shufflePolicy =
+    raw.shufflePolicy === "RESET_EACH_ROUND" || raw.shufflePolicy === "CONTINUOUS_SHOE"
+      ? raw.shufflePolicy
+      : SERVER_DEFAULT_SHUFFLE_POLICY;
+  return {
+    deckCount,
+    shufflePolicy,
+    deckPolicy: "single_no_reshuffle_until_empty",
+  };
 }
 
 /** Generate a unique 6-character room code (no ambiguous 0/O/1/I). */
@@ -121,6 +146,11 @@ export function buildRoomUpdatePayload(room: Room): {
   hostId?: string;
   chatMutedAll?: boolean;
   chatMutedPlayerIds?: string[];
+  config: {
+    ante: number;
+    deckCount?: number;
+    shufflePolicy?: string;
+  };
 } {
   const now = Date.now();
   return {
@@ -151,6 +181,11 @@ export function buildRoomUpdatePayload(room: Room): {
     hostId: room.hostId,
     chatMutedAll: !!room.chatMutedAll,
     chatMutedPlayerIds: room.chatMutedPlayerIds ? [...room.chatMutedPlayerIds] : [],
+    config: {
+      ante: room.config.ante,
+      deckCount: room.config.deckCount,
+      shufflePolicy: room.config.shufflePolicy,
+    },
   };
 }
 
@@ -222,7 +257,7 @@ export function createRoomWithCreator(
   options?: { listedInLobby?: boolean; presetLabel?: string },
   metadata?: import("./types.js").CareerMetadata
 ): Room {
-  const mergedRaw = { ...defaultConfig(), ...(config || {}) };
+  const mergedRaw = { ...defaultConfig(), ...(config || {}), ...normalizeDeckConfig(config || {}) };
   const anteProgression = normalizeAnteProgression(
     mergedRaw.anteProgression,
     mergedRaw.ante
@@ -266,7 +301,7 @@ function defaultConfig(): Room["config"] {
     minBetPolicy: { type: "fixed", value: 10 },
     shistri: { enabled: true, percent: SHISTRI_DEFAULT_PERCENT, minChip: SHISTRI_DEFAULT_MIN_CHIP },
     maxPlayers: 8,
-    deckPolicy: "single_no_reshuffle_until_empty",
+    ...normalizeDeckConfig({}),
     allowKouppi: true,
     spectatorsAllowed: true,
     language: "en",
@@ -811,6 +846,8 @@ export function roomsInfo(): Array<{
   seatsOpen?: boolean;
   createdAt?: number;
   presetLabel?: string;
+  deckCount?: number;
+  shufflePolicy?: string;
 }> {
   return store().values()
     .filter((r) => r.listedInLobby !== false && r.metadata?.matchType !== "career")
@@ -828,6 +865,8 @@ export function roomsInfo(): Array<{
       seatsOpen: r.players.length < r.maxPlayers,
       createdAt: r.createdAt,
       presetLabel: r.presetLabel,
+      deckCount: r.config.deckCount,
+      shufflePolicy: r.config.shufflePolicy,
     }));
 }
 

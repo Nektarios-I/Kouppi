@@ -1,11 +1,17 @@
 import type {
-  Card, Chips, GameState, Player, TableConfig, Upcards, Rank
+  Card, Chips, GameState, Player, TableConfig, Upcards, DeckCount, DeckShufflePolicy
 } from "./types.js";
-import { SHISTRI_DEFAULT_MIN_CHIP, SHISTRI_DEFAULT_PERCENT } from "./types.js";
-import { fullDeck, shuffle, draw } from "./deck.js";
+import {
+  SHISTRI_DEFAULT_MIN_CHIP,
+  SHISTRI_DEFAULT_PERCENT,
+  DEFAULT_DECK_COUNT,
+  DEFAULT_DECK_SHUFFLE_POLICY,
+  ALLOWED_DECK_COUNTS,
+} from "./types.js";
+import { buildShoe, fullDeck, shuffle, draw } from "./deck.js";
 import { makeRng } from "./rng.js";
 import {
-  betweenExclusive, effectiveMinBet, isConsecutive, isPair,
+  isConsecutive, isPair,
   canShistri, shistriBet
 } from "./validators.js";
 import { deriveAnte, normalizeAnteProgression } from "./anteProgression.js";
@@ -37,18 +43,27 @@ export function initGame(params: {
   config?: Partial<TableConfig>;
   seed?: number;
 }): GameState {
+  const normalizedDeckCount = normalizeDeckCount(params.config?.deckCount);
+  const normalizedShufflePolicy = normalizeShufflePolicy(params.config);
   const defaultConfig: TableConfig = {
     ante: 10,
     startingBankroll: 100,
     minBetPolicy: { type: "fixed", value: 10 },
     shistri: { enabled: true, percent: SHISTRI_DEFAULT_PERCENT, minChip: SHISTRI_DEFAULT_MIN_CHIP },
     maxPlayers: 20,
+    deckCount: normalizedDeckCount,
+    shufflePolicy: normalizedShufflePolicy,
     deckPolicy: "single_no_reshuffle_until_empty",
     allowKouppi: true,
     spectatorsAllowed: false,
     language: "en"
   };
-  const merged = { ...defaultConfig, ...(params.config || {}) };
+  const merged = {
+    ...defaultConfig,
+    ...(params.config || {}),
+    deckCount: normalizedDeckCount,
+    shufflePolicy: normalizedShufflePolicy,
+  };
   const anteProgression = normalizeAnteProgression(
     params.config?.anteProgression ?? merged.anteProgression,
     merged.ante
@@ -60,7 +75,7 @@ export function initGame(params: {
   };
   const seed = params.seed ?? 123456;
   const rng = makeRng(seed);
-  const deck = shuffle(fullDeck(), rng);
+  const deck = shuffle(buildShoe(normalizedDeckCount, 1), rng);
   const players: Player[] = params.players.map((p) => ({
     id: p.id,
     name: p.name,
@@ -73,6 +88,15 @@ export function initGame(params: {
     currentIndex: 0,
     round: { starterIndex: 0, pot: 0 },
     config: cfg,
+    shoe: {
+      deckCount: normalizedDeckCount,
+      shufflePolicy: normalizedShufflePolicy,
+      baseDeckSize: fullDeck().length,
+      shoeSize: fullDeck().length * normalizedDeckCount,
+      generation: 1,
+      shuffleCount: 1,
+      remaining: deck.length,
+    },
     turn: null,
     history: ["Game initialized"],
     phase: "Lobby",
@@ -101,6 +125,7 @@ function cloneForMutation(s: GameState): GameState {
     discard: s.discard.slice(),
     round: { ...s.round },
     history: s.history.slice(),
+    shoe: { ...s.shoe },
     turn: s.turn
       ? {
           ...s.turn,
@@ -113,17 +138,53 @@ function cloneForMutation(s: GameState): GameState {
   };
 }
 
-/** Ensure we have at least `need` cards to draw; do an emergency reshuffle if needed. */
+function normalizeDeckCount(deckCount: number | undefined): DeckCount {
+  if (deckCount && ALLOWED_DECK_COUNTS.includes(deckCount as DeckCount)) {
+    return deckCount as DeckCount;
+  }
+  return DEFAULT_DECK_COUNT;
+}
+
+function normalizeShufflePolicy(config?: Partial<TableConfig>): DeckShufflePolicy {
+  if (config?.shufflePolicy === "RESET_EACH_ROUND" || config?.shufflePolicy === "CONTINUOUS_SHOE") {
+    return config.shufflePolicy;
+  }
+  return DEFAULT_DECK_SHUFFLE_POLICY;
+}
+
+function rebuildShoe(state: GameState) {
+  state.shoe.generation += 1;
+  state.shoe.shuffleCount += 1;
+  state.deck = shuffle(buildShoe(state.shoe.deckCount, state.shoe.generation), state.rng);
+  state.discard = [];
+  state.shoe.shoeSize = state.shoe.baseDeckSize * state.shoe.deckCount;
+  state.shoe.remaining = state.deck.length;
+}
+
+function refreshRemaining(state: GameState) {
+  state.shoe.remaining = state.deck.length;
+}
+
+function minimumRoundStartCards(state: GameState): number {
+  const activePlayers = Math.max(1, state.players.length);
+  return activePlayers * 2 + 1;
+}
+
+function prepareRoundShoe(state: GameState) {
+  if (state.shoe.shufflePolicy === "RESET_EACH_ROUND") {
+    rebuildShoe(state);
+    return;
+  }
+  if (state.deck.length < minimumRoundStartCards(state)) {
+    rebuildShoe(state);
+  }
+}
+
+/** Ensure we have at least `need` cards to draw; no mid-round reshuffle. */
 function ensureDraw(state: GameState, need: number) {
   if (need <= 0) return;
   if (state.deck.length >= need) return;
-
-  // Emergency one-time reshuffle from discards to continue the current action/turn
-  if (state.discard.length > 0) {
-    state.deck = shuffle(state.discard, state.rng);
-    state.discard = [];
-  }
-  // After reshuffle, if still not enough, we draw as many as we can.
+  throw new IllegalActionError(`Shoe exhausted: need ${need}, have ${state.deck.length}`);
 }
 
 export function applyAction(s: GameState, action: Action): GameState {
@@ -132,11 +193,13 @@ export function applyAction(s: GameState, action: Action): GameState {
 
   switch (action.type) {
     case "startRound": {
+      prepareRoundShoe(state);
       state.phase = "Round";
       state.round.pot = 0;
       state.turn = null;
       state.lastResolution = null;
       state.awaitNext = false;
+      refreshRemaining(state);
       log("Round started");
       return state;
     }
@@ -176,6 +239,7 @@ export function applyAction(s: GameState, action: Action): GameState {
         const hands = state.players.map(() => {
           const d = draw(state.deck, 1);
           state.deck = d.deck;
+          refreshRemaining(state);
           return d.drawn[0];
         });
         const ranks = hands.map(c => c.rank);
@@ -205,6 +269,7 @@ export function applyAction(s: GameState, action: Action): GameState {
       ensureDraw(state, 2);
       const d = draw(state.deck, 2);
       state.deck = d.deck;
+      refreshRemaining(state);
       const up: Upcards = { a: d.drawn[0], b: d.drawn[1] };
       state.turn = { playerId: p.id, upcards: up };
       log(`Turn: ${p.name} upcards ${cardStr(up.a)} ${cardStr(up.b)}`);
@@ -302,6 +367,7 @@ case "shistri": {
   ensureDraw(state, 1);
   const d = draw(state.deck, 1);
   state.deck = d.deck;
+  refreshRemaining(state);
   const reveal = d.drawn[0];
   state.turn.reveal = reveal;
   state.turn.betAmount = amount;
@@ -369,6 +435,7 @@ case "shistri": {
 
     case "nextRound": {
       // Re-ante and rotate starter
+      prepareRoundShoe(state);
       state.phase = "Round";
       state.turn = null;
       state.lastResolution = null;
@@ -377,6 +444,7 @@ case "shistri": {
       state.round.pot = 0;
       state.round.starterIndex = (state.round.starterIndex + 1) % state.players.length;
       state.currentIndex = state.round.starterIndex;
+      refreshRemaining(state);
       state.history.push("New round");
       return state;
     }

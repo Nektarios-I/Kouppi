@@ -23,7 +23,7 @@ describe("resolveServerUrl", () => {
   });
 
   it("defaults to localhost in non-browser dev", () => {
-    process.env.NODE_ENV = "development";
+    Object.assign(process.env, { NODE_ENV: "development" });
     expect(resolveServerUrl().url).toBe("http://localhost:4000");
     expect(resolveServerUrl().issue).toBeNull();
   });
@@ -88,7 +88,7 @@ describe("resolveAuthApiBase (AUTH-NET-001)", () => {
   });
 
   it("accepts localhost development URL convention", () => {
-    process.env.NODE_ENV = "development";
+    Object.assign(process.env, { NODE_ENV: "development" });
     delete process.env.NEXT_PUBLIC_SERVER_URL;
     const result = resolveAuthApiBase();
     expect(result.ok).toBe(true);

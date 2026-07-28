@@ -158,4 +158,15 @@ describe("rooms", () => {
     expect(a).toHaveLength(6);
     expect(b).toHaveLength(6);
   });
+
+  it("normalizes invalid deck config to defaults", () => {
+    const room = createRoomWithCreator(
+      "r-deck",
+      { id: "p1", name: "Alice", socketId: "s1" },
+      { ...(cfg as any), deckCount: 2, shufflePolicy: "INVALID" } as any,
+      7777
+    );
+    expect(room.config.deckCount).toBe(1);
+    expect(room.config.shufflePolicy).toBe("RESET_EACH_ROUND");
+  });
 });

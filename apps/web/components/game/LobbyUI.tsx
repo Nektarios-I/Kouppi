@@ -121,12 +121,14 @@ export function LobbyField({
   label,
   children,
 }: {
-  label: string;
+  label: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <label className="flex flex-col gap-1.5 font-ui">
-      <span className="text-xs text-gray-400 uppercase tracking-wide">{label}</span>
+      <span className="flex items-center gap-2 text-xs text-gray-400 uppercase tracking-wide">
+        {label}
+      </span>
       {children}
     </label>
   );

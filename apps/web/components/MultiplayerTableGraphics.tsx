@@ -564,6 +564,10 @@ function MultiplayerTableBody() {
                   details: [
                     `Room ${roomId}`,
                     `Ante ${gameState.config.ante}`,
+                    `${gameState.config.deckCount ?? 1} deck${(gameState.config.deckCount ?? 1) > 1 ? "s" : ""}`,
+                    gameState.config.shufflePolicy === "CONTINUOUS_SHOE"
+                      ? "Continuous shoe"
+                      : "Fresh deck each round",
                     `Minimum bet ${minBet}`,
                     `${spectatorsInRoom.length} spectators`,
                   ],

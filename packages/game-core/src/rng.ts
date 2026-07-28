@@ -8,3 +8,17 @@ export function makeRng(seed: number): () => number {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   }
 }
+
+/**
+ * Production random float source.
+ * Uses crypto RNG when available, falls back to Math.random.
+ */
+export function cryptoRandomFloat(): number {
+  const webCrypto = (globalThis as { crypto?: Crypto }).crypto;
+  if (webCrypto?.getRandomValues) {
+    const arr = new Uint32Array(1);
+    webCrypto.getRandomValues(arr);
+    return arr[0]! / 0x1_0000_0000;
+  }
+  return Math.random();
+}

@@ -48,7 +48,15 @@ export const RoomConfig = z.object({
   minBetPolicy: MinBetPolicy,
   shistri: ShistriConfig,
   maxPlayers: z.number().int().min(2).max(20),
-  deckPolicy: z.enum(["single_no_reshuffle_until_empty"]),
+  deckCount: z.union([
+    z.literal(1),
+    z.literal(3),
+    z.literal(5),
+    z.literal(7),
+    z.literal(9),
+  ]).optional(),
+  shufflePolicy: z.enum(["RESET_EACH_ROUND", "CONTINUOUS_SHOE"]).optional(),
+  deckPolicy: z.enum(["single_no_reshuffle_until_empty"]).optional(),
   allowKouppi: z.boolean(),
   spectatorsAllowed: z.boolean(),
   language: z.enum(["en"]),
@@ -114,6 +122,11 @@ export const RoomUpdatePayload = z.object({
   hostId: z.string().optional(),
   chatMutedAll: z.boolean().optional(),
   chatMutedPlayerIds: z.array(z.string()).optional(),
+  config: z.object({
+    ante: z.number().int().min(1),
+    deckCount: z.union([z.literal(1), z.literal(3), z.literal(5), z.literal(7), z.literal(9)]).optional(),
+    shufflePolicy: z.enum(["RESET_EACH_ROUND", "CONTINUOUS_SHOE"]).optional(),
+  }),
 });
 export type RoomUpdatePayload = z.infer<typeof RoomUpdatePayload>;
 
@@ -210,6 +223,8 @@ export const RoomsListItem = z.object({
   seatsOpen: z.boolean().optional(),
   createdAt: z.number().optional(),
   presetLabel: z.string().optional(),
+  deckCount: z.union([z.literal(1), z.literal(3), z.literal(5), z.literal(7), z.literal(9)]).optional(),
+  shufflePolicy: z.enum(["RESET_EACH_ROUND", "CONTINUOUS_SHOE"]).optional(),
 });
 export type RoomsListItem = z.infer<typeof RoomsListItem>;
 

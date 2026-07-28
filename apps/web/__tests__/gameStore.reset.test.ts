@@ -17,6 +17,8 @@ describe("SP-CFG-001 gameStore resetSinglePlayer", () => {
       shistri: true,
       botMode: "deterministic",
       botDifficulty: "normal",
+      deckCount: 1,
+      shufflePolicy: "RESET_EACH_ROUND",
     });
     expect(useGameStore.getState().ready).toBe(true);
     expect(Object.keys(useGameStore.getState().botProfiles).length).toBeGreaterThan(0);
@@ -30,6 +32,8 @@ describe("SP-CFG-001 gameStore resetSinglePlayer", () => {
       shistri: false,
       botMode: "stochastic",
       botDifficulty: "hard",
+      deckCount: 1,
+      shufflePolicy: "RESET_EACH_ROUND",
     });
     expect(useGameStore.getState().ready).toBe(true);
 

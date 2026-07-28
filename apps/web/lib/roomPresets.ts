@@ -22,6 +22,8 @@ export const ROOM_PRESETS: RoomPreset[] = [
       turnTimeout: 20,
       shistri: { enabled: true, percent: SHISTRI_DEFAULT_PERCENT, minChip: SHISTRI_DEFAULT_MIN_CHIP },
       spectatorsAllowed: true,
+      deckCount: 1,
+      shufflePolicy: "RESET_EACH_ROUND",
     },
   },
   {
@@ -35,6 +37,8 @@ export const ROOM_PRESETS: RoomPreset[] = [
       turnTimeout: 30,
       shistri: { enabled: true, percent: SHISTRI_DEFAULT_PERCENT, minChip: SHISTRI_DEFAULT_MIN_CHIP },
       spectatorsAllowed: true,
+      deckCount: 1,
+      shufflePolicy: "RESET_EACH_ROUND",
     },
   },
   {
@@ -48,6 +52,8 @@ export const ROOM_PRESETS: RoomPreset[] = [
       turnTimeout: 45,
       shistri: { enabled: true, percent: SHISTRI_DEFAULT_PERCENT, minChip: SHISTRI_DEFAULT_MIN_CHIP },
       spectatorsAllowed: true,
+      deckCount: 1,
+      shufflePolicy: "RESET_EACH_ROUND",
     },
   },
 ];

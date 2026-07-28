@@ -9,7 +9,7 @@ import { initGame, applyAction, type Action } from "../src/reducer";
 import type { Card, GameState, Rank, Suit, Upcards } from "../src/types";
 
 function card(rank: Rank, suit: Suit = "S"): Card {
-  return { rank, suit };
+  return { id: `test:${rank}:${suit}:${Math.random().toString(36).slice(2, 8)}`, rank, suit };
 }
 
 function up(a: Rank, b: Rank, suitA: Suit = "S", suitB: Suit = "H"): Upcards {

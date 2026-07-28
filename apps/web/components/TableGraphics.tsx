@@ -324,6 +324,10 @@ function SinglePlayerTableBody() {
                   details: [
                     `Ante ${state.config.ante}`,
                     `${Math.max(0, state.players.length - 1)} bots`,
+                    `${state.config.deckCount ?? 1} deck${(state.config.deckCount ?? 1) > 1 ? "s" : ""}`,
+                    state.config.shufflePolicy === "CONTINUOUS_SHOE"
+                      ? "Continuous shoe"
+                      : "Fresh deck each round",
                     `Minimum bet ${minBet}`,
                   ],
                 }}

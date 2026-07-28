@@ -11,8 +11,8 @@ import AuthModal from "@/components/AuthModal";
 
 describe("SHI-UI-001 eligibility uses canShistri (abs diff === 2)", () => {
   it("accepts A+3 and rejects abs>=6 pairs that the old MP UI wrongly allowed", () => {
-    expect(canShistri({ a: { rank: 1, suit: "S" }, b: { rank: 3, suit: "H" } })).toBe(true);
-    expect(canShistri({ a: { rank: 2, suit: "S" }, b: { rank: 8, suit: "H" } })).toBe(false);
+    expect(canShistri({ a: { id: "a", rank: 1, suit: "S" }, b: { id: "b", rank: 3, suit: "H" } })).toBe(true);
+    expect(canShistri({ a: { id: "a", rank: 2, suit: "S" }, b: { id: "b", rank: 8, suit: "H" } })).toBe(false);
     expect(Math.abs(2 - 8)).toBeGreaterThanOrEqual(6);
   });
 });

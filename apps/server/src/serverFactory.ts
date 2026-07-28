@@ -19,7 +19,11 @@ import {
   demoteBankruptPlayers,
 } from "./rooms.js";
 import type { TableConfig } from "@kouppi/game-core";
-import { SHISTRI_DEFAULT_MIN_CHIP, SHISTRI_DEFAULT_PERCENT, ROUND_RESULT_REVEAL_DELAY_MS } from "@kouppi/game-core";
+import {
+  SHISTRI_DEFAULT_MIN_CHIP,
+  SHISTRI_DEFAULT_PERCENT,
+  ROUND_RESULT_REVEAL_DELAY_MS,
+} from "@kouppi/game-core";
 import { applyAction } from "@kouppi/game-core";
 
 // Career Mode imports
@@ -49,6 +53,8 @@ import { verifyActiveAuthToken } from "./auth/verifyActiveAuth.js";
 import { getRoomStore } from "./stores/initRoomStore.js";
 import { getUserById, getPublicPlayerCosmetics } from "@kouppi/database";
 import type { AvatarConfig, PlayerCosmetics } from "./types.js";
+import { AUTO_TABLE_DECK_POLICY } from "./config/deckRules.js";
+const SERVER_ALLOWED_DECK_COUNTS = [1, 3, 5, 7, 9] as const;
 
 function loadPublicCosmetics(userId: string, skipCareerDatabase: boolean): PlayerCosmetics | undefined {
   if (skipCareerDatabase) return undefined;
@@ -202,6 +208,8 @@ export function createKouppiServer(opts?: {
       minBetPolicy: { type: "fixed", value: 10 },
       shistri: { enabled: true, percent: SHISTRI_DEFAULT_PERCENT, minChip: SHISTRI_DEFAULT_MIN_CHIP },
       maxPlayers: 8,
+      deckCount: AUTO_TABLE_DECK_POLICY.deckCount,
+      shufflePolicy: AUTO_TABLE_DECK_POLICY.shufflePolicy,
       deckPolicy: "single_no_reshuffle_until_empty",
       allowKouppi: true,
       spectatorsAllowed: false,
@@ -468,7 +476,22 @@ export function createKouppiServer(opts?: {
           cb ? cb(err) : socket.emit("error", err);
           return;
         }
-        const cfg: TableConfig = { ...defaultConfig, ...(data.config as any) };
+        const requestedConfig = data.config as any;
+        const validatedDeckCount = SERVER_ALLOWED_DECK_COUNTS.includes(requestedConfig?.deckCount)
+          ? requestedConfig.deckCount
+          : AUTO_TABLE_DECK_POLICY.deckCount;
+        const validatedShufflePolicy =
+          requestedConfig?.shufflePolicy === "RESET_EACH_ROUND" ||
+          requestedConfig?.shufflePolicy === "CONTINUOUS_SHOE"
+            ? requestedConfig.shufflePolicy
+            : AUTO_TABLE_DECK_POLICY.shufflePolicy;
+        const cfg: TableConfig = {
+          ...defaultConfig,
+          ...(requestedConfig || {}),
+          deckCount: validatedDeckCount,
+          shufflePolicy: validatedShufflePolicy,
+          deckPolicy: "single_no_reshuffle_until_empty",
+        };
         const creatorName = sanitizeDisplayName(data.creator.name);
         if (!creatorName) {
           const err = { code: "inappropriate_name", message: "That name is not allowed" };

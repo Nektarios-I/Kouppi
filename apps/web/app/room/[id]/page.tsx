@@ -512,7 +512,11 @@ export default function RoomPage() {
         chatMutedPlayerIds={chatMutedPlayerIds}
         tableRulesSummary={
           roomConfig
-            ? `Ante ${roomConfig.ante}${
+            ? `${roomConfig.deckCount ?? 1} deck${(roomConfig.deckCount ?? 1) > 1 ? "s" : ""} · ${
+                roomConfig.shufflePolicy === "CONTINUOUS_SHOE"
+                  ? "Continuous Shoe"
+                  : "Fresh Deck Every Round"
+              } · Ante ${roomConfig.ante}${
                 roomConfig.anteProgression
                   ? ` · ${
                       roomConfig.anteProgression.enabled

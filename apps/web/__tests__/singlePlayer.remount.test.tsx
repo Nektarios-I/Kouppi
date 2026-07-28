@@ -43,6 +43,8 @@ describe("SP-CFG-001 /play/single remount", () => {
       shistri: true,
       botMode: "deterministic",
       botDifficulty: "normal",
+      deckCount: 1,
+      shufflePolicy: "RESET_EACH_ROUND",
     });
     expect(useGameStore.getState().ready).toBe(true);
 
@@ -61,6 +63,8 @@ describe("SP-CFG-001 /play/single remount", () => {
       shistri: true,
       botMode: "deterministic",
       botDifficulty: "easy",
+      deckCount: 1,
+      shufflePolicy: "RESET_EACH_ROUND",
     });
     expect(useGameStore.getState().ready).toBe(true);
 

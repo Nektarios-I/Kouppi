@@ -26,6 +26,8 @@ function createBootstrapState() {
       startingBankroll: 100,
       minBetPolicy: { type: "fixed", value: 10 },
       shistri: { enabled: true, percent: SHISTRI_DEFAULT_PERCENT, minChip: SHISTRI_DEFAULT_MIN_CHIP },
+      deckCount: 1,
+      shufflePolicy: "RESET_EACH_ROUND",
       deckPolicy: "single_no_reshuffle_until_empty",
       language: "en",
       maxPlayers: 8,
@@ -79,6 +81,8 @@ export const useGameStore = create<GameStore>((set, get) => {
         startingBankroll: ts.startingBankroll,
         minBetPolicy: { type: "fixed", value: 10 } as const, // can expose later
         shistri: { enabled: ts.shistri, percent: SHISTRI_DEFAULT_PERCENT, minChip: SHISTRI_DEFAULT_MIN_CHIP },
+        deckCount: ts.deckCount,
+        shufflePolicy: ts.shufflePolicy,
         deckPolicy: "single_no_reshuffle_until_empty" as const,
         language: "en" as const,
         maxPlayers: Math.max(2, players.length),

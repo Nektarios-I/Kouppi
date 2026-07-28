@@ -1,16 +1,26 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useRemoteGameStore } from "@/store/remoteGameStore";
 import { HudButton } from "@/components/game/HudButton";
 import { LobbyInput, LobbyField, LobbyAlert } from "@/components/game/LobbyUI";
+import InfoTooltip from "@/components/game/InfoTooltip";
 import { ROOM_PRESETS, getRoomPreset, type RoomPresetId } from "@/lib/roomPresets";
 import {
   AnteProgressionControls,
   buildAnteProgressionForm,
   type AnteProgressionFormState,
 } from "@/components/game/AnteProgressionControls";
+
+function fieldLabel(title: string, help: ReactNode) {
+  return (
+    <>
+      <span>{title}</span>
+      <InfoTooltip label={`What ${title} means`}>{help}</InfoTooltip>
+    </>
+  );
+}
 
 function generateClientCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -121,7 +131,12 @@ export default function CreateRoomDialog({
         )}
 
         <div className="space-y-4">
-          <LobbyField label="Table preset">
+          <LobbyField
+            label={fieldLabel(
+              "Table preset",
+              "Pick a ready-made setup to quickly start with a style of table you like."
+            )}
+          >
             <div className="grid grid-cols-3 gap-2">
               {ROOM_PRESETS.map((p) => (
                 <button
@@ -141,7 +156,12 @@ export default function CreateRoomDialog({
             </div>
           </LobbyField>
 
-          <LobbyField label="Room code">
+          <LobbyField
+            label={fieldLabel(
+              "Room code",
+              "Share this code with friends so they can join your room directly."
+            )}
+          >
             <div className="flex gap-2">
               <LobbyInput
                 value={roomCode}
@@ -155,7 +175,12 @@ export default function CreateRoomDialog({
             </div>
           </LobbyField>
 
-          <LobbyField label="Password (optional)">
+          <LobbyField
+            label={fieldLabel(
+              "Password (optional)",
+              "Add a password if you want only invited players to get in."
+            )}
+          >
             <div className="relative">
               <LobbyInput
                 type={showPassword ? "text" : "password"}
@@ -182,15 +207,25 @@ export default function CreateRoomDialog({
               disabled={!password.trim()}
               onChange={(e) => setListedInLobby(e.target.checked)}
             />
-            <span className="font-ui text-sm text-gray-300">
-              {password.trim()
-                ? "List in public lobby (friends can still join with password)"
-                : "List in public lobby browser"}
+            <span className="flex items-center gap-2 font-ui text-sm text-gray-300">
+              <span>
+                {password.trim()
+                  ? "List in public lobby (friends can still join with password)"
+                  : "List in public lobby browser"}
+              </span>
+              <InfoTooltip label="What public lobby listing means">
+                Shows your room in the room browser so other players can discover it more easily.
+              </InfoTooltip>
             </span>
           </label>
 
           <div className="grid grid-cols-2 gap-4">
-            <LobbyField label="Max players">
+            <LobbyField
+              label={fieldLabel(
+                "Max players",
+                "Choose how many people can sit at this table at once."
+              )}
+            >
               <LobbyInput
                 type="number"
                 min={2}
@@ -204,7 +239,12 @@ export default function CreateRoomDialog({
                 }
               />
             </LobbyField>
-            <LobbyField label="Ante">
+            <LobbyField
+              label={fieldLabel(
+                "Ante",
+                "The ante is the amount each player puts in before the round starts."
+              )}
+            >
               <LobbyInput
                 type="number"
                 min={1}
@@ -218,7 +258,92 @@ export default function CreateRoomDialog({
             </LobbyField>
           </div>
 
-          <LobbyField label="Ante progression">
+          <LobbyField
+            label={fieldLabel(
+              "Number of Decks",
+              "Choose how many full decks are mixed together. More decks makes the shoe last longer."
+            )}
+          >
+            <select
+              aria-label="Number of Decks"
+              className="game-action-bet-input w-full text-gray-100 !bg-black/40 border-white/15 py-2 rounded-xl px-3"
+              value={config.deckCount ?? 1}
+              onChange={(e) =>
+                setConfig((c) => ({
+                  ...c,
+                  deckCount: Number(e.target.value) as 1 | 3 | 5 | 7 | 9,
+                }))
+              }
+            >
+              {[1, 3, 5, 7, 9].map((count) => (
+                <option key={count} value={count}>
+                  {count}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-500 mt-1">Choose how many full decks are combined into the shoe.</p>
+          </LobbyField>
+
+          <LobbyField
+            label={fieldLabel(
+              "Deck Handling",
+              "Choose whether every round starts fresh or the table keeps using the same shoe until it runs low."
+            )}
+          >
+            <div className="space-y-2">
+              <label className="flex items-start gap-2 text-sm text-gray-300">
+                <input
+                  type="radio"
+                  name="mp-shuffle-policy"
+                  className="mt-1 accent-gold"
+                  checked={(config.shufflePolicy ?? "RESET_EACH_ROUND") === "RESET_EACH_ROUND"}
+                  onChange={() =>
+                    setConfig((c) => ({ ...c, shufflePolicy: "RESET_EACH_ROUND" }))
+                  }
+                />
+                <span>
+                  <span className="flex items-center gap-2">
+                    <span className="block">Fresh Deck Every Round</span>
+                    <InfoTooltip label="About Fresh Deck Every Round">
+                      All cards go back in and the shoe is shuffled again before the next round starts.
+                    </InfoTooltip>
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    All cards return to the shoe and are shuffled before each new round.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 text-sm text-gray-300">
+                <input
+                  type="radio"
+                  name="mp-shuffle-policy"
+                  className="mt-1 accent-gold"
+                  checked={(config.shufflePolicy ?? "RESET_EACH_ROUND") === "CONTINUOUS_SHOE"}
+                  onChange={() =>
+                    setConfig((c) => ({ ...c, shufflePolicy: "CONTINUOUS_SHOE" }))
+                  }
+                />
+                <span>
+                  <span className="flex items-center gap-2">
+                    <span className="block">Continuous Shoe</span>
+                    <InfoTooltip label="About Continuous Shoe">
+                      Used cards stay out, and the table reshuffles only when the shoe is getting too low.
+                    </InfoTooltip>
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    Played cards stay out until the shoe needs reshuffling.
+                  </span>
+                </span>
+              </label>
+            </div>
+          </LobbyField>
+
+          <LobbyField
+            label={fieldLabel(
+              "Ante progression",
+              "This controls whether the ante stays the same or rises as the session goes on."
+            )}
+          >
             <AnteProgressionControls
               startingAnte={config.ante ?? 10}
               value={anteProgression}
@@ -238,7 +363,12 @@ export default function CreateRoomDialog({
                 }))
               }
             />
-            <span className="font-ui text-sm text-gray-300">Allow spectators</span>
+            <span className="flex items-center gap-2 font-ui text-sm text-gray-300">
+              <span>Allow spectators</span>
+              <InfoTooltip label="What allowing spectators means">
+                Lets people watch the table without taking a seat in the game.
+              </InfoTooltip>
+            </span>
           </label>
         </div>
 
